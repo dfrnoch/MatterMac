@@ -738,3 +738,173 @@ scope, and an imperative summary. This documentation-only change does not alter
 the application; package and app checks from the initial-publication section
 above remain the latest execution evidence. The next task is to inspect the first
 hosted CI run and address any reported failure.
+
+## 2026-09-24 — profiles, channel details, commands, emoji, and a realtime crash fix
+
+Implemented the missing "usable product" pieces from SPEC §3/§4, with a parallel
+agent handling system emoji. See decisions
+[0018](decisions/0018-static-system-emoji.md) and
+[0019](decisions/0019-people-channel-details-and-commands.md).
+
+- **Profiles:** cards open from avatars, author names, `@mentions`, member rows and
+  a "View Profile" message menu item. They show picture, presence (refreshed on
+  open), position, local time with offset, name/nickname, custom status with expiry,
+  email when the server exposes it, and Send Message. Your own card offers Set
+  Status. `User` now decodes `email`, the effective `timezone` and
+  `props.customStatus` (bounded).
+- **Channel details:** a trailing pane (⇧⌘I, toolbar ⓘ, member-count button, or the
+  sidebar row menu) with purpose/header, pinned and member counts, Favorite and Mute
+  toggles, Copy Channel Link, Leave Channel… (confirmed), and paged members with
+  presence, filter, profiles and DM actions, capped at 600 rows. `~channel`
+  mentions open member channels; the old "Mention navigation is not available yet"
+  error is gone.
+- **Status:** a sidebar account bar shows your picture, presence and custom status,
+  with a menu for Online/Away/Do Not Disturb/Offline, unsent-work review, About and
+  Sign Out. The signed-in user's presence is now polled like DM partners'.
+- **Slash commands:** `/…` text runs through `POST /commands/execute` and is no
+  longer posted literally. The reply appears above the conversation; unknown
+  commands and lost responses keep the draft with an explanation.
+- **Menus/toolbar:** there was previously no way to open the ⌘K quick switcher,
+  ⌘F search or the About/Compatibility panel at all. A new Go menu (Quick Switcher
+  ⌘K, Search Messages ⌘F, Show Channel Info ⇧⌘I, Close Thread), toolbar buttons and
+  About MatterMac now reach them. The window title/subtitle carries the channel name
+  and header. The compatibility panel no longer claims SSO is unsupported.
+- **Emoji (agent):** system emoji render in messages and reaction chips, `:`
+  completion works, and a keyboard-navigable reaction picker replaces the text alert.
+  The table is generated from pinned, checksum-verified emoji-datasource 6.1.1 and
+  Mattermost v11.11.1 inputs (`Tools/GenerateEmojiCatalog.swift`, docs/assets.md).
+- **Crash fix:** `MattermostRealtimeClient.livenessTick` wrote
+  `socket?.outstandingPing = sendAction(…)`, and `sendAction` reads `socket`. That is
+  a runtime exclusivity violation on the first periodic ping, about 30 s after
+  connecting. Exclusivity is enforced in Release too, so connected sessions were
+  expected to abort; earlier live tests finished before the first tick.
+  `LivenessTests` reproduces the abort ("Fatal access conflict detected") without
+  the fix and passes with it.
+- **Test fix:** `openingDirectMessageResetsThreadAndPublishesMatchingHistory` read
+  the draft through the reused pane's current key. It failed once in six full runs
+  when SwiftUI had already retargeted the pane to the DM. It now checks the
+  channel's key; the product behaviour was already correct.
+
+### Verification
+
+- `MM_KEYCHAIN_TESTS=1 swift test --package-path Packages/MatterMacKit`:
+  **241 tests reported, all passed** (UI 99, API 26, models 10, Core 78, realtime
+  28, including opt-in skips); no Swift compiler warnings. Evidence:
+  `/tmp/mattermac-people-full-tests.log`. The UI target also passed 5 consecutive
+  reruns before the test fix above.
+- New tests: `PeopleTests` (6), `SlashCommandTests` (2), `UserWireTests` (2),
+  `LivenessTests` (1), plus the agent's `EmojiCatalogTests` (9),
+  `EmojiCompletionTests` (3) and `ReactionPickerTests` (6).
+- With the ignored credentials file sourced, `MM_LIVE_TESTS=1 swift test
+  --skip-build --package-path Packages/MatterMacKit --filter
+  'LiveConversationTests|LiveMessagingTests|LivePeopleTests|LivePeopleUITests'`:
+  all passed. `LivePeopleTests` covers `/users/usernames`, channel member pages,
+  status set/restore, favorite save/delete, mute set/restore, `/away`, `/online` and
+  unknown-command `404 api.command.execute_command.not_found.app_error` on 11.11.1
+  root, 11.11.1 subpath and 10.11.24. `LivePeopleUITests` drives the native shell
+  on 11.11.1 and 10.11.24: details, members, the profile card, and `/away`,
+  `/online` and an unknown command typed into the AppKit composer. Every server
+  setting change is restored. Evidence: `/tmp/mattermac-people-live-tests.log`.
+  Both peers are native clients; this is not official web-client interoperability.
+- `MM_SNAPSHOT_DIR=<dir>` optionally captures only the test's own windows with
+  `screencapture -l`. Reviewed at 1100×720: account bar, member presence, command
+  reply banner, channel pane and profile card render correctly. `cacheDisplay`
+  snapshots omit SwiftUI layers and are not used.
+- Release workspace build: **BUILD SUCCEEDED**, arm64 + x86_64, strict signature
+  verification passed; only the existing AppIntents metadata warning. Executable
+  **18,258,976 bytes**, up from 15,244,992; the emoji table accounts for about
+  135 KB, and the rest (mostly new SwiftUI views) has not been attributed yet.
+  Evidence: `/tmp/mattermac-people-release.log`.
+- `xcodebuild … -scheme MatterMacUITests … test`: **6 of 7 fail** with "server URL
+  field missing". The same 6 fail on a clean worktree of HEAD `1e5fe7c`, so this
+  predates this session; not investigated yet. Evidence:
+  `/tmp/mattermac-people-uitests.log`.
+
+### Open issues and next concrete task
+
+1. Fix the pre-existing first-launch XCUITest failures (element lookup on the
+   connect screen; the disclosure assertion also expects older text).
+2. In the native snapshot window, the top ~48 pt of the detail column, directly
+   below the toolbar, renders blurred (it affected the old header row and now the
+   command/notice banners). `scrollEdgeEffectHidden` on the split view or detail did
+   not change it. Check in the real `Window` scene, then fix or move banners.
+3. Attribute the 3 MB executable growth.
+4. Custom emoji, custom status editing, command dialogs/ephemeral posts,
+   VoiceOver/keyboard audit of the new popovers and pane, and the official-client
+   peer exchange remain open. Nothing was committed.
+
+## 2026-09-25 — user-reported UI defects, names, notifications, custom status
+
+The user ran the app against their real server and reported:
+- low-quality images that could not be enlarged
+- usernames instead of real names, and no DM pictures
+- misaligned composer icons
+- unreadable reactions
+- links that could not be clicked
+- a freeze when showing the member list
+
+A parallel agent fixed the four AppKit timeline/composer defects; see
+[decision 0020](decisions/0020-image-preview-rendition-and-viewer.md) and its test
+list below. Names, notifications and UI-test isolation are in
+[decision 0021](decisions/0021-names-notifications-and-ui-test-isolation.md).
+
+- **Links, thumbnails, reactions not clickable:** the timeline's single table column
+  stayed at AppKit's default 100 pt. Cells drew full-width content but only
+  received clicks in the first 100 pt. The column now tracks the table width.
+- **Reactions unreadable:** `withAlphaComponent(pressedAlpha)` replaced the palette
+  colours' own transparency, which turned a 10% tint into an opaque pill in dark
+  mode. Pressed state is now a transparency layer. Emoji metrics are shared between
+  layout and drawing.
+- **Images:** thumbnails use the server preview rendition at 360 pt × scale. Decode
+  reservations are sized from image dimensions within the unchanged 32 MiB budget.
+  Clicking opens an in-memory viewer (≤ 2048 px) with Save…; Escape/⌘W closes it.
+- **Composer:** icon buttons have zero layout margins and one-line-field height,
+  centred on a single line.
+- **Names:** `TeammateNameDisplay`/`LockTeammateNameDisplay` are now applied.
+  Previously only the personal preference was, so usernames showed by default. DM
+  rows show the partner's avatar and presence.
+- **Member list:** not reproduced. Offline stress tests passed at 760 and 1100 pt
+  (150 long-named members with avatars, thread↔details swaps, binding writes,
+  resizes, both popover paths). So did a new live XCUITest on the real app: sign-in,
+  details pane, members, profile popover, menu responsiveness. Sampling during that
+  run showed an idle main thread. The user reported a beach-ball freeze, not a
+  crash. The member profile popover is now anchored to the clicked row. Next time,
+  capture `sample MatterMac 5 -file /tmp/mattermac-hang.txt` while it is frozen.
+- **UI tests were using real accounts:** XCUITest launches restored the developer's
+  Keychain sign-ins (shared bundle ID/signing), which explains the 6 first-launch
+  failures recorded yesterday, including on HEAD. Those runs connected to the
+  developer's server, though they typed nothing. `-MatterMacUITesting YES` (Debug
+  only) disables the account store.
+- **New:** Dock mention badge; opt-in content-free notifications for mentions/DMs
+  (account menu › Show Notifications, Play Sound), with click-to-open; Set Custom
+  Status… with presets and "clear after" (`PUT`/`DELETE /users/{id}/status/custom`).
+- The blur seen yesterday under the toolbar does not occur in the real `Window`
+  scene (XCUITest screenshot); it was an artifact of hand-built test windows.
+
+### Verification
+
+- `MM_KEYCHAIN_TESTS=1 swift test --package-path Packages/MatterMacKit`: **253
+  tests reported, all passed** (UI 105, API 26, models 10, Core 84, realtime 28); no
+  Swift compiler warnings. Evidence: `/tmp/mattermac-fixes-full-tests.log`.
+  New here: `ChannelInfoPaneTests`, `NameDisplayTests`, `IncomingAlertTests`,
+  `CustomStatusTests`, plus the agent's `TimelineInteractionTests`,
+  `ComposerLayoutTests` and pipeline/integration additions. `IncomingAlertTests`
+  passed 5 consecutive runs after a test-only event-drain fix.
+- Live (`MM_LIVE_TESTS=1`, credentials sourced from the ignored file):
+  `LiveConversationTests`, `LiveMessagingTests`, `LivePeopleTests` (now also
+  `TeammateNameDisplay` and custom status set/read/clear) and `LivePeopleUITests`
+  all passed on the local deployments. Evidence: `/tmp/mattermac-fixes-live-tests.log`.
+- `TEST_RUNNER_MM_LIVE_TESTS=1 TEST_RUNNER_MM_TEST_ALICE_PASSWORD=… xcodebuild …
+  -scheme MatterMacUITests … test`: **8 tests, 0 failures** (7 first-launch plus
+  the live member-list test). Evidence: `/tmp/mattermac-fixes-uitests.log`.
+- Release build succeeded (arm64 + x86_64, strict signature verified, only the
+  AppIntents metadata warning). Executable **19,110,144 bytes**.
+  Evidence: `/tmp/mattermac-fixes-release.log`.
+
+### Open issues and next task
+
+1. Have the user retest the member list on their server; if it freezes, sample it.
+2. Notification delivery and click-to-open were not exercised in a signed app with
+   granted permission (the test host has no bundle); verify manually.
+3. Custom emoji, command dialogs/ephemeral posts, VoiceOver audit, official-client
+   peer exchange, and executable-size attribution remain open. Nothing committed.

@@ -42,6 +42,10 @@ enum UserFacingErrorText {
                 : String(localized: "That’s larger than the server allows.")
         case .messageTooLong(let limit):
             String(localized: "The message is longer than the server allows (\(limit) characters).")
+        case .commandNotFound:
+            String(localized: "The server doesn’t recognize that command. To send a message that begins with “/”, start it with a space.")
+        case .commandOutcomeUnknown:
+            String(localized: "The command was sent, but the server’s response was lost. It may already have run; check before trying again.")
         case .unsupportedCapability(let what):
             String(localized: "This server doesn’t support \(what).")
         case .malformedServerData:

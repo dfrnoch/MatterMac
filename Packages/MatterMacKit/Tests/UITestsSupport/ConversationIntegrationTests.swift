@@ -1,4 +1,5 @@
 import AppKit
+import os
 import Testing
 import MatterMacModels
 import MatterMacCore
@@ -138,6 +139,7 @@ struct ConversationIntegrationTests {
         let root = CoreFixtures.post(1, channel: h.first.id)
         h.service.withState { $0.posts[root.id] = root }
         h.controller.composer.load(draft: Draft(text: "keep channel draft"))
+        let channelKey = h.controller.key
         h.model.openThread(root: root.id)
         #expect(await waitUntil { h.model.thread != nil })
         h.model.openDirectMessage(with: CoreFixtures.bob.id)
@@ -146,7 +148,8 @@ struct ConversationIntegrationTests {
         })
         #expect(h.model.thread == nil)
         #expect(h.model.replyTarget == nil)
-        #expect(h.app.environment.drafts.draft(for: h.controller.key)?.text == "keep channel draft")
+        // The reused pane may already show the DM; the draft belongs to the channel.
+        #expect(h.app.environment.drafts.draft(for: channelKey)?.text == "keep channel draft")
         #expect(h.model.header == nil || h.model.header?.channelID == h.model.selectedChannel)
         await h.close()
         h.controller.composer.load(draft: Draft(text: "late teardown"))
@@ -334,6 +337,60 @@ struct ConversationIntegrationTests {
         #expect(!server.requests.contains { $0.path.hasSuffix("/users/logout") })
         app.cancelLogin()
         await app.shutdownAll()
+    }
+
+    @Test func imagePreviewOpensABoundedInMemoryViewerAndReleasesItOnClose() async throws {
+        let h = try await Harness()
+        ImageViewerWindowController.isPresentationSuppressedForTesting = true
+        defer { ImageViewerWindowController.isPresentationSuppressedForTesting = false }
+        let png = CoreFixtures.png(width: 3_000, height: 1_500)
+        let requests = OSAllocatedUnfairLock<[MattermostAPI.ImageResource]>(initialState: [])
+        h.service.withState { state in
+            state.imageHandler = { resource, _ in
+                requests.withLock { $0.append(resource) }
+                return png
+            }
+        }
+        let file = FileInfo(id: FileID(unchecked: "imagexzzzzzzzzzzzzzzzzzzz"), name: "photo.png", fileExtension: "png",
+                            size: 4_096, mimeType: "image/png", width: 3_000, height: 1_500, hasPreviewImage: true)
+        h.controller.timeline(perform: .previewImage(file))
+        let viewer = try #require(h.controller.imageViewer)
+        #expect(viewer.window?.isRestorable == false)
+        #expect(await waitUntil { viewer.state == .loaded })
+        // The server preview rendition, downsampled to the screen within the budget.
+        #expect(requests.withLock { $0 } == [.filePreview(file.id)])
+        let lease = try #require(viewer.lease)
+        let expectedEdge = min(3_000, ImageViewerWindowController.pixelSize(for: NSScreen.main, budget: h.app.environment.budget))
+        #expect(lease.image.width == expectedEdge)
+        #expect(lease.image.width <= h.app.environment.budget.maximumImagePixelDimension)
+        #expect(await h.model.app!.images.decodedBytes >= lease.byteCost)
+        #expect(viewer.imageView.image != nil)
+        #expect(viewer.saveButton.isEnabled)
+        // Escape closes the viewer and releases its lease and image.
+        viewer.window?.cancelOperation(nil)
+        #expect(h.controller.imageViewer == nil)
+        #expect(viewer.lease == nil)
+        #expect(viewer.imageView.image == nil)
+
+        // No preview rendition: the thumbnail is used; a failure is reported honestly.
+        h.service.withState { state in
+            state.imageHandler = { resource, _ in
+                requests.withLock { $0.append(resource) }
+                throw APIError.cancelled
+            }
+        }
+        let plain = FileInfo(id: FileID(unchecked: "plainxzzzzzzzzzzzzzzzzzzz"), name: "icon.png", fileExtension: "png",
+                             size: 128, mimeType: "image/png", width: 16, height: 16, hasPreviewImage: false)
+        h.controller.timeline(perform: .previewImage(plain))
+        let failed = try #require(h.controller.imageViewer)
+        #expect(await waitUntil { failed.state == .failed })
+        #expect(requests.withLock { $0.last } == .fileThumbnail(plain.id))
+        #expect(failed.messageLabel.stringValue == ImageViewerWindowController.failureText)
+        #expect(failed.lease == nil && failed.saveButton.isEnabled)
+        // Leaving the channel closes the viewer.
+        h.controller.update(target: .channel(h.second.id), snapshot: nil)
+        #expect(h.controller.imageViewer == nil)
+        await h.close()
     }
 
     private func waitUntil(_ condition: () -> Bool) async -> Bool {

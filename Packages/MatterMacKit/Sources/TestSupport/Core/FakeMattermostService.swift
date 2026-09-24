@@ -21,6 +21,11 @@ public final class FakeMattermostService: MattermostService {
         public var calls: [String] = []
         public var createdPosts: [OutgoingPost] = []
         public var viewedChannels: [ChannelID] = []
+        public var statuses: [UserID: PresenceStatus] = [:]
+        public var executedCommands: [String] = []
+        public var commandHandler: (@Sendable (String) async throws -> CommandResult)?
+        public var savedPreferences: [Preference] = []
+        public var deletedPreferences: [Preference] = []
         public var imageHandler: (@Sendable (ImageResource, Int) async throws -> Data)?
         public var uploadHandler: (@Sendable (UploadSource, ChannelID) async throws -> FileInfo)?
         public var downloadHandler: (@Sendable (FileID, URL) async throws -> Void)?
@@ -76,6 +81,14 @@ public final class FakeMattermostService: MattermostService {
 
     public func logout() async throws(APIError) { record("logout") }
     public func preferences() async throws(APIError) -> [Preference] { record("preferences"); return [] }
+    public func savePreferences(_ preferences: [Preference], me: UserID) async throws(APIError) {
+        record("savePreferences")
+        withState { $0.savedPreferences.append(contentsOf: preferences) }
+    }
+    public func deletePreferences(_ preferences: [Preference], me: UserID) async throws(APIError) {
+        record("deletePreferences")
+        withState { $0.deletedPreferences.append(contentsOf: preferences) }
+    }
     public func teams() async throws(APIError) -> [Team] { record("teams"); return withState { $0.teams } }
     public func teamMemberships() async throws(APIError) -> [TeamMemberWire] { [] }
 
@@ -106,6 +119,17 @@ public final class FakeMattermostService: MattermostService {
 
     public func channelStats(_ id: ChannelID) async throws(APIError) -> ChannelStats { ChannelStats(memberCount: 3, pinnedPostCount: 0) }
 
+    public func channelMembers(_ id: ChannelID, page: Int, perPage: Int) async throws(APIError) -> [User] {
+        record("channelMembers")
+        return withState { state in
+            let all = state.users.values.filter { !$0.isDeactivated }.sorted { $0.username < $1.username }
+            return Array(all.dropFirst(page * perPage).prefix(perPage))
+        }
+    }
+    public func setChannelMarkUnread(_ id: ChannelID, level: MarkUnreadLevel, me: UserID) async throws(APIError) {
+        record("setChannelMarkUnread")
+        withState { $0.memberships[id]?.markUnread = level }
+    }
     public func createDirectChannel(with other: UserID, me: UserID) async throws(APIError) -> Channel {
         let ids = [me.rawValue, other.rawValue].sorted()
         let channel = Channel(id: ChannelID(unchecked: makeID("d")), teamID: nil, type: .direct,
@@ -249,7 +273,30 @@ public final class FakeMattermostService: MattermostService {
     }
 
     public func statuses(ids: [UserID]) async throws(APIError) -> [UserID: PresenceStatus] {
-        Dictionary(uniqueKeysWithValues: ids.map { ($0, PresenceStatus.online) })
+        withState { state in Dictionary(ids.map { ($0, state.statuses[$0] ?? .online) }, uniquingKeysWith: { first, _ in first }) }
+    }
+
+    public func executeCommand(_ command: String, channel: ChannelID, team: TeamID?, rootID: PostID?)
+        async throws(APIError) -> CommandResult {
+        record("executeCommand")
+        withState { $0.executedCommands.append(command) }
+        if let handler = withState({ $0.commandHandler }) { return try await Self.typed { try await handler(command) } }
+        return CommandResult(isEphemeral: true, text: "", gotoLocation: nil)
+    }
+
+    public func setStatus(_ status: PresenceStatus, me: UserID) async throws(APIError) {
+        record("setStatus")
+        withState { $0.statuses[me] = status }
+    }
+
+    public func setCustomStatus(_ status: CustomStatus?, duration: String, me: UserID) async throws(APIError) {
+        record("setCustomStatus")
+        withState { $0.users[me]?.customStatus = status; if $0.me.id == me { $0.me.customStatus = status } }
+    }
+
+    public func users(usernames: [String]) async throws(APIError) -> [User] {
+        record("usernames")
+        return withState { state in state.users.values.filter { usernames.contains($0.username) } }
     }
 
     public func autocompleteUsers(team: TeamID, channel: ChannelID?, name: String, limit: Int)

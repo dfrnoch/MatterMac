@@ -30,8 +30,16 @@ public final class SessionViewModel {
     public var isUnsentRecoveryVisible = false
     public var isSearchVisible = false
     public var isQuickSwitcherVisible = false
+    /// The channel details inspector (members, favorite/mute, leave).
+    public var isChannelInfoVisible = false {
+        didSet { if isChannelInfoVisible, !oldValue, thread != nil || replyTarget != nil { closeThread() } }
+    }
+    /// Bumped after an explicit channel setting change so the inspector reloads.
+    public private(set) var channelInfoRevision: UInt64 = 0
     public var isThreadVisible: Bool { thread != nil }
     public var inlineError: String?
+    /// The latest ephemeral slash-command reply, shown until dismissed.
+    public var commandFeedback: String?
     /// The composer target the user is typing into (channel or thread).
     public private(set) var replyTarget: PostID?
     public var editing: (postID: PostID, originalText: String)?
@@ -66,6 +74,7 @@ public final class SessionViewModel {
             for await snapshot in session.sidebarUpdates {
                 guard let self, !self.requiresAuthentication, !self.isDetached, snapshot.scope == scope else { continue }
                 self.sidebar = snapshot
+                self.app?.updateDockBadge()
                 if let selected = self.selectedChannel,
                    !snapshot.sections.contains(where: { $0.rows.contains(where: { $0.channelID == selected }) }) {
                     self.saveDrafts()
@@ -119,6 +128,12 @@ public final class SessionViewModel {
             for await snapshot in session.searchUpdates {
                 guard let self, !self.requiresAuthentication, !self.isDetached, snapshot.scope == scope else { continue }
                 self.search = snapshot
+            }
+        })
+        subscriptions.append(Task { [weak self] in
+            for await alert in session.alerts {
+                guard let self, !self.isDetached, !self.requiresAuthentication, alert.scope == scope else { continue }
+                self.app?.deliver(alert)
             }
         })
         subscriptions.append(Task { [weak self] in
@@ -211,6 +226,7 @@ public final class SessionViewModel {
         replyTarget = nil
         header = nil
         editing = nil
+        commandFeedback = nil
         navigationTask = Task {
             guard !Task.isCancelled else { return }
             await session.closeThread()
@@ -226,6 +242,7 @@ public final class SessionViewModel {
     public func openThread(root: PostID) {
         guard let channel = selectedChannel else { return }
         threadDraftProvider?.saveDraft()
+        isChannelInfoVisible = false
         replyTarget = root
         Task { await session.openThread(root: root, channel: channel) }
     }
@@ -277,6 +294,85 @@ public final class SessionViewModel {
 
     public func clearSearch() {
         Task { await session.clearSearch() }
+    }
+
+    // MARK: - People and channel details
+
+    public func profile(for user: UserID) async -> UserProfilePresentation? {
+        guard !isDetached, !requiresAuthentication else { return nil }
+        let result = await session.profile(for: user)
+        return isDetached ? nil : result
+    }
+
+    public func profile(username: String) async -> UserProfilePresentation? {
+        guard !isDetached, !requiresAuthentication else { return nil }
+        let result = await session.profile(username: username)
+        return isDetached ? nil : result
+    }
+
+    public func channelDetails(_ id: ChannelID) async throws(UserFacingError) -> ChannelDetailsPresentation {
+        guard !isDetached, !requiresAuthentication else { throw .authenticationRequired }
+        return try await session.channelDetails(id)
+    }
+
+    public func channelMembers(_ id: ChannelID, page: Int) async throws(UserFacingError) -> ChannelMembersPage {
+        guard !isDetached, !requiresAuthentication else { throw .authenticationRequired }
+        return try await session.channelMembers(id, page: page)
+    }
+
+    /// Opens a `~channel` mention when it names a channel the user belongs to.
+    public func openChannel(named name: String) {
+        Task {
+            guard let id = await session.memberChannel(named: name) else {
+                inlineError = String(localized: "You are not a member of ~\(name), or it is not available on this team.")
+                return
+            }
+            select(channel: id)
+        }
+    }
+
+    public func setFavorite(_ channel: ChannelID, _ favorite: Bool) {
+        perform { try await $0.setFavorite(channel, favorite) }
+    }
+
+    public func setMuted(_ channel: ChannelID, _ muted: Bool) {
+        perform { try await $0.setMuted(channel, muted) }
+    }
+
+    public func setCustomStatus(emoji: String, text: String, duration: CustomStatusDuration) {
+        perform { try await $0.setCustomStatus(emoji: emoji, text: text, duration: duration) }
+    }
+
+    public func setStatus(_ status: PresenceStatus) {
+        perform { try await $0.setOwnStatus(status) }
+    }
+
+    /// Leaves after confirmation. Drafts for the channel stay in the unsent-work list.
+    public func leaveChannel(_ channel: ChannelID, displayName: String) {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Leave \(displayName)?")
+        alert.informativeText = String(localized: "You will stop receiving messages from this channel. A private channel can only be rejoined if someone adds you again.")
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        alert.addButton(withTitle: String(localized: "Leave Channel"))
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
+        saveDrafts()
+        perform { [weak self] session in
+            try await session.leaveChannel(channel)
+            self?.isChannelInfoVisible = false
+        }
+    }
+
+    private func perform(_ operation: @escaping @MainActor (ServerSession) async throws -> Void) {
+        guard !isDetached, !requiresAuthentication else { return }
+        Task {
+            do {
+                try await operation(session)
+                channelInfoRevision &+= 1
+            } catch {
+                let error = error as? UserFacingError ?? .unknown
+                if !isDetached, error != .cancelled { inlineError = UserFacingErrorText.describe(error) }
+            }
+        }
     }
 
     public func reconnect() {

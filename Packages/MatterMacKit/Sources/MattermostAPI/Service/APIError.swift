@@ -123,6 +123,7 @@ public enum ServerErrorID {
     public static let editTimeLimit = "api.post.update_post.permissions_time_limit.app_error"
     public static let channelsNotFound = "app.channel.get_channels.not_found.app_error"
     public static let postNotFound = "app.post.get.app_error"
+    public static let commandNotFound = "api.command.execute_command.not_found.app_error"
     public static let deletedChannel = "api.post.create_post.can_not_post_to_deleted.error"
     public static let rootIDInvalid = "api.post.create_post.root_id.app_error"
     public static let townSquareReadOnly = "api.post.create_post.town_square_read_only"

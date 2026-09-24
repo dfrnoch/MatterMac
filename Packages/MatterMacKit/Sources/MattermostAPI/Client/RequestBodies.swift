@@ -73,3 +73,37 @@ enum RequestBodyEncoding {
         }
     }
 }
+
+struct StatusBody: Encodable {
+    let user_id: String
+    let status: String
+}
+
+struct PreferenceBody: Encodable {
+    let user_id: String
+    let category: String
+    let name: String
+    let value: String
+}
+
+struct ChannelNotifyPropsBody: Encodable {
+    let channel_id: String
+    let user_id: String
+    let mark_unread: String
+}
+
+/// `POST /commands/execute`.
+struct ExecuteCommandBody: Encodable {
+    let channel_id: String
+    let team_id: String
+    let root_id: String
+    let command: String
+}
+
+/// `PUT /users/{id}/status/custom`. `expires_at` is RFC 3339; omitted for no expiry.
+struct CustomStatusBody: Encodable {
+    let emoji: String
+    let text: String
+    let duration: String
+    let expires_at: String?
+}

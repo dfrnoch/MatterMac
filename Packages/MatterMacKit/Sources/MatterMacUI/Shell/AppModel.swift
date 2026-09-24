@@ -27,12 +27,19 @@ public final class AppModel {
     /// Increments when the slot list changes (drives the server switcher).
     public private(set) var slotsRevision = 0
     public var isAddingServer = false
+    /// About / Compatibility panel (SPEC §19).
+    public var isCompatibilityVisible = false
     public var lastSignOutMessage: String?
     public private(set) var isReauthenticating = false
     private var isSigningOut = false
     private var didRestore = false
     private var isShuttingDown = false
     public private(set) var canRetrySavedSignIn = false
+    /// Opt-in Notification Center alerts for mentions and direct messages. Kept in
+    /// memory only (SPEC §19); quitting turns them off again.
+    public private(set) var notificationsEnabled = false
+    public var notificationSounds = true
+    @ObservationIgnored let notifications = SystemNotifications()
 
     public init(environment: AppEnvironment) {
         self.environment = environment
@@ -42,6 +49,71 @@ public final class AppModel {
         self.images = ImagePipeline(budget: environment.budget, diagnostics: environment.diagnostics)
         self.loginCoordinator = LoginCoordinator(factory: environment.serviceFactory)
         registry.onChange = { [weak self] in self?.registryChanged() }
+        notifications.onOpen = { [weak self] target in self?.open(target) }
+    }
+
+    // MARK: - Notifications and badge
+
+    /// Enabling asks macOS for permission the first time; nothing is requested at launch.
+    public func setNotificationsEnabled(_ enabled: Bool) async {
+        guard enabled else {
+            notificationsEnabled = false
+            notifications.removeDelivered()
+            return
+        }
+        switch await notifications.requestAuthorization() {
+        case .granted:
+            notificationsEnabled = true
+        case .denied:
+            notificationsEnabled = false
+            activeSession?.inlineError = String(localized: "Notifications are turned off for MatterMac in System Settings › Notifications.")
+        case .unavailable:
+            notificationsEnabled = false
+        }
+    }
+
+    /// Posts a content-free alert: who and where, never the message text.
+    func deliver(_ alert: IncomingMessageAlert) {
+        guard notificationsEnabled, !isShuttingDown, sessionModels.values.contains(where: { $0.scope == alert.scope }) else {
+            return
+        }
+        let title: String
+        let body: String
+        switch alert.kind {
+        case .mention:
+            title = String(localized: "\(alert.senderName) mentioned you")
+            body = String(localized: "in \(alert.channelName)")
+        case .directMessage:
+            title = alert.senderName
+            body = alert.channelName == alert.senderName
+                ? String(localized: "New direct message")
+                : String(localized: "New message in \(alert.channelName)")
+        }
+        notifications.post(title: title, body: body,
+                           target: .init(scope: alert.scope, channel: alert.channelID, root: alert.rootID),
+                           sound: notificationSounds)
+    }
+
+    private func open(_ target: SystemNotifications.Target) {
+        guard let model = sessionModels.values.first(where: { $0.scope == target.scope }), !model.requiresAuthentication
+        else { return }
+        if activeSlotID != model.slot.id { activate(model.slot.id) }
+        model.select(channel: target.channel)
+        if let root = target.root { model.openThread(root: root) }
+    }
+
+    /// Dock badge: total unread mentions across connected sessions.
+    func updateDockBadge() {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let total = sessionModels.values.reduce(0) { sum, model in
+            guard let sidebar = model.sidebar else { return sum }
+            let teams = sidebar.teams.reduce(0) { $0 + $1.mentionCount }
+            let directs = sidebar.sections.filter { $0.kind == .directMessages }.flatMap(\.rows)
+                .reduce(0) { $0 + $1.mentionCount }
+            return sum + teams + directs
+        }
+        let label = total > 0 ? (total > 99 ? "99+" : String(total)) : nil
+        if NSApplication.shared.dockTile.badgeLabel != label { NSApplication.shared.dockTile.badgeLabel = label }
     }
 
     public var slots: [SessionRegistry.Slot] { registry.slots }
@@ -171,6 +243,7 @@ public final class AppModel {
             sessionModels[slot] = nil
         }
         if registry.slots.isEmpty, case .main = phase { phase = .connect }
+        updateDockBadge()
     }
 
     // MARK: - Sign out
@@ -198,6 +271,8 @@ public final class AppModel {
         await images.purge(scope: model.scope)
         let outcome = await registry.remove(slot, revokeServerSession: true)
         lastSignOutMessage = outcome.map(SignOutText.describe)
+        notifications.removeDelivered(scope: model.scope)
+        updateDockBadge()
         return true
     }
 

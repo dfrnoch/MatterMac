@@ -24,8 +24,9 @@ struct SidebarView: View {
                     ForEach(sidebar.sections) { section in
                         Section(sectionTitle(section.kind)) {
                             ForEach(section.rows) { row in
-                                SidebarRow(row: row)
+                                SidebarRow(row: row, session: session)
                                     .tag(row.channelID)
+                                    .contextMenu { rowMenu(row, isFavorite: section.kind == .favorites) }
                             }
                         }
                     }
@@ -46,14 +47,26 @@ struct SidebarView: View {
             .listStyle(.sidebar)
             Divider()
             ConnectionFooter(session: session)
-            Menu("Session") {
-                Button("Review Unsent Work…") { session.isUnsentRecoveryVisible = true }
-                Button("Copy Unsent Text") { session.copyUnsentText() }
-                    .disabled(session.isCopyingUnsentText)
-                Divider()
-                Button("Sign Out…") { Task { await app.signOut(session.slot.id) } }
-            }
-            .controlSize(.small).padding(.horizontal, 10).padding(.bottom, 8)
+            AccountBar(app: app, session: session)
+                .padding(.horizontal, 10).padding(.bottom, 8)
+        }
+    }
+
+    @ViewBuilder private func rowMenu(_ row: SidebarChannelRow, isFavorite: Bool) -> some View {
+        Button("Channel Info") {
+            session.select(channel: row.channelID)
+            session.isChannelInfoVisible = true
+        }
+        Divider()
+        Button(isFavorite ? "Remove from Favorites" : "Add to Favorites") {
+            session.setFavorite(row.channelID, !isFavorite)
+        }
+        if !row.isArchived {
+            Button(row.isMuted ? "Unmute" : "Mute") { session.setMuted(row.channelID, !row.isMuted) }
+        }
+        if row.type == .open || row.type == .private {
+            Divider()
+            Button("Leave Channel…") { session.leaveChannel(row.channelID, displayName: row.displayName) }
         }
     }
 
@@ -66,17 +79,88 @@ struct SidebarView: View {
     }
 }
 
+/// The signed-in account: picture, presence, custom status, and session actions.
+/// Changing the status is an explicit server change visible to other users.
+struct AccountBar: View {
+    let app: AppModel
+    let session: SessionViewModel
+    @State private var isProfileVisible = false
+    @State private var isCustomStatusVisible = false
+
+    var body: some View {
+        let user = session.slot.user
+        let status = session.sidebar?.myStatus
+        HStack(spacing: 8) {
+            Button { isProfileVisible = true } label: {
+                ProfileAvatar(session: session, userID: user.id, revision: user.lastPictureUpdate.milliseconds,
+                              name: user.username, size: 26, status: status)
+            }
+            .buttonStyle(.plain)
+            .help("View your profile")
+            .accessibilityLabel("Your profile")
+            .popover(isPresented: $isProfileVisible) {
+                UserProfileCard(session: session, lookup: .id(user.id)) { isProfileVisible = false }
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(verbatim: "@" + user.username).font(.callout.weight(.medium)).lineLimit(1)
+                if let custom = session.sidebar?.myCustomStatus, custom.isVisible(at: .now) {
+                    Text(verbatim: [custom.emoji.isEmpty ? "" : EmojiText.display(custom.emoji), custom.text]
+                        .filter { !$0.isEmpty }.joined(separator: " "))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                } else if let status {
+                    Text(status.label).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 4)
+            Menu {
+                Section("Status") {
+                    ForEach(PresenceStatus.selectable, id: \.self) { option in
+                        Toggle(option.label, isOn: Binding(get: { status == option },
+                                                            set: { if $0 { session.setStatus(option) } }))
+                    }
+                    Button("Set Custom Status…") { isCustomStatusVisible = true }
+                }
+                Section("Notifications") {
+                    Toggle("Show Notifications", isOn: Binding(get: { app.notificationsEnabled },
+                                                               set: { value in Task { await app.setNotificationsEnabled(value) } }))
+                    Toggle("Play Sound", isOn: Binding(get: { app.notificationSounds }, set: { app.notificationSounds = $0 }))
+                        .disabled(!app.notificationsEnabled)
+                }
+                Divider()
+                Button("Review Unsent Work…") { session.isUnsentRecoveryVisible = true }
+                Button("Copy Unsent Text") { session.copyUnsentText() }
+                    .disabled(session.isCopyingUnsentText)
+                Divider()
+                Button("About MatterMac") { app.isCompatibilityVisible = true }
+                Button("Sign Out…") { Task { await app.signOut(session.slot.id) } }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Status and session")
+            .accessibilityLabel("Status and session")
+            .sheet(isPresented: $isCustomStatusVisible) {
+                CustomStatusView(session: session, current: session.sidebar?.myCustomStatus)
+            }
+        }
+    }
+}
+
 struct SidebarRow: View {
     let row: SidebarChannelRow
+    let session: SessionViewModel
 
     var body: some View {
         HStack(spacing: 6) {
             icon
-                .frame(width: 16)
+                .frame(width: row.partnerID == nil ? 16 : 20)
             Text(row.displayName)
                 .fontWeight(row.isUnread ? .semibold : .regular)
                 .foregroundStyle(row.isArchived || row.isMuted ? .secondary : .primary)
                 .lineLimit(1)
+                .help(row.partnerUsername.map { "@" + $0 } ?? row.displayName)
             Spacer(minLength: 4)
             if row.mentionCount > 0 {
                 Text(row.mentionCount > 99 ? "99+" : "\(row.mentionCount)")
@@ -94,9 +178,12 @@ struct SidebarRow: View {
     @ViewBuilder private var icon: some View {
         switch row.type {
         case .direct:
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
+            if let partner = row.partnerID {
+                ProfileAvatar(session: session, userID: partner, revision: row.partnerAvatarRevision,
+                              name: row.displayName, size: 20, status: row.partnerStatus ?? .offline)
+            } else {
+                Circle().fill(statusColor).frame(width: 8, height: 8)
+            }
         case .group:
             Image(systemName: "person.2").foregroundStyle(.secondary)
         case .private:

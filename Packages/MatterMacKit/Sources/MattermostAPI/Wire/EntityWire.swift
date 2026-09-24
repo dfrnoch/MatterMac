@@ -93,8 +93,10 @@ public struct UserWire: Decodable, Sendable {
     public let user: User
     enum Keys: String, CodingKey {
         case id, username, first_name, last_name, nickname, position, is_bot, delete_at, last_picture_update
-        case locale, roles
+        case locale, roles, email, timezone, props
     }
+    enum TimeZoneKeys: String, CodingKey { case useAutomaticTimezone, automaticTimezone, manualTimezone }
+    enum PropKeys: String, CodingKey { case customStatus }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         let username = c.lenientString(.username, maxBytes: 128) ?? ""
@@ -112,7 +114,47 @@ public struct UserWire: Decodable, Sendable {
             deleteAt: c.timestamp(.delete_at),
             lastPictureUpdate: c.timestamp(.last_picture_update),
             locale: String((c.lenientString(.locale) ?? "").prefix(16)),
-            roles: (c.lenientString(.roles, maxBytes: 1_024) ?? "").split(separator: " ").prefix(32).map(String.init))
+            roles: (c.lenientString(.roles, maxBytes: 1_024) ?? "").split(separator: " ").prefix(32).map(String.init),
+            email: String((c.lenientString(.email, maxBytes: 320) ?? "").prefix(320)),
+            timeZoneIdentifier: Self.timeZone(c),
+            customStatus: Self.customStatus(c))
+    }
+
+    private static func timeZone(_ c: KeyedDecodingContainer<Keys>) -> String? {
+        guard let zone = try? c.nestedContainer(keyedBy: TimeZoneKeys.self, forKey: .timezone) else { return nil }
+        let automatic = zone.lenientBool(.useAutomaticTimezone) ?? true
+        let value = zone.lenientString(automatic ? .automaticTimezone : .manualTimezone, maxBytes: 64) ?? ""
+        return value.isEmpty ? nil : value
+    }
+
+    /// `props.customStatus` is itself a JSON string (docs/research/channels.md §6).
+    private static func customStatus(_ c: KeyedDecodingContainer<Keys>) -> CustomStatus? {
+        guard let props = try? c.nestedContainer(keyedBy: PropKeys.self, forKey: .props),
+              let raw = try? props.decodeIfPresent(String.self, forKey: .customStatus),
+              !raw.isEmpty, raw.utf8.count <= 2_048,
+              let wire = try? WireJSON.decoder().decode(CustomStatusWire.self, from: Data(raw.utf8))
+        else { return nil }
+        let status = CustomStatus(emoji: String(wire.emoji.prefix(80)), text: String(wire.text.prefix(128)),
+                                  expiresAt: wire.duration.isEmpty ? nil : wire.expiresAt)
+        return status.emoji.isEmpty && status.text.isEmpty ? nil : status
+    }
+}
+
+struct CustomStatusWire: Decodable {
+    let emoji: String
+    let text: String
+    let duration: String
+    let expiresAt: Date?
+    enum Keys: String, CodingKey { case emoji, text, duration, expires_at }
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        emoji = c.lenientString(.emoji, maxBytes: 256) ?? ""
+        text = c.lenientString(.text, maxBytes: 512) ?? ""
+        duration = c.lenientString(.duration, maxBytes: 32) ?? ""
+        // The zero Go time ("0001-01-01T00:00:00Z") means "no expiry".
+        let raw = c.lenientString(.expires_at, maxBytes: 64) ?? ""
+        let date = (try? Date(raw, strategy: .iso8601)) ?? (try? Date(raw, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
+        expiresAt = date.flatMap { $0.timeIntervalSince1970 > 0 ? $0 : nil }
     }
 }
 
@@ -250,6 +292,9 @@ public struct ClientConfigWire: Decodable, Sendable {
     public let typingIntervalMilliseconds: Int?
     public let enableUserTypingMessages: Bool?
     public let websocketURL: String?
+    /// `TeammateNameDisplay` (`username`, `nickname_full_name`, `full_name`).
+    public let teammateNameDisplay: String?
+    public let lockTeammateNameDisplay: Bool?
 
     enum Keys: String, CodingKey {
         case Version, BuildNumber, SiteName, EnableSignInWithEmail, EnableSignInWithUsername, EnableLdap
@@ -259,6 +304,7 @@ public struct ClientConfigWire: Decodable, Sendable {
         case EnableFileAttachments, EnableCustomEmoji, EnableUserAccessTokens, PostEditTimeLimit
         case UniqueEmojiReactionLimitPerPost, ExperimentalTownSquareIsReadOnly
         case TimeBetweenUserTypingUpdatesMilliseconds, EnableUserTypingMessages, WebsocketURL
+        case TeammateNameDisplay, LockTeammateNameDisplay
     }
 
     public init(from decoder: any Decoder) throws {
@@ -300,5 +346,20 @@ public struct ClientConfigWire: Decodable, Sendable {
         typingIntervalMilliseconds = int(.TimeBetweenUserTypingUpdatesMilliseconds)
         enableUserTypingMessages = bool(.EnableUserTypingMessages)
         websocketURL = c.lenientString(.WebsocketURL, maxBytes: 2_048).flatMap { $0.isEmpty ? nil : $0 }
+        teammateNameDisplay = c.lenientString(.TeammateNameDisplay, maxBytes: 32).flatMap { $0.isEmpty ? nil : $0 }
+        lockTeammateNameDisplay = bool(.LockTeammateNameDisplay)
+    }
+}
+
+public struct CommandResponseWire: Decodable, Sendable {
+    public let result: CommandResult
+    enum Keys: String, CodingKey { case response_type, text, goto_location }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        let type = c.lenientString(.response_type, maxBytes: 32) ?? ""
+        let goto = c.lenientString(.goto_location, maxBytes: 2_048) ?? ""
+        result = CommandResult(isEphemeral: type != "in_channel",
+                               text: String((c.lenientString(.text, maxBytes: 16_384) ?? "").prefix(4_000)),
+                               gotoLocation: goto.isEmpty ? nil : goto)
     }
 }

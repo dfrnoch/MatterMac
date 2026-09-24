@@ -73,14 +73,19 @@ struct LiveConversationTests {
             let fileID = try #require(received.files.first(where: { $0.fileExtension == "txt" })?.id)
             try await b.session.downloadAttachment(fileID, channel: channel, to: destination)
             #expect(try Data(contentsOf: destination) == payload)
-            let imageID = try #require(received.files.first(where: { $0.fileExtension == "png" })?.id)
+            let imageFile = try #require(received.files.first(where: { $0.fileExtension == "png" }))
+            let imageID = imageFile.id
+            // Mattermost generates a preview rendition for uploaded raster images; the
+            // timeline thumbnail uses it (`/files/{id}/preview`).
+            #expect(imageFile.hasPreviewImage)
+            #expect(TimelineImageRequest.attachment(imageFile) == .preview(imageID))
             let receiver = try await pane(b, channel: channel)
             for window in windows {
                 window.contentView?.layoutSubtreeIfNeeded()
                 window.displayIfNeeded()
             }
-            try await wait { receiver.displayedImages[.thumbnail(imageID)] != nil }
-            let preview = try #require(receiver.displayedImages[.thumbnail(imageID)]?.lease)
+            try await wait { receiver.displayedImages[.attachment(imageFile)] != nil }
+            let preview = try #require(receiver.displayedImages[.attachment(imageFile)]?.lease)
             #expect(preview.image.width > 0 && preview.image.width <= bob.environment.budget.maximumImagePixelDimension)
             #expect(preview.image.height > 0 && preview.image.height <= bob.environment.budget.maximumImagePixelDimension)
             try await b.session.downloadAttachment(imageID, channel: channel, to: destination)

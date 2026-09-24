@@ -105,8 +105,11 @@ public final class ComposerViewController: NSViewController {
     private let scrollView = NSScrollView()
     private let inputBox = NSBox()
     private let placeholderLabel = PassthroughLabel(labelWithString: "")
-    let sendButton = NSButton()
-    let attachButton = NSButton()
+    let sendButton = ComposerIconButton()
+    let attachButton = ComposerIconButton()
+    /// Both icon buttons are exactly as tall as the one-line input box and bottom-aligned
+    /// with it: centered on a single line, beside the last line when the box grows.
+    private var iconButtonHeightConstraints: [NSLayoutConstraint] = []
     public var isAttachmentSelectionAllowed = true { didSet { updateSendButton() } }
     private let bannerView = NSStackView()
     private let bannerIcon = NSImageView()
@@ -127,6 +130,7 @@ public final class ComposerViewController: NSViewController {
     private static let outerInsets = NSEdgeInsets(top: 6, left: 10, bottom: 8, right: 10)
     private static let boxInsets = NSSize(width: 8, height: 3)
     private static let sendButtonSize: CGFloat = 28
+    private static let attachButtonWidth: CGFloat = 24
 
     public init(budget: ResourceBudget = .standard, diagnostics: DiagnosticRing? = nil) {
         self.budget = budget
@@ -242,6 +246,15 @@ public final class ComposerViewController: NSViewController {
         attachButton.action = #selector(chooseFiles(_:))
         attachButton.setAccessibilityLabel("Attach Files")
         attachButton.toolTip = "Attach Files"
+        attachButton.title = ""
+        attachButton.imagePosition = .imageOnly
+        attachButton.contentTintColor = .secondaryLabelColor
+        attachButton.translatesAutoresizingMaskIntoConstraints = false
+        attachButton.widthAnchor.constraint(equalToConstant: Self.attachButtonWidth).isActive = true
+        iconButtonHeightConstraints = [attachButton, sendButton].map {
+            $0.heightAnchor.constraint(equalToConstant: singleLineBoxHeight)
+        }
+        NSLayoutConstraint.activate(iconButtonHeightConstraints)
         let inputRow = NSStackView(views: [attachButton, inputBox, sendButton])
         inputRow.orientation = .horizontal
         inputRow.alignment = .bottom
@@ -358,10 +371,7 @@ public final class ComposerViewController: NSViewController {
         sendButton.target = self
         sendButton.action = #selector(sendButtonPressed(_:))
         sendButton.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            sendButton.widthAnchor.constraint(equalToConstant: Self.sendButtonSize),
-            sendButton.heightAnchor.constraint(equalToConstant: Self.sendButtonSize),
-        ])
+        sendButton.widthAnchor.constraint(equalToConstant: Self.sendButtonSize).isActive = true
     }
 
     private func configureBanner() {
@@ -547,6 +557,13 @@ public final class ComposerViewController: NSViewController {
         return textView.layoutManager?.defaultLineHeight(for: font) ?? ceil(font.ascender - font.descender + font.leading)
     }
 
+    /// Input box height for a text area of `inputHeight`: content margins plus border.
+    private func boxHeight(forInputHeight inputHeight: CGFloat) -> CGFloat {
+        inputHeight + Self.boxInsets.height * 2 + 2
+    }
+
+    private var singleLineBoxHeight: CGFloat { boxHeight(forInputHeight: minimumInputHeight) }
+
     private var minimumInputHeight: CGFloat {
         ceil(lineHeight + textView.textContainerInset.height * 2)
     }
@@ -573,8 +590,12 @@ public final class ComposerViewController: NSViewController {
         guard isViewLoaded else { return }
         let inputHeight = desiredInputHeight()
         if inputHeightConstraint?.constant != inputHeight { inputHeightConstraint?.constant = inputHeight }
+        let buttonHeight = singleLineBoxHeight
+        for constraint in iconButtonHeightConstraints where constraint.constant != buttonHeight {
+            constraint.constant = buttonHeight
+        }
         let insets = Self.outerInsets
-        var sections: [CGFloat] = [max(inputHeight + Self.boxInsets.height * 2 + 2, Self.sendButtonSize)]
+        var sections: [CGFloat] = [boxHeight(forInputHeight: inputHeight)]
         if !bannerView.isHidden { sections.append(Self.bannerHeight) }
         if !attachmentStrip.isHidden { sections.append(ComposerAttachmentStrip.height) }
         if !statusRow.isHidden { sections.append(Self.statusHeight) }
@@ -732,4 +753,11 @@ final class ComposerRootView: NSView {
 /// text view underneath.
 final class PassthroughLabel: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+/// Borderless icon button whose layout rect is its frame. `NSButton`'s default
+/// alignment-rect insets for symbol images shifted the paperclip and send icons
+/// below the input box's center under stack-view bottom alignment.
+final class ComposerIconButton: NSButton {
+    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
 }

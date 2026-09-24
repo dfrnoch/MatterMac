@@ -132,6 +132,9 @@ final class MessageBodyTextView: NSTextView {
         switch event.keyCode {
         case 36, 76: // Return, keypad Enter
             if host?.handleReturnKey() == true { return }
+        case 49 where selectedRange().length == 0
+            && event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty:
+            if host?.handleSpaceKey() == true { return } // Space: preview the row's image
         case 53: // Escape
             setSelectedRange(NSRange(location: 0, length: 0))
             if host?.handleEscapeKey() == true { return }

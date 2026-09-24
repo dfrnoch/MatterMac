@@ -1,4 +1,5 @@
 import AppKit
+import MatterMacModels
 import MatterMacCore
 import MattermostAPI
 
@@ -14,6 +15,7 @@ extension ConversationController {
         switch request {
         case .avatar(let user, let revision): resource = .profileImage(user, revision: revision); points = TimelineMetrics.avatarSize
         case .thumbnail(let file): resource = .fileThumbnail(file); points = TimelineMetrics.maximumThumbnailSize.width
+        case .preview(let file): resource = .filePreview(file); points = TimelineMetrics.maximumThumbnailSize.width
         }
         let pixels = Int((points * (view.window?.backingScaleFactor ?? 2)).rounded(.up))
         let generation = imageGeneration, channel = target.channelID, session = model.session
@@ -38,7 +40,29 @@ extension ConversationController {
         displayedImages[request] = nil
     }
 
+    /// Opens (or replaces) the in-memory viewer for an image attachment. The preview
+    /// is fetched through the same bounded pipeline and membership checks as
+    /// thumbnails; the lease is released when the viewer closes.
+    func showImageViewer(for file: FileInfo) {
+        guard file.isImage, let model, !model.isDetached, let pipeline = model.app?.images else { return }
+        imageViewer?.close()
+        let viewer = ImageViewerWindowController(file: file)
+        viewer.onSave = { [weak self] file, window in self?.saveAttachment(file, in: window) }
+        viewer.onClose = { [weak self, weak viewer] in
+            guard let self, imageViewer === viewer else { return }
+            imageViewer = nil
+        }
+        imageViewer = viewer
+        let session = model.session, channel = target.channelID
+        let resource: MattermostAPI.ImageResource = file.hasPreviewImage ? .filePreview(file.id) : .fileThumbnail(file.id)
+        viewer.show(over: view.window, budget: environment.budget) { [weak model] pixels in
+            guard model?.isDetached == false else { return nil }
+            return await session.timelineImage(resource, channel: channel, maxPixelSize: pixels, pipeline: pipeline)
+        }
+    }
+
     func clearImages() {
+        imageViewer?.close()
         imageGeneration &+= 1
         // Cells release their NSImage before the final budget lease is released.
         timeline.clearDisplayedImages()

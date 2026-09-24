@@ -23,9 +23,15 @@ nonisolated public enum TimelineAction: Hashable, Sendable {
     /// delegate opens it (for example through the platform's external-navigation
     /// adapter); the timeline never opens links itself.
     case openLink(SafeLink)
+    /// Explicitly save an attachment (file chips, "Save Attachment…").
     case openFile(FileInfo)
+    /// Show an image attachment larger (thumbnail click, Space on the selected row,
+    /// accessibility press). The delegate fetches a bounded in-memory preview.
+    case previewImage(FileInfo)
     /// Expand a collapsed long message.
     case expand(PostID)
+    /// An author's avatar or name was clicked, or "View Profile" was chosen.
+    case showProfile(UserID)
     /// A `@username` mention was clicked (username without "@").
     case mentionTapped(String)
     /// A `~channel` mention was clicked (channel name without "~").
@@ -39,7 +45,16 @@ nonisolated public enum TimelineAction: Hashable, Sendable {
 nonisolated public enum TimelineImageRequest: Hashable, Sendable {
     /// `revision` is the author's `avatarRevision` (server `last_picture_update`).
     case avatar(UserID, revision: Int64)
+    /// The server's small thumbnail rendition (used only when no preview exists).
     case thumbnail(FileID)
+    /// The server's preview rendition, downsampled to the thumbnail box.
+    case preview(FileID)
+
+    /// The rendition for an image attachment's timeline thumbnail: the server preview
+    /// when one exists (the ~120 px thumbnail is blurry at 360 pt on Retina).
+    public static func attachment(_ file: FileInfo) -> TimelineImageRequest {
+        file.hasPreviewImage ? .preview(file.id) : .thumbnail(file.id)
+    }
 }
 
 /// Public layout constants other modules need (image downsampling targets).

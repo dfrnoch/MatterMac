@@ -45,14 +45,14 @@ extension ServerSession {
             directory.upsertUser(fetched)
         }
         guard let value = directory.peekUser(user) else { return nil }
-        if directory.status(of: user) == nil,
-           let statuses = try? await service.statuses(ids: [user]), let status = statuses[user] {
+        // Other users' presence is only polled; refresh it when a profile is opened.
+        if let statuses = try? await service.statuses(ids: [user]), let status = statuses[user] {
             guard self.epoch == epoch, isActiveSessionAlive else { return nil }
             directory.setStatus(status, for: user)
         }
         guard self.epoch == epoch, isActiveSessionAlive else { return nil }
         return UserProfilePresentation(user: value, displayName: directory.nameFormat.displayName(for: value),
-                                       status: directory.status(of: user))
+                                       status: directory.status(of: user), isCurrentUser: user == me.id)
     }
 
     // MARK: - Presence
@@ -76,8 +76,9 @@ extension ServerSession {
     }
 
     func presenceCandidates() -> [UserID] {
-        var ids: [UserID] = []
-        var seen = Set<UserID>()
+        // The signed-in user first: `status_change` only reports later changes.
+        var ids: [UserID] = [me.id]
+        var seen: Set<UserID> = [me.id]
         for channel in directory.channels.values where channel.type == .direct {
             if let partner = channel.directPartner(of: me.id), seen.insert(partner).inserted { ids.append(partner) }
             if ids.count >= 150 { break }
@@ -213,6 +214,14 @@ extension ServerSession {
                 .prefix(8)
                 .map { CompletionCandidate(kind: .channel, id: $0.id.rawValue, title: "~" + $0.name,
                                            subtitle: $0.displayName, insertion: "~" + $0.name) }
+        case ":":
+            // System (Unicode) emoji from the static catalog only: exact, then prefix,
+            // then substring matches. Custom emoji are not offered. `subtitle` carries
+            // the glyph; the UI shows it in the leading slot.
+            return EmojiCatalog.system.search(needle, limit: 8).map { match in
+                CompletionCandidate(kind: .special, id: match.matchedName, title: ":" + match.matchedName + ":",
+                                    subtitle: match.emoji.glyph, insertion: ":" + match.matchedName + ":")
+            }
         default:
             return []
         }

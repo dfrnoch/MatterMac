@@ -40,7 +40,6 @@ struct MainWindowView: View {
                     .background(Color.secondary.opacity(0.1))
                     .accessibilityIdentifier("sessionNotice")
                 }
-                ChannelHeaderView(header: session.header, session: session).padding(12)
                 if let header = session.header {
                     if header.canPost == false {
                         Text("This channel is read-only. Your draft is kept in this session.").font(.callout).padding(8)
@@ -50,6 +49,22 @@ struct MainWindowView: View {
                              : "File attachment availability has not been confirmed by the server.")
                             .font(.caption).foregroundStyle(.secondary).padding(8)
                     }
+                }
+                if let feedback = session.commandFeedback {
+                    HStack(alignment: .firstTextBaseline) {
+                        Image(systemName: "terminal").foregroundStyle(.secondary).accessibilityHidden(true)
+                        Text(verbatim: feedback)
+                            .font(.callout)
+                            .lineLimit(6)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Button("Dismiss") { session.commandFeedback = nil }
+                    }
+                    .padding(8)
+                    .background(Color.secondary.opacity(0.08))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Command reply: \(feedback)")
                 }
                 if let error = session.inlineError {
                     HStack {
@@ -62,7 +77,7 @@ struct MainWindowView: View {
                 if let channel = session.selectedChannel {
                     HSplitView {
                         ConversationView(session: session, target: .channel(channel), snapshot: session.timeline)
-                            .frame(minWidth: 320)
+                            .frame(minWidth: 300)
                         if let thread = session.thread {
                             VStack(spacing: 0) {
                                 HStack {
@@ -71,7 +86,17 @@ struct MainWindowView: View {
                                     Button("Close") { session.closeThread() }
                                 }.padding(12)
                                 ConversationView(session: session, target: thread.target, snapshot: thread)
-                            }.frame(minWidth: 280, idealWidth: 360)
+                            }.frame(minWidth: 240, idealWidth: 360)
+                        } else if session.isChannelInfoVisible {
+                            // The single optional trailing panel (SPEC §4): details or thread.
+                            VStack(spacing: 0) {
+                                HStack {
+                                    Text("Channel Info").font(.headline)
+                                    Spacer()
+                                    Button("Close") { session.isChannelInfoVisible = false }
+                                }.padding(12)
+                                ChannelInfoView(session: session, channel: channel).id(channel)
+                            }.frame(minWidth: 240, idealWidth: 320)
                         }
                     }
                 } else {
@@ -80,6 +105,29 @@ struct MainWindowView: View {
                 }
             }
         }
+        .navigationTitle(ChannelHeaderText.title(session.header))
+        .navigationSubtitle(ChannelHeaderText.subtitle(session.header))
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                ChannelHeaderAccessories(header: session.header, session: session)
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button { session.isQuickSwitcherVisible = true } label: {
+                    Label("Quick Switcher", systemImage: "arrow.left.arrow.right.square")
+                }
+                .help("Switch to a channel or person (⌘K)")
+                Button { session.isSearchVisible = true } label: {
+                    Label("Search", systemImage: "magnifyingglass")
+                }
+                .help("Search messages on the server (⌘F)")
+                Toggle(isOn: $session.isChannelInfoVisible) {
+                    Label("Channel Info", systemImage: "info.circle")
+                }
+                .help("Show channel details and members (⇧⌘I)")
+                .disabled(session.selectedChannel == nil)
+            }
+        }
+        .focusedSceneValue(\.matterMacSession, session)
         .sheet(isPresented: $session.isQuickSwitcherVisible) { QuickSwitcherView(session: session) }
         .sheet(isPresented: $session.isSearchVisible) { SearchPanel(session: session) }
         .sheet(isPresented: $session.isUnsentRecoveryVisible) { UnsentRecoveryView(session: session) }

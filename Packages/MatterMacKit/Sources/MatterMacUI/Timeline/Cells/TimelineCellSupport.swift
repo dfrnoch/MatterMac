@@ -22,6 +22,10 @@ protocol TimelineCellHost: AnyObject {
     func handleEscapeKey() -> Bool
     func forwardKeyToTable(_ event: NSEvent)
     func contextMenu(for textView: NSTextView, event: NSEvent, link: URL?) -> NSMenu?
+    /// The row's context menu for a non-text element, after `leadingItems`.
+    func contextMenu(forRowContaining view: NSView, leadingItems: [NSMenuItem]) -> NSMenu?
+    /// Space on the selected row previews its first image. Returns `false` if none.
+    func handleSpaceKey() -> Bool
     var renderer: MessageRenderer { get }
     var rowMetrics: TimelineRowMetrics { get }
 }
@@ -73,7 +77,33 @@ final class TimelineLabel: NSView {
         needsDisplay = true
     }
 
-    override func accessibilityLabel() -> String? { nil }
+    override func accessibilityLabel() -> String? { onPress == nil ? nil : attributedText.string }
+
+    /// Optional click action (author names open the profile card).
+    var onPress: (() -> Void)? {
+        didSet {
+            setAccessibilityRole(onPress == nil ? .staticText : .button)
+            window?.invalidateCursorRects(for: self)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if onPress == nil { super.mouseDown(with: event) }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let onPress else { return super.mouseUp(with: event) }
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onPress() }
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        onPress?()
+        return onPress != nil
+    }
+
+    override func resetCursorRects() {
+        if onPress != nil { addCursorRect(bounds, cursor: .pointingHand) }
+    }
 }
 
 /// 32 pt round avatar: the image when available, otherwise initials on a stable tint.
@@ -81,6 +111,13 @@ final class AvatarView: NSView {
     var image: NSImage? { didSet { needsDisplay = true } }
     var initials = "" { didSet { needsDisplay = true } }
     var tint: NSColor = .systemGray { didSet { needsDisplay = true } }
+    /// Optional click action (opens the author's profile card).
+    var onPress: (() -> Void)? {
+        didSet {
+            setAccessibilityRole(onPress == nil ? .image : .button)
+            window?.invalidateCursorRects(for: self)
+        }
+    }
 
     override var isFlipped: Bool { true }
 
@@ -92,6 +129,24 @@ final class AvatarView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func mouseDown(with event: NSEvent) {
+        if onPress == nil { super.mouseDown(with: event) }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let onPress else { return super.mouseUp(with: event) }
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onPress() }
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        onPress?()
+        return onPress != nil
+    }
+
+    override func resetCursorRects() {
+        if onPress != nil { addCursorRect(bounds, cursor: .pointingHand) }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let circle = NSBezierPath(ovalIn: bounds)
@@ -124,10 +179,31 @@ final class AvatarView: NSView {
 }
 
 /// Base for custom-drawn clickable elements (reaction chips, file chips, thumbnails):
-/// click and accessibility press both invoke `onPress`.
+/// click, accessibility press, and Return/Space (when Full Keyboard Access lets the
+/// element take focus) invoke `onPress`.
 class TimelinePressableView: NSView {
     var onPress: (() -> Void)?
     private var isPressed = false { didSet { needsDisplay = true } }
+
+    override var acceptsFirstResponder: Bool {
+        guard onPress != nil, NSApplication.shared.isFullKeyboardAccessEnabled else { return false }
+        // Keyboard focus traversal only: a click keeps focus (and arrow keys) on the timeline.
+        return NSApplication.shared.currentEvent?.type != .leftMouseDown
+    }
+    override var canBecomeKeyView: Bool { acceptsFirstResponder }
+    override var focusRingMaskBounds: NSRect { bounds }
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: bounds, xRadius: min(6, bounds.height / 2), yRadius: min(6, bounds.height / 2)).fill()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        let modified = !event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
+        if !modified, [36, 76, 49].contains(event.keyCode), let onPress { // Return, Enter, Space
+            onPress()
+            return
+        }
+        super.keyDown(with: event)
+    }
 
     override var isFlipped: Bool { true }
 
@@ -159,6 +235,19 @@ class TimelinePressableView: NSView {
 
     var pressedAlpha: CGFloat { isPressed ? 0.6 : 1 }
 
+    /// Draws `body` at the pressed opacity through a transparency layer. Never call
+    /// `withAlphaComponent` on a `TimelinePalette` color for this: it *replaces* the
+    /// palette's translucent alpha (a 10 % label tint became opaque white in Dark Mode).
+    func drawAtPressedOpacity(_ body: () -> Void) {
+        guard pressedAlpha < 1, let context = NSGraphicsContext.current?.cgContext else { return body() }
+        context.saveGState()
+        context.setAlpha(pressedAlpha)
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        body()
+        context.endTransparencyLayer()
+        context.restoreGState()
+    }
+
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         needsDisplay = true
@@ -172,12 +261,40 @@ class TimelinePressableView: NSView {
     }
 }
 
+/// Measurement shared by row layout (`TimelineRowMetrics.reactionChipWidth`) and the
+/// chip's drawing, so the reserved frame always fits what is drawn.
+struct ReactionChipMetrics: Equatable {
+    /// Leading/trailing inset; wide enough that the emoji clears the pill's rounded cap.
+    static let horizontalPadding: CGFloat = 9
+    static let spacing: CGFloat = 4
+
+    /// Advance width of the emoji or `:name:` fallback, or its ink width if wider.
+    let emojiWidth: CGFloat
+    /// Horizontal offset of the emoji's ink from its origin (negative: ink starts left
+    /// of the origin, as some Apple Color Emoji glyphs do).
+    let emojiInkMinX: CGFloat
+    let countWidth: CGFloat
+
+    init(emoji: String, count: String, fonts: TimelineFonts) {
+        let emojiText = NSAttributedString(string: emoji, attributes: [.font: fonts.body])
+        let ink = emoji.isEmpty ? .zero : emojiText.boundingRect(
+            with: NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesDeviceMetrics])
+        emojiInkMinX = min(0, floor(ink.minX))
+        emojiWidth = max(DrawnText.width(of: emojiText), ceil(ink.maxX) - emojiInkMinX)
+        countWidth = DrawnText.width(of: NSAttributedString(string: count, attributes: [.font: fonts.metaBold]))
+    }
+
+    var width: CGFloat { ceil(2 * Self.horizontalPadding + emojiWidth + Self.spacing + countWidth) }
+}
+
 final class ReactionChipView: TimelinePressableView {
-    var emoji = ""
-    var countText = ""
-    var isSelectedByCurrentUser = false
-    var emojiFont: NSFont = .systemFont(ofSize: 13)
-    var countFont: NSFont = .systemFont(ofSize: 11, weight: .semibold)
+    private(set) var emoji = ""
+    private(set) var countText = ""
+    private(set) var isSelectedByCurrentUser = false
+    private var emojiFont: NSFont = .systemFont(ofSize: 13)
+    private var countFont: NSFont = .systemFont(ofSize: 11, weight: .semibold)
+    private(set) var metrics: ReactionChipMetrics?
 
     func configure(emoji: String, count: Int, includesCurrentUser: Bool, fonts: TimelineFonts) {
         self.emoji = emoji
@@ -185,31 +302,42 @@ final class ReactionChipView: TimelinePressableView {
         self.isSelectedByCurrentUser = includesCurrentUser
         self.emojiFont = fonts.body
         self.countFont = fonts.metaBold
+        metrics = ReactionChipMetrics(emoji: emoji, count: countText, fonts: fonts)
         needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: bounds.height / 2,
-                                yRadius: bounds.height / 2)
-        (isSelectedByCurrentUser ? TimelinePalette.reactionSelectedBackground : TimelinePalette.reactionBackground)
-            .withAlphaComponent(pressedAlpha).setFill()
-        path.fill()
-        if isSelectedByCurrentUser {
-            TimelinePalette.reactionSelectedBorder.setStroke()
+        guard let metrics else { return }
+        drawAtPressedOpacity {
+            let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: (bounds.height - 1) / 2,
+                                    yRadius: (bounds.height - 1) / 2)
+            (isSelectedByCurrentUser ? TimelinePalette.reactionSelectedBackground : TimelinePalette.reactionBackground)
+                .setFill()
+            path.fill()
+            (isSelectedByCurrentUser ? TimelinePalette.reactionSelectedBorder : TimelinePalette.reactionBorder).setStroke()
             path.lineWidth = 1
             path.stroke()
+            let emojiText = NSAttributedString(string: emoji, attributes: [
+                .font: emojiFont, .foregroundColor: NSColor.labelColor,
+            ])
+            let countText = NSAttributedString(string: countText, attributes: [
+                .font: countFont,
+                .foregroundColor: isSelectedByCurrentUser ? TimelinePalette.reactionSelectedCount
+                                                          : TimelinePalette.reactionCount,
+            ])
+            var x = ReactionChipMetrics.horizontalPadding
+            emojiText.draw(at: NSPoint(x: x - metrics.emojiInkMinX, y: floor((bounds.height - emojiText.size().height) / 2)))
+            x += metrics.emojiWidth + ReactionChipMetrics.spacing
+            countText.draw(at: NSPoint(x: x, y: floor((bounds.height - countText.size().height) / 2)))
         }
-        let emojiText = NSAttributedString(string: emoji, attributes: [.font: emojiFont])
-        let countText = NSAttributedString(string: countText, attributes: [
-            .font: countFont,
-            .foregroundColor: isSelectedByCurrentUser ? NSColor.controlAccentColor : NSColor.secondaryLabelColor,
-        ])
-        let emojiSize = emojiText.size()
-        let countSize = countText.size()
-        var x: CGFloat = 8
-        emojiText.draw(at: NSPoint(x: x, y: (bounds.height - emojiSize.height) / 2))
-        x += ceil(emojiSize.width) + 4
-        countText.draw(at: NSPoint(x: x, y: (bounds.height - countSize.height) / 2))
+    }
+
+    func reset() {
+        resetPressable()
+        emoji = ""
+        countText = ""
+        isSelectedByCurrentUser = false
+        metrics = nil
     }
 }
 
@@ -235,10 +363,14 @@ final class FileChipView: TimelinePressableView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        drawAtPressedOpacity { drawChip() }
+    }
+
+    private func drawChip() {
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
-        TimelinePalette.reactionBackground.withAlphaComponent(pressedAlpha).setFill()
+        TimelinePalette.reactionBackground.setFill()
         path.fill()
-        NSColor.separatorColor.setStroke()
+        TimelinePalette.reactionBorder.setStroke()
         path.lineWidth = 1
         path.stroke()
         let iconRect = NSRect(x: 8, y: (bounds.height - 32) / 2, width: 32, height: 32)
@@ -276,6 +408,36 @@ final class FileChipView: TimelinePressableView {
 final class ImageThumbnailView: TimelinePressableView {
     private(set) var image: NSImage?
     private var miniPreview: NSImage?
+    weak var host: (any TimelineCellHost)?
+    /// Explicit save (context menu and accessibility action); `onPress` previews.
+    var onSave: (() -> Void)? {
+        didSet {
+            setAccessibilityCustomActions(onSave == nil ? nil : [
+                NSAccessibilityCustomAction(name: TimelineStrings.saveAttachment) { [weak self] in
+                    self?.onSave?()
+                    return self?.onSave != nil
+                },
+            ])
+        }
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        var items: [NSMenuItem] = []
+        if onPress != nil {
+            let item = NSMenuItem(title: TimelineStrings.openImage, action: #selector(openFromMenu(_:)), keyEquivalent: "")
+            item.target = self
+            items.append(item)
+        }
+        if onSave != nil {
+            let item = NSMenuItem(title: TimelineStrings.saveAttachment, action: #selector(saveFromMenu(_:)), keyEquivalent: "")
+            item.target = self
+            items.append(item)
+        }
+        return host?.contextMenu(forRowContaining: self, leadingItems: items) ?? super.menu(for: event)
+    }
+
+    @objc private func openFromMenu(_ sender: Any?) { onPress?() }
+    @objc private func saveFromMenu(_ sender: Any?) { onSave?() }
 
     /// Mini previews are tiny JPEGs; anything larger is ignored rather than decoded.
     static let maximumMiniPreviewBytes = 16 * 1_024
@@ -297,6 +459,7 @@ final class ImageThumbnailView: TimelinePressableView {
 
     func reset() {
         resetPressable()
+        onSave = nil
         image = nil
         miniPreview = nil
     }

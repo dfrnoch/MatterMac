@@ -27,6 +27,9 @@ public actor ServerSession {
     public nonisolated let connectionUpdates: AsyncStream<ConnectionStatus>
     public nonisolated let searchUpdates: AsyncStream<SearchSnapshot>
     public nonisolated let notices: AsyncStream<SessionNotice>
+    /// Content-free alerts for mentions and direct messages from others (who and where,
+    /// never message text). The UI decides whether to show a notification.
+    public nonisolated let alerts: AsyncStream<IncomingMessageAlert>
 
     let sidebarContinuation: AsyncStream<SidebarSnapshot>.Continuation
     let timelineContinuation: AsyncStream<TimelineSnapshot>.Continuation
@@ -35,6 +38,7 @@ public actor ServerSession {
     let connectionContinuation: AsyncStream<ConnectionStatus>.Continuation
     let searchContinuation: AsyncStream<SearchSnapshot>.Continuation
     let noticeContinuation: AsyncStream<SessionNotice>.Continuation
+    let alertContinuation: AsyncStream<IncomingMessageAlert>.Continuation
 
     let service: any MattermostService
     let realtime: any RealtimeConnection
@@ -131,6 +135,7 @@ public actor ServerSession {
         (connectionUpdates, connectionContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
         (searchUpdates, searchContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
         (notices, noticeContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(8))
+        (alerts, alertContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(8))
         directory.pin(me)
     }
 
@@ -152,6 +157,7 @@ public actor ServerSession {
         if let wire = try? await config, self.epoch == epoch {
             capabilities = wire.capabilities.merged(over: capabilities)
             typingEnabled = wire.enableUserTypingMessages ?? true
+            applyNameDisplay(wire)
         }
         if let preferences = try? await preferences, self.epoch == epoch {
             directory.applyPreferences(preferences, replacing: true)
@@ -209,6 +215,7 @@ public actor ServerSession {
         connectionContinuation.finish()
         searchContinuation.finish()
         noticeContinuation.finish()
+        alertContinuation.finish()
         deps.diagnostics.record(.lifecycle, .info, "session shut down")
         return outcome
     }
@@ -342,6 +349,11 @@ public actor ServerSession {
         guard let api = error as? APIError, case .unauthorized = api else { return }
         setConnection(.authenticationRequired)
         notify(.signedOutByServer)
+    }
+
+    func applyNameDisplay(_ wire: ClientConfigWire) {
+        directory.serverNameFormat = wire.teammateNameDisplay.flatMap(NameFormat.init(rawValue:)) ?? .username
+        directory.isNameFormatLocked = wire.lockTeammateNameDisplay ?? false
     }
 
     func teamName(for channel: Channel?) -> String? {

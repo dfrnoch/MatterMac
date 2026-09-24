@@ -43,12 +43,15 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
     var imageTasks: [TimelineImageRequest: Task<Void, Never>] = [:]
     var displayedImages: [TimelineImageRequest: (lease: ImagePipeline.Decoded, image: NSImage)] = [:]
     var imageGeneration: UInt64 = 0
+    /// At most one explicitly opened image viewer per pane; closed with the pane's images.
+    var imageViewer: ImageViewerWindowController?
     var selectedFiles: [UploadSource] = []
     var selectionTask: Task<Void, Never>?
     var downloadTask: Task<Void, Never>?
     var filePanel: NSSavePanel?
     let downloadBar = NSStackView()
     private var composerHeight: NSLayoutConstraint?
+    private var reactionPicker: NSPopover?
 
     let scope: AccountScope
 
@@ -72,6 +75,8 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         super.init(nibName: nil, bundle: nil)
         timeline.delegate = self
         timeline.currentUsername = session.slot.user.username
+        // System (Unicode) emoji only; custom emoji keep rendering as `:name:`.
+        timeline.emojiLookup = { EmojiCatalog.system.glyph(for: $0) }
         composer.delegate = self
         loadDraft()
         attachDraftProvider()
@@ -126,6 +131,7 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
             generation &+= 1
             commandTask?.cancel()
             cancelFileWork()
+            reactionPicker?.close()
             self.target = target
             loadDraft()
             timeline.removeAllContent()
@@ -203,6 +209,11 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         let key = key, target = target, generation = generation
         let edit = editingPost
         let attachments = selectedFiles
+        let isCommand = edit == nil && ServerSession.isSlashCommand(text)
+        if isCommand, !attachments.isEmpty {
+            model.inlineError = "Slash commands can’t include attachments. Remove the attachments, or start the message with a space to send it as text."
+            return
+        }
         saveDraft()
         guard environment.drafts.draft(for: key)?.text == text else { return }
         sendTask = Task { [weak self] in
@@ -212,7 +223,7 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
                 updateComposerAvailability()
             }
             do {
-                if edit == nil {
+                if edit == nil, !isCommand {
                     try await model.session.validateSend(text: text, channel: target.channelID, attachments: attachments)
                 }
                 guard !Task.isCancelled, self.generation == generation,
@@ -227,12 +238,16 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
                 }
                 do {
                     if let edit { try await model.session.edit(edit, text: text) }
-                    else {
+                    else if isCommand {
+                        let result = try await model.session.executeCommand(text, channel: target.channelID, rootID: key.rootID)
+                        if result.isEphemeral, !result.text.isEmpty { model.commandFeedback = result.text }
+                    } else {
                         try await model.session.enqueueSend(text: text, channel: target.channelID, rootID: key.rootID,
                                                             attachments: attachments, reservation: reservation)
                     }
                     environment.drafts.finishSending(key, reservation: reservation, accepted: true)
-                    if edit != nil { environment.unsentLedger.release(reservation) }
+                    // Edits and commands never become pending sends.
+                    if edit != nil || isCommand { environment.unsentLedger.release(reservation) }
                 } catch {
                     environment.drafts.finishSending(key, reservation: reservation, accepted: false)
                     throw error
@@ -306,16 +321,9 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
             }
         case .toggleReaction(let id, let emoji): run { try await $0.toggleReaction(id, emojiName: emoji) }
         case .addReaction(let id):
-            let alert = NSAlert()
-            alert.messageText = "Add Reaction"
-            let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
-            field.placeholderString = "Emoji name, e.g. thumbsup"
-            alert.accessoryView = field
-            alert.addButton(withTitle: "Add")
-            alert.addButton(withTitle: "Cancel")
-            if alert.runModal() == .alertFirstButtonReturn {
-                let name = field.stringValue
-                run { try await $0.toggleReaction(id, emojiName: name) }
+            reactionPicker?.close()
+            reactionPicker = ReactionPickerPresenter.present(for: id, in: timeline) { [weak self] name in
+                self?.run { try await $0.toggleReaction(id, emojiName: name) }
             }
         case .retrySend(let id):
             if confirm("Retry this message?", detail: "If the server received an earlier attempt, retrying may create a duplicate.", button: "Retry") {
@@ -327,8 +335,37 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
             }
         case .retryGap(let direction): direction == .older ? timelineRequestsOlder() : timelineRequestsNewer()
         case .openFile(let file): saveAttachment(file)
-        case .mentionTapped, .channelMentionTapped: model?.inlineError = "Mention navigation is not available yet."
+        case .previewImage(let file): showImageViewer(for: file)
+        case .showProfile(let user): showProfile(.id(user))
+        case .mentionTapped(let name):
+            // Special mentions (@here, @channel, @all) have no profile.
+            if !["here", "channel", "all"].contains(name.lowercased()) { showProfile(.username(name)) }
+        case .channelMentionTapped(let name): model?.openChannel(named: name)
         }
+    }
+    private func showProfile(_ lookup: ProfileLookup) {
+        guard let model, !model.isDetached, !model.requiresAuthentication else { return }
+        let (anchor, rect) = popoverAnchor()
+        ProfilePopover.show(session: model, lookup: lookup, relativeTo: rect, of: anchor)
+    }
+    /// The click location for mouse-initiated actions; otherwise the selected row.
+    private func popoverAnchor() -> (NSView, NSRect) {
+        let anchor = timeline.view
+        if let event = NSApp.currentEvent, event.window === anchor.window,
+           [.leftMouseUp, .leftMouseDown, .rightMouseUp, .rightMouseDown].contains(event.type) {
+            let point = anchor.convert(event.locationInWindow, from: nil)
+            if anchor.bounds.contains(point) { return (anchor, NSRect(x: point.x - 2, y: point.y - 2, width: 4, height: 4)) }
+        }
+        let table = timeline.tableView
+        let row = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
+        if row >= 0 {
+            let rect = anchor.convert(table.rect(ofRow: row), from: table)
+            if anchor.bounds.intersects(rect) {
+                let visible = rect.intersection(anchor.bounds)
+                return (anchor, NSRect(x: visible.minX + 40, y: visible.midY, width: 1, height: 1))
+            }
+        }
+        return (anchor, NSRect(x: anchor.bounds.midX, y: anchor.bounds.midY, width: 1, height: 1))
     }
     private func confirm(_ title: String, detail: String, button: String) -> Bool {
         let alert = NSAlert()
@@ -363,6 +400,11 @@ private final class SessionCompletionProvider: ComposerCompletionProvider {
         guard let model, !model.isDetached else { return [] }
         let candidates = await model.session.completions(trigger: trigger.character, query: query, channel: channel)
         guard !Task.isCancelled, !model.isDetached else { return [] }
-        return candidates.map { CompletionItem(id: $0.id, title: $0.title, subtitle: $0.subtitle, insertionText: $0.insertion) }
+        return candidates.map {
+            // Emoji candidates carry the glyph as subtitle; show it in the leading slot.
+            trigger == .emoji
+                ? CompletionItem(id: $0.id, title: $0.title, insertionText: $0.insertion, leadingText: $0.subtitle)
+                : CompletionItem(id: $0.id, title: $0.title, subtitle: $0.subtitle, insertionText: $0.insertion)
+        }
     }
 }

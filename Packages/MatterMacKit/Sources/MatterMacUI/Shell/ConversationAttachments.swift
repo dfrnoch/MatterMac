@@ -90,15 +90,17 @@ extension ConversationController {
     }
 
     func cancelFileWork() {
+        // A save sheet may be attached to the image viewer: dismiss it before closing it.
+        filePanel?.cancel(nil)
+        filePanel = nil
         clearImages()
         selectionTask?.cancel()
         downloadTask?.cancel()
-        filePanel?.cancel(nil)
-        filePanel = nil
     }
 
-    func saveAttachment(_ file: FileInfo) {
-        guard downloadTask == nil, filePanel == nil, let window = view.window,
+    /// `presentingWindow` hosts the save sheet (e.g. the image viewer); defaults to the pane's window.
+    func saveAttachment(_ file: FileInfo, in presentingWindow: NSWindow? = nil) {
+        guard downloadTask == nil, filePanel == nil, let window = presentingWindow ?? view.window,
               let model, !model.isDetached else { return }
         let expectedKey = key
         let panel = NSSavePanel()

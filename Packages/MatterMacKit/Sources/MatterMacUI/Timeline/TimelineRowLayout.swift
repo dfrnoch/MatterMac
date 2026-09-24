@@ -82,7 +82,8 @@ struct TimelineRowMetrics {
     static let minimumThumbnailEdge: CGFloat = 24
     static let unknownImageSize = CGSize(width: 240, height: 160)
 
-    var reactionChipHeight: CGFloat { ceil(fonts.bodyLineHeight + 6) }
+    /// Tall enough for an Apple Color Emoji line (taller than the text line) plus insets.
+    var reactionChipHeight: CGFloat { ceil(max(fonts.bodyLineHeight, fonts.emojiLineHeight) + 6) }
 
     static func contentWidth(forLayoutWidth width: CGFloat) -> CGFloat {
         max(minimumContentWidth, width - contentLeading - horizontalInset)
@@ -108,11 +109,10 @@ struct TimelineRowMetrics {
         (renderer.emojiText(for: reaction.emojiName), "\(reaction.count)")
     }
 
+    /// Same measurement the chip draws with (`ReactionChipMetrics`), so nothing clips.
     func reactionChipWidth(_ reaction: ReactionGroup, renderer: MessageRenderer) -> CGFloat {
         let title = reactionTitle(reaction, renderer: renderer)
-        let emojiWidth = DrawnText.width(of: NSAttributedString(string: title.emoji, attributes: [.font: fonts.body]))
-        let countWidth = DrawnText.width(of: NSAttributedString(string: title.count, attributes: [.font: fonts.metaBold]))
-        return emojiWidth + countWidth + 4 + 16
+        return ReactionChipMetrics(emoji: title.emoji, count: title.count, fonts: fonts).width
     }
 
     func statusText(for state: SendState) -> NSAttributedString {

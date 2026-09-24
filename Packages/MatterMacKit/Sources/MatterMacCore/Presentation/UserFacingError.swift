@@ -22,6 +22,10 @@ public enum UserFacingError: Hashable, Sendable, Error {
     case budgetExceeded(ResourceKind)
     case cancelled
     case fileUnavailable
+    /// A slash command the server does not know.
+    case commandNotFound
+    /// The command request was sent but no response arrived; it may have run.
+    case commandOutcomeUnknown
     case unknown
 
     public enum ResourceKind: Hashable, Sendable {

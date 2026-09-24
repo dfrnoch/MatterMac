@@ -28,10 +28,19 @@ public struct SidebarChannelRow: Hashable, Sendable, Identifiable {
     /// Presence of the DM partner, for direct channels.
     public let partnerStatus: PresenceStatus?
     public let lastPostAt: MattermostTimestamp
+    /// The DM partner and their picture revision (`last_picture_update`), for avatars.
+    public let partnerID: UserID?
+    public let partnerAvatarRevision: Int64
+    /// `@username` of the DM partner when the display name is something else.
+    public let partnerUsername: String?
     public var id: ChannelID { channelID }
 
     public init(channelID: ChannelID, displayName: String, type: ChannelType, isUnread: Bool, mentionCount: Int,
-                isArchived: Bool, isMuted: Bool, partnerStatus: PresenceStatus?, lastPostAt: MattermostTimestamp) {
+                isArchived: Bool, isMuted: Bool, partnerStatus: PresenceStatus?, lastPostAt: MattermostTimestamp,
+                partnerID: UserID? = nil, partnerAvatarRevision: Int64 = 0, partnerUsername: String? = nil) {
+        self.partnerID = partnerID
+        self.partnerAvatarRevision = partnerAvatarRevision
+        self.partnerUsername = partnerUsername
         self.channelID = channelID
         self.displayName = displayName
         self.type = type
@@ -81,15 +90,21 @@ public struct SidebarSnapshot: Sendable {
     /// `true` when more channels exist than the sidebar retains; reachable via search
     /// and the quick switcher.
     public let isTruncated: Bool
+    /// The signed-in user's presence and custom status, when known.
+    public let myStatus: PresenceStatus?
+    public let myCustomStatus: CustomStatus?
 
     public init(scope: AccountScope, generation: UInt64, teams: [TeamSummary], selectedTeam: TeamID?,
-                sections: [SidebarSection], isTruncated: Bool) {
+                sections: [SidebarSection], isTruncated: Bool, myStatus: PresenceStatus? = nil,
+                myCustomStatus: CustomStatus? = nil) {
         self.scope = scope
         self.generation = generation
         self.teams = teams
         self.selectedTeam = selectedTeam
         self.sections = sections
         self.isTruncated = isTruncated
+        self.myStatus = myStatus
+        self.myCustomStatus = myCustomStatus
     }
 }
 

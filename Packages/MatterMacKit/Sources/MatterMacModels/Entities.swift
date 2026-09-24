@@ -157,11 +157,17 @@ public struct User: Hashable, Sendable, Identifiable {
     public var lastPictureUpdate: MattermostTimestamp
     public var locale: String
     public var roles: [String]
+    /// Empty unless the server's privacy settings expose it to this account.
+    public var email: String
+    /// Effective IANA time zone (automatic or manual per the user's setting).
+    public var timeZoneIdentifier: String?
+    public var customStatus: CustomStatus?
 
     public init(id: UserID, username: String, firstName: String = "", lastName: String = "",
                 nickname: String = "", position: String = "", isBot: Bool = false,
                 deleteAt: MattermostTimestamp = .zero, lastPictureUpdate: MattermostTimestamp = .zero,
-                locale: String = "", roles: [String] = []) {
+                locale: String = "", roles: [String] = [], email: String = "", timeZoneIdentifier: String? = nil,
+                customStatus: CustomStatus? = nil) {
         self.id = id
         self.username = username
         self.firstName = firstName
@@ -173,6 +179,9 @@ public struct User: Hashable, Sendable, Identifiable {
         self.lastPictureUpdate = lastPictureUpdate
         self.locale = locale
         self.roles = roles
+        self.email = email
+        self.timeZoneIdentifier = timeZoneIdentifier
+        self.customStatus = customStatus
     }
 
     public var fullName: String {
@@ -181,6 +190,50 @@ public struct User: Hashable, Sendable, Identifiable {
 
     public var isDeactivated: Bool { !deleteAt.isZero }
     public var isSystemAdmin: Bool { roles.contains("system_admin") }
+    public var isGuest: Bool { roles.contains("system_guest") }
+}
+
+/// "Clear after" choices offered by the official clients (`CustomStatus.duration`).
+public enum CustomStatusDuration: String, CaseIterable, Hashable, Sendable {
+    case dontClear = ""
+    case thirtyMinutes = "thirty_minutes"
+    case oneHour = "one_hour"
+    case fourHours = "four_hours"
+    case today
+    case thisWeek = "this_week"
+
+    /// Expiry in the user's time zone; `nil` for "don't clear".
+    public func expiry(from now: Date, timeZone: TimeZone) -> Date? {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        switch self {
+        case .dontClear: return nil
+        case .thirtyMinutes: return now.addingTimeInterval(30 * 60)
+        case .oneHour: return now.addingTimeInterval(60 * 60)
+        case .fourHours: return now.addingTimeInterval(4 * 60 * 60)
+        case .today: return calendar.dateInterval(of: .day, for: now).map { $0.end.addingTimeInterval(-1) }
+        case .thisWeek: return calendar.dateInterval(of: .weekOfYear, for: now).map { $0.end.addingTimeInterval(-1) }
+        }
+    }
+}
+
+/// `user.props["customStatus"]`. Expired statuses must be hidden by the presenter.
+public struct CustomStatus: Hashable, Sendable {
+    public var emoji: String
+    public var text: String
+    /// `nil` means the status does not expire.
+    public var expiresAt: Date?
+
+    public init(emoji: String, text: String, expiresAt: Date? = nil) {
+        self.emoji = emoji
+        self.text = text
+        self.expiresAt = expiresAt
+    }
+
+    public func isVisible(at now: Date) -> Bool {
+        guard !emoji.isEmpty || !text.isEmpty else { return false }
+        return expiresAt.map { $0 > now } ?? true
+    }
 }
 
 public enum PresenceStatus: Hashable, Sendable {
@@ -197,6 +250,17 @@ public enum PresenceStatus: Hashable, Sendable {
         case "dnd": self = .doNotDisturb
         case "offline": self = .offline
         default: self = .unknown
+        }
+    }
+
+    /// Value accepted by `PUT /users/{id}/status`; `nil` for `.unknown`.
+    public var wireValue: String? {
+        switch self {
+        case .online: "online"
+        case .away: "away"
+        case .doNotDisturb: "dnd"
+        case .offline: "offline"
+        case .unknown: nil
         }
     }
 }

@@ -33,6 +33,10 @@ public struct MatterMacRootView: View {
         }
         .frame(minWidth: 760, minHeight: 500)
         .task { await model.restoreSavedAccounts() }
+        .sheet(isPresented: Binding(get: { model.isCompatibilityVisible },
+                                    set: { model.isCompatibilityVisible = $0 })) {
+            CompatibilityView(app: model)
+        }
     }
 }
 

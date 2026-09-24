@@ -89,6 +89,9 @@ enum TimelineStrings {
         String(localized: "Image \(name)")
     }
 
+    static let openImage = String(localized: "Open Image")
+    static let saveAttachment = String(localized: "Save Attachment…")
+
     static func avatarAccessibility(name: String) -> String {
         String(localized: "Profile picture of \(name)")
     }
@@ -129,6 +132,8 @@ enum TimelineStrings {
         case .budgetExceeded: String(localized: "A memory limit for unsent content was reached.")
         case .cancelled: String(localized: "The operation was cancelled.")
         case .fileUnavailable: String(localized: "A file is no longer available.")
+        case .commandNotFound: String(localized: "The server doesn’t recognize that command.")
+        case .commandOutcomeUnknown: String(localized: "The command’s outcome is unknown.")
         case .unknown: String(localized: "An unknown error occurred.")
         }
     }

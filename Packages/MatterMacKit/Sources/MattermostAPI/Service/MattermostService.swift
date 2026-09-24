@@ -137,6 +137,21 @@ public struct OutgoingPost: Sendable, Hashable {
     }
 }
 
+/// The synchronous part of a slash-command response. Ephemeral replies are for the
+/// caller only; `in_channel` replies are also posted and arrive as normal posts.
+public struct CommandResult: Sendable, Hashable {
+    public let isEphemeral: Bool
+    /// Bounded, unrendered response text (may contain Markdown).
+    public let text: String
+    public let gotoLocation: String?
+
+    public init(isEphemeral: Bool, text: String, gotoLocation: String?) {
+        self.isEphemeral = isEphemeral
+        self.text = text
+        self.gotoLocation = gotoLocation
+    }
+}
+
 public struct ChannelStats: Sendable, Hashable {
     public let memberCount: Int
     public let pinnedPostCount: Int
@@ -279,6 +294,10 @@ public protocol MattermostService: Sendable {
     /// `POST /api/v4/users/logout`: revokes this session server-side.
     func logout() async throws(APIError)
     func preferences() async throws(APIError) -> [Preference]
+    /// `PUT /users/{id}/preferences` (1–100 items). An explicit server-side change.
+    func savePreferences(_ preferences: [Preference], me: UserID) async throws(APIError)
+    /// `POST /users/{id}/preferences/delete`.
+    func deletePreferences(_ preferences: [Preference], me: UserID) async throws(APIError)
 
     // Teams and channels
     func teams() async throws(APIError) -> [Team]
@@ -290,6 +309,11 @@ public protocol MattermostService: Sendable {
     func channel(_ id: ChannelID) async throws(APIError) -> Channel
     func channelMembership(_ id: ChannelID) async throws(APIError) -> ChannelMembership
     func channelStats(_ id: ChannelID) async throws(APIError) -> ChannelStats
+    /// `GET /users?in_channel=` (active users, username order). Requires `read_channel`.
+    func channelMembers(_ id: ChannelID, page: Int, perPage: Int) async throws(APIError) -> [User]
+    /// `PUT /channels/{id}/members/{user}/notify_props`; only `mark_unread` is sent,
+    /// other notification settings are left unchanged by the server.
+    func setChannelMarkUnread(_ id: ChannelID, level: MarkUnreadLevel, me: UserID) async throws(APIError)
     func createDirectChannel(with other: UserID, me: UserID) async throws(APIError) -> Channel
     func joinChannel(_ id: ChannelID, me: UserID) async throws(APIError)
     func leaveChannel(_ id: ChannelID, me: UserID) async throws(APIError)
@@ -315,10 +339,19 @@ public protocol MattermostService: Sendable {
     func addReaction(post: PostID, emojiName: String, me: UserID) async throws(APIError) -> Reaction
     func removeReaction(post: PostID, emojiName: String, me: UserID) async throws(APIError)
     func searchPosts(_ query: SearchQuery) async throws(APIError) -> PostPage
+    /// `POST /commands/execute`. Not idempotent: a lost response is `.outcomeUnknown`.
+    func executeCommand(_ command: String, channel: ChannelID, team: TeamID?, rootID: PostID?)
+        async throws(APIError) -> CommandResult
 
     // Users
     func users(ids: [UserID]) async throws(APIError) -> [User]
     func statuses(ids: [UserID]) async throws(APIError) -> [UserID: PresenceStatus]
+    /// `PUT /users/{id}/status`: a manual status visible to everyone on the server.
+    func setStatus(_ status: PresenceStatus, me: UserID) async throws(APIError)
+    /// `PUT /users/{id}/status/custom`; `nil` clears it (`DELETE`).
+    func setCustomStatus(_ status: CustomStatus?, duration: String, me: UserID) async throws(APIError)
+    /// `POST /users/usernames` (at most 200 names per request).
+    func users(usernames: [String]) async throws(APIError) -> [User]
     func autocompleteUsers(team: TeamID, channel: ChannelID?, name: String, limit: Int)
         async throws(APIError) -> [User]
 

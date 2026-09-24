@@ -2,70 +2,55 @@ import SwiftUI
 import MatterMacModels
 import MatterMacCore
 
-struct ChannelHeaderView: View {
-    let header: ChannelHeaderPresentation?
-    let session: SessionViewModel
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if let header {
-                Image(systemName: symbol(for: header))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(header.displayName)
-                        .font(.headline)
-                        .lineLimit(1)
-                        .accessibilityAddTraits(.isHeader)
-                    if !header.typingNames.isEmpty {
-                        Text(typingText(header.typingNames))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel(typingText(header.typingNames))
-                    } else if !header.purpose.isEmpty || !header.header.isEmpty {
-                        Text(header.header.isEmpty ? header.purpose : header.header)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .help(header.header.isEmpty ? header.purpose : header.header)
-                    }
-                }
-                Spacer()
-                if header.isArchived {
-                    Label("Archived", systemImage: "archivebox")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if let count = header.memberCount {
-                    Label("\(count)", systemImage: "person.2")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .help("\(count) members")
-                        .accessibilityLabel("\(count) members")
-                }
-            } else {
-                Text("Loading…").foregroundStyle(.secondary)
-                Spacer()
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+/// Channel identity lives in the window title (name) and subtitle (typing, header
+/// or purpose); these toolbar accessories carry status, archive state and members.
+/// A header row inside the content would sit under the toolbar's edge effect.
+enum ChannelHeaderText {
+    static func title(_ header: ChannelHeaderPresentation?) -> String {
+        header?.displayName ?? ""
     }
 
-    private func symbol(for header: ChannelHeaderPresentation) -> String {
-        switch header.type {
-        case .direct: "person"
-        case .group: "person.2"
-        case .private: "lock"
-        default: "number"
-        }
+    static func subtitle(_ header: ChannelHeaderPresentation?) -> String {
+        guard let header else { return "" }
+        if !header.typingNames.isEmpty { return typingText(header.typingNames) }
+        let text = header.header.isEmpty ? header.purpose : header.header
+        // One line: the subtitle is not a place for a multi-line Markdown header.
+        return text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
     }
 
-    private func typingText(_ names: [String]) -> String {
+    static func typingText(_ names: [String]) -> String {
         switch names.count {
         case 1: String(localized: "\(names[0]) is typing…")
         case 2: String(localized: "\(names[0]) and \(names[1]) are typing…")
         default: String(localized: "Several people are typing…")
+        }
+    }
+}
+
+struct ChannelHeaderAccessories: View {
+    let header: ChannelHeaderPresentation?
+    let session: SessionViewModel
+
+    var body: some View {
+        if let header {
+            HStack(spacing: 10) {
+                if header.type == .direct, let status = header.partnerStatus {
+                    HStack(spacing: 4) { StatusDot(status: status); Text(status.label) }
+                        .foregroundStyle(.secondary)
+                        .accessibilityElement(children: .combine)
+                }
+                if header.isArchived {
+                    Label("Archived", systemImage: "archivebox").labelStyle(.titleAndIcon).foregroundStyle(.secondary)
+                }
+                if let count = header.memberCount {
+                    Button { session.isChannelInfoVisible = true } label: {
+                        Label("\(count)", systemImage: "person.2").labelStyle(.titleAndIcon)
+                    }
+                    .help("\(count) members — show channel details")
+                    .accessibilityLabel("\(count) members, show channel details")
+                }
+            }
+            .font(.callout)
         }
     }
 }
@@ -267,14 +252,21 @@ struct CompatibilityView: View {
                     Text("Mattermost 11.11 and 10.11 (ESR). Other versions may work but have not been verified.")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                GroupBox("Sign-in") {
+                    Text("""
+                        Password (with MFA), personal access tokens, and single sign-on through your system browser \
+                        when the server advertises an OpenID, SAML, Google, Microsoft or GitLab route. Single sign-on \
+                        depends on your organization's configuration and has been verified only on test deployments.
+                        """)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 GroupBox("Not supported natively") {
                     VStack(alignment: .leading, spacing: 6) {
                         unsupported("Calls, screen sharing, and video", "Call posts stay readable; joining happens in your browser, outside MatterMac.")
                         unsupported("Web plugins, Boards, Playbooks", "Plugin posts show a summary. Interactive buttons are not executed.")
-                        unsupported("Single sign-on (SAML, OpenID, Google, Entra ID, GitLab)", "Use password or a personal access token if your server allows it.")
-                        unsupported("Slash commands and ephemeral replies", "Not yet implemented.")
+                        unsupported("Interactive commands and ephemeral posts", "Slash commands run on the server and their text reply appears above the conversation. Command dialogs and ephemeral bot posts are not shown.")
                         unsupported("Custom theme CSS and administration", "Out of scope for MatterMac.")
-                        unsupported("Notifications after quitting", "There is no MatterMac push service; badges work only while the app runs.")
+                        unsupported("Notifications after quitting", "There is no MatterMac push service. While the app runs, the Dock badge counts mentions, and optional notifications (account menu › Show Notifications) announce mentions and direct messages without message text.")
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }

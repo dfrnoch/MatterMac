@@ -135,10 +135,81 @@ public struct UserProfilePresentation: Hashable, Sendable {
     public let user: User
     public let displayName: String
     public let status: PresenceStatus?
-    public init(user: User, displayName: String, status: PresenceStatus?) {
+    public let isCurrentUser: Bool
+    public init(user: User, displayName: String, status: PresenceStatus?, isCurrentUser: Bool = false) {
         self.user = user
         self.displayName = displayName
         self.status = status
+        self.isCurrentUser = isCurrentUser
+    }
+}
+
+/// Channel information for the details panel. Fetched on demand, never retained by Core.
+public struct ChannelDetailsPresentation: Hashable, Sendable {
+    public let channelID: ChannelID
+    public let name: String
+    public let displayName: String
+    public let type: ChannelType
+    public let header: String
+    public let purpose: String
+    public let memberCount: Int?
+    public let pinnedPostCount: Int?
+    public let isArchived: Bool
+    public let isFavorite: Bool
+    public let isMuted: Bool
+    /// The server refuses leaving the default channel and DMs cannot be left.
+    public let canLeave: Bool
+    public let directPartner: UserID?
+    public let link: URL?
+
+    public init(channelID: ChannelID, name: String, displayName: String, type: ChannelType, header: String,
+                purpose: String, memberCount: Int?, pinnedPostCount: Int?, isArchived: Bool, isFavorite: Bool,
+                isMuted: Bool, canLeave: Bool, directPartner: UserID?, link: URL?) {
+        self.channelID = channelID
+        self.name = name
+        self.displayName = displayName
+        self.type = type
+        self.header = header
+        self.purpose = purpose
+        self.memberCount = memberCount
+        self.pinnedPostCount = pinnedPostCount
+        self.isArchived = isArchived
+        self.isFavorite = isFavorite
+        self.isMuted = isMuted
+        self.canLeave = canLeave
+        self.directPartner = directPartner
+        self.link = link
+    }
+}
+
+public struct ChannelMemberRow: Hashable, Sendable, Identifiable {
+    public var id: UserID { userID }
+    public let userID: UserID
+    public let displayName: String
+    public let username: String
+    public let status: PresenceStatus?
+    public let isBot: Bool
+    public let isGuest: Bool
+    public let avatarRevision: Int64
+
+    public init(userID: UserID, displayName: String, username: String, status: PresenceStatus?, isBot: Bool,
+                isGuest: Bool, avatarRevision: Int64) {
+        self.userID = userID
+        self.displayName = displayName
+        self.username = username
+        self.status = status
+        self.isBot = isBot
+        self.isGuest = isGuest
+        self.avatarRevision = avatarRevision
+    }
+}
+
+public struct ChannelMembersPage: Sendable {
+    public let members: [ChannelMemberRow]
+    public let hasMore: Bool
+    public init(members: [ChannelMemberRow], hasMore: Bool) {
+        self.members = members
+        self.hasMore = hasMore
     }
 }
 
@@ -162,4 +233,29 @@ struct DirtyFlags: OptionSet {
     static let header = DirtyFlags(rawValue: 1 << 3)
     static let search = DirtyFlags(rawValue: 1 << 4)
     static let all: DirtyFlags = [.sidebar, .timeline, .thread, .header, .search]
+}
+
+/// A mention or direct message from someone else, for in-app badges and opt-in
+/// notifications. Carries no message text (SPEC §19 "avoid rich content").
+public struct IncomingMessageAlert: Hashable, Sendable {
+    public enum Kind: Hashable, Sendable {
+        case mention
+        case directMessage
+    }
+    public let scope: AccountScope
+    public let channelID: ChannelID
+    public let rootID: PostID?
+    public let kind: Kind
+    public let channelName: String
+    public let senderName: String
+
+    public init(scope: AccountScope, channelID: ChannelID, rootID: PostID?, kind: Kind, channelName: String,
+                senderName: String) {
+        self.scope = scope
+        self.channelID = channelID
+        self.rootID = rootID
+        self.kind = kind
+        self.channelName = channelName
+        self.senderName = senderName
+    }
 }

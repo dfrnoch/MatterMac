@@ -56,6 +56,15 @@ nonisolated enum TimelinePalette {
         NSColor.controlAccentColor.withAlphaComponent(highContrast ? 0.40 : 0.20)
     }
     static let reactionSelectedBorder = dynamic { _, _ in NSColor.controlAccentColor }
+    static let reactionBorder = dynamic { isDark, highContrast in
+        highContrast ? NSColor.secondaryLabelColor : NSColor.labelColor.withAlphaComponent(isDark ? 0.18 : 0.12)
+    }
+    static let reactionCount = dynamic { _, highContrast in
+        highContrast ? NSColor.labelColor : NSColor.secondaryLabelColor
+    }
+    /// Full label color: accent-colored text on the accent tint is illegible with some
+    /// accent colors (graphite); the tint and accent border mark the selection.
+    static let reactionSelectedCount = dynamic { _, _ in NSColor.labelColor }
     static let placeholderFill = dynamic { isDark, highContrast in
         NSColor.labelColor.withAlphaComponent(highContrast ? 0.18 : (isDark ? 0.12 : 0.07))
     }
@@ -100,6 +109,8 @@ final class TimelineFonts {
     let monoSize: CGFloat
     let mono: NSFont
     let bodyLineHeight: CGFloat
+    /// Line height of emoji at the body size (Apple Color Emoji is taller than text).
+    let emojiLineHeight: CGFloat
     let authorLineHeight: CGFloat
     let metaLineHeight: CGFloat
     let monoAdvance: CGFloat
@@ -140,6 +151,7 @@ final class TimelineFonts {
         mono = NSFont.monospacedSystemFont(ofSize: monoSize, weight: .regular)
         let metrics = NSLayoutManager()
         bodyLineHeight = ceil(metrics.defaultLineHeight(for: body))
+        emojiLineHeight = ceil(NSAttributedString(string: "\u{1F44D}", attributes: [.font: body]).size().height)
         authorLineHeight = ceil(metrics.defaultLineHeight(for: authorName))
         metaLineHeight = ceil(metrics.defaultLineHeight(for: meta))
         monoAdvance = max(NSAttributedString(string: "M", attributes: [.font: mono]).size().width, 1)

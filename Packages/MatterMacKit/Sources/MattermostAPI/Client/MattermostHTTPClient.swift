@@ -57,6 +57,26 @@ public final class MattermostHTTPClient: MattermostService {
             .preferences
     }
 
+    public func savePreferences(_ preferences: [Preference], me: UserID) async throws(APIError) {
+        guard !preferences.isEmpty else { return }
+        guard preferences.count <= 100 else { throw .overloaded }
+        _ = try await perform(.put, ["users", me.rawValue, "preferences"],
+                              body: try RequestBodyEncoding.encode(Self.preferenceBodies(preferences, me: me)),
+                              limit: small, priority: .interactive)
+    }
+
+    public func deletePreferences(_ preferences: [Preference], me: UserID) async throws(APIError) {
+        guard !preferences.isEmpty else { return }
+        guard preferences.count <= 100 else { throw .overloaded }
+        _ = try await perform(.post, ["users", me.rawValue, "preferences", "delete"],
+                              body: try RequestBodyEncoding.encode(Self.preferenceBodies(preferences, me: me)),
+                              limit: small, priority: .interactive)
+    }
+
+    private static func preferenceBodies(_ preferences: [Preference], me: UserID) -> [PreferenceBody] {
+        preferences.map { PreferenceBody(user_id: me.rawValue, category: $0.category, name: $0.name, value: $0.value) }
+    }
+
     // MARK: Teams and channels
 
     public func teams() async throws(APIError) -> [Team] {
@@ -103,6 +123,23 @@ public final class MattermostHTTPClient: MattermostService {
                                  query: [URLQueryItem(name: "exclude_files_count", value: "true")], limit: small,
                                  priority: .interactive)
         return ChannelStats(memberCount: wire.memberCount, pinnedPostCount: wire.pinnedPostCount)
+    }
+
+    public func channelMembers(_ id: ChannelID, page: Int, perPage: Int) async throws(APIError) -> [User] {
+        let size = min(max(perPage, 1), Self.pageSizeRange.upperBound)
+        return try await get(LossyArray<UserWire>.self, ["users"], query: [
+            URLQueryItem(name: "in_channel", value: id.rawValue),
+            URLQueryItem(name: "page", value: String(max(0, page))),
+            URLQueryItem(name: "per_page", value: String(size)),
+            URLQueryItem(name: "active", value: "true"),
+        ], limit: large, priority: .interactive).elements.map(\.user)
+    }
+
+    public func setChannelMarkUnread(_ id: ChannelID, level: MarkUnreadLevel, me: UserID) async throws(APIError) {
+        let body = ChannelNotifyPropsBody(channel_id: id.rawValue, user_id: me.rawValue,
+                                          mark_unread: level == .mention ? "mention" : "all")
+        _ = try await perform(.put, ["channels", id.rawValue, "members", me.rawValue, "notify_props"],
+                              body: try RequestBodyEncoding.encode(body), limit: small, priority: .interactive)
     }
 
     public func createDirectChannel(with other: UserID, me: UserID) async throws(APIError) -> Channel {
@@ -294,6 +331,43 @@ public final class MattermostHTTPClient: MattermostService {
             let list = try await send(.post, ["users", "status", "ids"], body: chunk, decode: LossyArray<StatusWire>.self,
                                       limit: large, priority: .background)
             for status in list.elements { result[status.userID] = status.status }
+        }
+        return result
+    }
+
+    public func executeCommand(_ command: String, channel: ChannelID, team: TeamID?, rootID: PostID?)
+        async throws(APIError) -> CommandResult {
+        let body = ExecuteCommandBody(channel_id: channel.rawValue, team_id: team?.rawValue ?? "",
+                                      root_id: rootID?.rawValue ?? "", command: command)
+        return try await send(.post, ["commands", "execute"], body: body, decode: CommandResponseWire.self,
+                              limit: small).result
+    }
+
+    public func setStatus(_ status: PresenceStatus, me: UserID) async throws(APIError) {
+        guard let value = status.wireValue else { throw .malformedResponse }
+        _ = try await perform(.put, ["users", me.rawValue, "status"],
+                              body: try RequestBodyEncoding.encode(StatusBody(user_id: me.rawValue, status: value)),
+                              limit: small, priority: .interactive)
+    }
+
+    public func setCustomStatus(_ status: CustomStatus?, duration: String, me: UserID) async throws(APIError) {
+        guard let status else {
+            _ = try await perform(.delete, ["users", me.rawValue, "status", "custom"], limit: small, priority: .interactive)
+            return
+        }
+        let body = CustomStatusBody(emoji: String(status.emoji.prefix(64)), text: String(status.text.prefix(100)),
+                                    duration: duration,
+                                    expires_at: status.expiresAt.map { $0.formatted(.iso8601) })
+        _ = try await perform(.put, ["users", me.rawValue, "status", "custom"],
+                              body: try RequestBodyEncoding.encode(body), limit: small, priority: .interactive)
+    }
+
+    public func users(usernames: [String]) async throws(APIError) -> [User] {
+        var result: [User] = []
+        for chunk in Self.uniqueChunks(usernames.map { $0.lowercased() }.filter { !$0.isEmpty && $0.utf8.count <= 64 }) {
+            let list = try await send(.post, ["users", "usernames"], body: chunk, decode: LossyArray<UserWire>.self,
+                                      limit: large, priority: .interactive)
+            result.append(contentsOf: list.elements.map(\.user))
         }
         return result
     }

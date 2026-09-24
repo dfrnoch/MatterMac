@@ -58,6 +58,12 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
         addSubview(bodyTextView)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
+        let showProfile: () -> Void = { [weak self] in
+            guard let self, let user = self.post?.author.userID else { return }
+            self.host?.perform(.showProfile(user))
+        }
+        avatarView.onPress = showProfile
+        nameLabel.onPress = showProfile
     }
 
     @available(*, unavailable)
@@ -169,10 +175,13 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
                 }
                 let view = thumbnailViews[thumbnailIndex]
                 thumbnailIndex += 1
-                let request = TimelineImageRequest.thumbnail(file.id)
+                let request = TimelineImageRequest.attachment(file)
                 thumbnailRequests[request] = thumbnailIndex - 1
                 view.configure(file: file, image: resolveImage(request))
-                view.onPress = open
+                // Primary action previews; saving stays in the context menu and actions.
+                view.onPress = { [weak self] in self?.host?.perform(.previewImage(file)) }
+                view.onSave = open
+                view.host = host
                 view.frame = frame
                 view.isHidden = false
             } else {
@@ -368,7 +377,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
             view.isHidden = true
         }
         for view in reactionViews {
-            view.resetPressable()
+            view.reset()
             view.isHidden = true
         }
         attachmentOverflowLabel?.isHidden = true

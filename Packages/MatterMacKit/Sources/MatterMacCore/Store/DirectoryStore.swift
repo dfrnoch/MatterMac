@@ -35,7 +35,16 @@ public struct DirectoryStore: Sendable {
     public private(set) var channelsTruncated = false
     private var users: CostLRU<UserID, User>
     private var statuses: CostLRU<UserID, PresenceStatus>
-    public var nameFormat: NameFormat = .username
+    /// The user's `display_settings/name_format` preference, when set.
+    public private(set) var preferredNameFormat: NameFormat?
+    /// The server's `TeammateNameDisplay` default and whether it is locked.
+    public var serverNameFormat: NameFormat = .username
+    public var isNameFormatLocked = false
+    /// Effective format, as in the official client: a locked server setting wins,
+    /// then the user's preference, then the server default.
+    public var nameFormat: NameFormat {
+        isNameFormatLocked ? serverNameFormat : (preferredNameFormat ?? serverNameFormat)
+    }
     public var favorites: Set<ChannelID> = []
     /// DM partners hidden via `direct_channel_show=false` (name = teammate id).
     public var hiddenDirectPartners: Set<UserID> = []
@@ -166,7 +175,9 @@ public struct DirectoryStore: Sendable {
     public mutating func upsertUser(_ user: User) {
         if pinnedUsers[user.id] != nil { pinnedUsers[user.id] = user }
         users.set(user, for: user.id, cost: 256 + user.username.utf8.count + user.firstName.utf8.count
-            + user.lastName.utf8.count + user.nickname.utf8.count + user.position.utf8.count)
+            + user.lastName.utf8.count + user.nickname.utf8.count + user.position.utf8.count + user.email.utf8.count
+            + (user.timeZoneIdentifier?.utf8.count ?? 0)
+            + (user.customStatus.map { $0.emoji.utf8.count + $0.text.utf8.count + 16 } ?? 0))
     }
 
     public mutating func pin(_ user: User) {
@@ -192,6 +203,7 @@ public struct DirectoryStore: Sendable {
 
     public mutating func applyPreferences(_ preferences: [Preference], replacing: Bool) {
         if replacing {
+            preferredNameFormat = nil
             favorites.removeAll()
             hiddenDirectPartners.removeAll()
             hiddenGroups.removeAll()
@@ -204,7 +216,7 @@ public struct DirectoryStore: Sendable {
         case "display_settings":
             switch preference.name {
             case "name_format":
-                nameFormat = deleted ? .username : (NameFormat(rawValue: preference.value) ?? .username)
+                preferredNameFormat = deleted ? nil : NameFormat(rawValue: preference.value)
             case "collapsed_reply_threads":
                 collapsedThreadsPreference = deleted ? nil : (preference.value == "on")
             case "use_military_time":

@@ -22,8 +22,12 @@ public struct ResourceBudget: Sendable, Hashable {
     public var windowBookkeepingEntries = 20_000
     public var decodedImageEntries = 1_024
     public var imageFailureEntries = 256
-    public var maximumDecodedImageBytes = 4 * .mebibyte
-    public var maximumImagePixelDimension = 512
+    /// Largest single decoded image: a 2048 × 2048 four-byte bitmap (16 MiB) plus the
+    /// pipeline's rounding and row-alignment allowance. Only the explicitly opened
+    /// image viewer asks for that size; timeline thumbnails use at most 720 px.
+    public var maximumDecodedImageBytes = 17 * .mebibyte
+    /// Longest decoded edge in pixels (image viewer); callers request less.
+    public var maximumImagePixelDimension = 2_048
     public var decodedImageBytes = 32 * .mebibyte
     public var compressedImageBytes = 8 * .mebibyte
     public var compressedImagePerObjectBytes = 2 * .mebibyte

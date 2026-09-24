@@ -58,7 +58,9 @@ extension ServerSession {
         sections.append(SidebarSection(kind: .directMessages, rows: directs))
         sidebarContinuation.yield(SidebarSnapshot(scope: scope, generation: sidebarGeneration, teams: teams,
                                                   selectedTeam: selectedTeam, sections: sections,
-                                                  isTruncated: directory.channelsTruncated))
+                                                  isTruncated: directory.channelsTruncated,
+                                                  myStatus: directory.status(of: me.id),
+                                                  myCustomStatus: directory.peekUser(me.id)?.customStatus))
     }
 
     func sidebarRow(for channel: Channel, collapsedThreads: Bool) -> SidebarChannelRow {
@@ -70,7 +72,10 @@ extension ServerSession {
             mentionCount: Int(unread.mentions), isArchived: channel.isArchived,
             isMuted: directory.memberships[channel.id]?.markUnread == .mention,
             partnerStatus: partner.flatMap { directory.status(of: $0) },
-            lastPostAt: channel.lastPostAt)
+            lastPostAt: channel.lastPostAt,
+            partnerID: channel.type == .direct ? partner : nil,
+            partnerAvatarRevision: partner.flatMap { directory.peekUser($0)?.lastPictureUpdate.milliseconds } ?? 0,
+            partnerUsername: partner.flatMap { directory.peekUser($0)?.username })
     }
 
     /// Human-readable channel name. DMs use the partner's display name; GMs drop the

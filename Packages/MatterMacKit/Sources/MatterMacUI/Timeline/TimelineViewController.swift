@@ -166,6 +166,7 @@ public final class TimelineViewController: NSViewController {
         tableView.setAccessibilityLabel(String(localized: "Messages"))
         scrollView.documentView = tableView
         container.addSubview(scrollView)
+        tableView.fitColumnToWidth()
 
         newMessagesButton.bezelStyle = .push
         newMessagesButton.controlSize = .regular

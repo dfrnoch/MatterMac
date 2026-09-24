@@ -50,7 +50,10 @@ struct MainWindowScene: Scene {
                 .background(WindowRestorationDisabler())
         }
         .defaultSize(width: 1100, height: 720)
-        .commands { MainWindowCommands() }
+        .commands {
+            MainWindowCommands()
+            MatterMacCommands(environment: environment)
+        }
     }
 }
 

@@ -136,6 +136,23 @@ extension TimelineViewController: TimelineCellHost {
         }
         return menu.items.isEmpty ? nil : menu
     }
+    func contextMenu(forRowContaining view: NSView, leadingItems: [NSMenuItem]) -> NSMenu? {
+        let menu = NSMenu()
+        populate(menu, row: tableView.row(for: view))
+        if !leadingItems.isEmpty {
+            if !menu.items.isEmpty { menu.insertItem(.separator(), at: 0) }
+            for item in leadingItems.reversed() { menu.insertItem(item, at: 0) }
+        }
+        return menu.items.isEmpty ? nil : menu
+    }
+    func handleSpaceKey() -> Bool {
+        let row = tableView.selectedRow
+        guard items.indices.contains(row), let post = items[row].post,
+              let image = post.files.prefix(TimelineRowMetrics.maximumDisplayedFiles)
+                  .first(where: TimelineRowMetrics.showsThumbnail) else { return false }
+        perform(.previewImage(image))
+        return true
+    }
     func populate(_ menu: NSMenu, row: Int) {
         menu.removeAllItems()
         guard items.indices.contains(row), let post = items[row].post else { return }
@@ -145,6 +162,10 @@ extension TimelineViewController: TimelineCellHost {
             if post.actions.canReact { addMenuItem("Add Reaction", action: .addReaction(id), to: menu) }
             if post.actions.canEdit { addMenuItem("Edit Message", action: .edit(id), to: menu) }
             if post.actions.canDelete { addMenuItem("Delete Message…", action: .delete(id), to: menu) }
+        }
+        if post.postID != nil {
+            menu.addItem(.separator())
+            addMenuItem("View Profile of \(post.author.displayName)", action: .showProfile(post.author.userID), to: menu)
         }
         if post.actions.canCopyLink, let url = post.permalink { addMenuItem("Copy Link", action: .copyLink(url), to: menu) }
     }

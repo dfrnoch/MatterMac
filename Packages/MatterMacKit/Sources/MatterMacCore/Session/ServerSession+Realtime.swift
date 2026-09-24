@@ -83,8 +83,8 @@ extension ServerSession {
         case .postDeleted(let post):
             handleDeleted(post)
         case .ephemeralMessage:
-            // Ephemeral system responses (e.g. slash-command output) are not supported
-            // in v1 because MatterMac does not send slash commands.
+            // Ephemeral posts are not shown; a slash command's synchronous reply is
+            // displayed from the `commands/execute` response instead.
             break
         case .reactionAdded(let reaction):
             journal.append(.reaction(reaction, added: true))
@@ -213,9 +213,45 @@ extension ServerSession {
                 if isRoot { membership.mentionCountRoot += 1 }
             }
         }
+        if post.userID != me.id { alertIfNeeded(event) }
         insertLive(post)
         markDirty([.sidebar, .timeline, .thread])
         evaluateReadState()
+    }
+
+    /// Mentions and direct/group messages from others, unless the user set Do Not
+    /// Disturb or is looking at that conversation right now.
+    func alertIfNeeded(_ event: PostedEvent) {
+        let post = event.post
+        guard !post.type.isSystem, !post.isDeleted, let channel = directory.channels[post.channelID] else { return }
+        let kind: IncomingMessageAlert.Kind
+        if event.mentionsCurrentUser { kind = .mention }
+        else if channel.type.isDirectOrGroup, directory.memberships[channel.id]?.markUnread != .mention { kind = .directMessage }
+        else { return }
+        guard directory.status(of: me.id) != .doNotDisturb else { return }
+        if appIsActive, windowIsVisible, activeChannel == channel.id { return }
+        if post.props.overrideUsername == nil, directory.peekUser(post.userID) == nil {
+            // First message from someone not yet in the directory: resolve the name.
+            let epoch = epoch
+            Task { [weak self] in await self?.alertAfterResolvingSender(post, kind: kind, epoch: epoch) }
+            return
+        }
+        yieldAlert(post, kind: kind, channel: channel)
+    }
+
+    private func alertAfterResolvingSender(_ post: Post, kind: IncomingMessageAlert.Kind, epoch: UInt64) async {
+        if let user = try? await service.users(ids: [post.userID]).first, self.epoch == epoch { directory.upsertUser(user) }
+        guard self.epoch == epoch, isActiveSessionAlive, let channel = directory.channels[post.channelID] else { return }
+        yieldAlert(post, kind: kind, channel: channel)
+    }
+
+    private func yieldAlert(_ post: Post, kind: IncomingMessageAlert.Kind, channel: Channel) {
+        let sender = post.props.overrideUsername
+            ?? directory.peekUser(post.userID).map { directory.nameFormat.displayName(for: $0) }
+            ?? String(localized: "Someone")
+        alertContinuation.yield(IncomingMessageAlert(
+            scope: scope, channelID: channel.id, rootID: post.rootID, kind: kind,
+            channelName: displayName(of: channel), senderName: String(sender.prefix(128))))
     }
 
     /// Inserts a live post into every window that shows it (channel timeline unless
@@ -473,7 +509,8 @@ extension ServerSession {
             guard let wire = try? await session.service.fullConfiguration(), session.epoch == epoch else { return }
             session.capabilities = wire.capabilities.merged(over: session.capabilities)
             session.typingEnabled = wire.enableUserTypingMessages ?? true
-            session.markDirty([.timeline, .thread, .header])
+            session.applyNameDisplay(wire)
+            session.markDirty([.timeline, .thread, .header, .sidebar])
         }
     }
 

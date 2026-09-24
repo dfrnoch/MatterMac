@@ -86,6 +86,51 @@ struct ImagePipelineTests {
         #expect(await compressed.decodedBytes == 0)
     }
 
+    @Test func reservationComesFromSourceMetadataAndOutputIsNeverUpscaled() async throws {
+        let service = FakeMattermostService(endpoint: CoreFixtures.endpoint, me: CoreFixtures.me)
+        let wide = CoreFixtures.png(width: 1_600, height: 800)
+        let small = CoreFixtures.png(width: 64, height: 32)
+        service.withState { state in
+            state.imageHandler = { resource, _ in resource == .filePreview(FileID(unchecked: "small")) ? small : wide }
+        }
+        let pipeline = ImagePipeline(budget: .standard, diagnostics: DiagnosticRing(byteBudget: 1_024))
+        let preview = ImageResource.filePreview(FileID(unchecked: "wide"))
+        // A Retina timeline thumbnail (360 pt × 2) is sharper than the old 512 px cap.
+        let thumbnail = try #require(await pipeline.image(for: ImagePipeline.Key(scope: scope, resource: preview, maxPixelSize: 720),
+                                                          using: service))
+        #expect(thumbnail.image.width == 720 && thumbnail.image.height == 360)
+        let plan = try #require(ImagePipeline.decodePlan(wide, maxPixelSize: 720, maximumSourcePixels: 50_000_000))
+        #expect(thumbnail.byteCost <= plan.reservedBytes)
+        #expect(await pipeline.decodedBytes == thumbnail.byteCost)
+        // The viewer size is capped by the source, not upscaled.
+        let viewer = try #require(await pipeline.image(for: ImagePipeline.Key(scope: scope, resource: preview, maxPixelSize: 2_048),
+                                                       using: service))
+        #expect(viewer.image.width == 1_600 && viewer.image.height == 800)
+        let tiny = try #require(await pipeline.image(
+            for: ImagePipeline.Key(scope: scope, resource: .filePreview(FileID(unchecked: "small")), maxPixelSize: 2_048),
+            using: service))
+        #expect(tiny.image.width == 64 && tiny.image.height == 32)
+        #expect(await pipeline.decodedBytes == thumbnail.byteCost + viewer.byteCost + tiny.byteCost)
+        #expect(await pipeline.decodedBytes <= ResourceBudget.standard.decodedImageBytes)
+    }
+
+    @Test func imageLargerThanTheDecodedBudgetIsRefusedBeforeDecoding() async throws {
+        let service = FakeMattermostService(endpoint: CoreFixtures.endpoint, me: CoreFixtures.me)
+        let data = CoreFixtures.png(width: 1_024, height: 1_024)
+        service.withState { $0.imageHandler = { _, _ in data } }
+        var budget = ResourceBudget.standard
+        budget.maximumDecodedImageBytes = 1 * .mebibyte
+        let pipeline = ImagePipeline(budget: budget, diagnostics: DiagnosticRing(byteBudget: 1_024))
+        let resource = ImageResource.filePreview(FileID(unchecked: "big"))
+        #expect(await pipeline.image(for: ImagePipeline.Key(scope: scope, resource: resource, maxPixelSize: 1_024),
+                                     using: service) == nil)
+        #expect(await pipeline.decodedBytes == 0)
+        // A smaller rendition of the same source fits.
+        let fitting = await pipeline.image(for: ImagePipeline.Key(scope: scope, resource: resource, maxPixelSize: 256),
+                                           using: service)
+        #expect(fitting?.image.width == 256)
+    }
+
     @Test func cancelledQueuedDecodeReleasesItsWaiterWithoutAFreeSlot() async {
         let gate = AsyncGate(limit: 1, maximumWaiters: 1)
         #expect(await gate.enter())

@@ -47,6 +47,24 @@ final class TimelineTableView: NSTableView {
         super.moveRow(at: oldIndex, to: newIndex)
     }
 
+    // MARK: - Column width
+
+    /// The single column always spans the table. `NSTableColumn` starts at 100 pt and
+    /// column autoresizing only applies size *deltas*, so without this the cell view
+    /// stays ~100 pt wide while its subviews (laid out for the viewport width) draw
+    /// outside it — visible, but unreachable by hit testing: links, thumbnails and
+    /// reaction chips beyond the first 100 pt ignored clicks.
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        fitColumnToWidth()
+    }
+
+    func fitColumnToWidth() {
+        guard tableColumns.count == 1, let column = tableColumns.first else { return }
+        let width = max(column.minWidth, bounds.width)
+        if abs(column.width - width) > 0.25 { column.width = width }
+    }
+
     override func noteHeightOfRows(withIndexesChanged indexSet: IndexSet) {
         counters.heightNotes += 1
         counters.notedRows += indexSet.count
@@ -61,6 +79,8 @@ final class TimelineTableView: NSTableView {
             if host?.handleReturnKey() == true { return }
         case 53:
             if host?.handleEscapeKey() == true { return }
+        case 49 where event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty:
+            if host?.handleSpaceKey() == true { return } // Space: preview the row's image
         default:
             break
         }

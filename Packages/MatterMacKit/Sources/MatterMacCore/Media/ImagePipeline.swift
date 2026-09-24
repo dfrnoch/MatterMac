@@ -9,8 +9,10 @@ public import MattermostAPI
 ///
 /// - Fetches server thumbnails/previews/avatars into memory with a per-object
 ///   compressed-size limit; never writes to disk; never fetches third-party URLs.
-/// - Checks source pixel dimensions from metadata *before* decoding and downsamples
-///   with Image I/O to the requested display pixel size (orientation applied).
+/// - Checks source pixel dimensions from metadata *before* decoding, reserves the
+///   downsampled output's conservative size against the decoded budget, and
+///   downsamples with Image I/O to the requested display pixel size (orientation
+///   applied; never upscaled).
 /// - Retains decoded images in a strict cost-tracked LRU (cost = bytesPerRow × height)
 ///   and never keeps compressed bytes after decoding.
 /// - At most `imageDecodesGlobal` decodes run at once and at most
@@ -120,7 +122,15 @@ public actor ImagePipeline {
             return nil
         }
         guard data.count <= maximumBytes else { failures.set(true, for: key, cost: 1); return nil }
-        let reservation = min(budget.maximumDecodedImageBytes, budget.decodedImageBytes)
+        // Source metadata is read before anything is decoded; the reservation is the
+        // conservative size of the downsampled output, never the source.
+        let edge = min(key.maxPixelSize, budget.maximumImagePixelDimension)
+        guard let plan = Self.decodePlan(data, maxPixelSize: edge, maximumSourcePixels: budget.maximumSourceImagePixels),
+              plan.reservedBytes <= min(budget.maximumDecodedImageBytes, budget.decodedImageBytes) else {
+            failures.set(true, for: key, cost: 1)
+            return nil
+        }
+        let reservation = plan.reservedBytes
         // Keep displayed images charged while evicting unused cache entries to make room.
         while retainedBytes.withLock({ $0 + reservation > budget.decodedImageBytes }), !decoded.isEmpty {
             _ = decoded.removeLeastRecentlyUsed()
@@ -131,10 +141,8 @@ public actor ImagePipeline {
             return true
         }
         guard admitted else { return nil } // Saturation is not a permanent failed resource.
-        // Conservative 16 bytes/pixel plus row-alignment allowance for Image I/O output.
-        let edge = min(key.maxPixelSize, budget.maximumImagePixelDimension,
-                       Int(Double(max(0, reservation - 4_096) / 16).squareRoot()))
-        guard let image = await Self.downsample(data, maxPixelSize: edge, maximumSourcePixels: budget.maximumSourceImagePixels),
+        guard let image = await Self.downsample(data, maxPixelSize: plan.maxPixelSize,
+                                                maximumSourcePixels: budget.maximumSourceImagePixels),
               !Task.isCancelled, image.bytesPerRow * image.height <= reservation else {
             retainedBytes.withLock { $0 -= reservation }
             if !Task.isCancelled { failures.set(true, for: key, cost: 1) }
@@ -156,6 +164,40 @@ public actor ImagePipeline {
     /// Memory pressure: discard decoded images first (SPEC §15 pressure policy).
     public func trim(toFraction fraction: Double) {
         decoded.trim(toCost: Int(Double(budget.decodedImageBytes) * max(0, min(1, fraction))))
+    }
+
+    /// What decoding `data` at `maxPixelSize` will produce, from source metadata only.
+    public struct DecodePlan: Equatable, Sendable {
+        /// Longest edge requested from Image I/O (never above the source's longest edge).
+        public let maxPixelSize: Int
+        /// Upper bound of the decoded bitmap: output pixels (plus one pixel of rounding
+        /// per edge) at 4 bytes (8-bit sources) or 8 bytes (deeper sources) each, plus
+        /// 64 bytes of row alignment per row.
+        public let reservedBytes: Int
+    }
+
+    /// Reads only the source properties. `nil` for undecodable data, missing
+    /// dimensions, or sources above `maximumSourcePixels`.
+    public static func decodePlan(_ data: Data, maxPixelSize: Int, maximumSourcePixels: Int) -> DecodePlan? {
+        guard maxPixelSize > 0, maximumSourcePixels > 0,
+              let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              CGImageSourceGetCount(source) > 0,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0, !width.multipliedReportingOverflow(by: height).overflow,
+              width * height <= maximumSourcePixels
+        else { return nil }
+        let longest = max(width, height)
+        let edge = min(maxPixelSize, longest)
+        let scale = Double(edge) / Double(longest)
+        let outWidth = Int((Double(width) * scale).rounded(.up)) + 1
+        let outHeight = Int((Double(height) * scale).rounded(.up)) + 1
+        let depth = properties[kCGImagePropertyDepth] as? Int ?? 8
+        let bytesPerPixel = depth > 8 ? 8 : 4
+        // Orientation may swap the edges; alignment is charged for the longer one.
+        let rows = max(outWidth, outHeight)
+        return DecodePlan(maxPixelSize: edge, reservedBytes: outWidth * outHeight * bytesPerPixel + rows * 64)
     }
 
     /// Downsamples encoded image data to at most `maxPixelSize` on the longest edge,
