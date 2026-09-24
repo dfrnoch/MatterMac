@@ -1,4 +1,5 @@
 public import SwiftUI
+import AppKit
 import MatterMacModels
 import MatterMacCore
 
@@ -17,7 +18,12 @@ public struct MatterMacRootView: View {
         Group {
             switch model.phase {
             case .restoring:
-                ProgressView("Restoring saved sign-ins…")
+                ZStack {
+                    OnboardingBackdrop()
+                    ProgressView("Restoring saved sign-ins…")
+                        .padding(24)
+                        .glassSurface(cornerRadius: 20)
+                }
             case .connect:
                 ConnectView(model: model)
             case .login(let login):
@@ -55,10 +61,17 @@ struct ConnectView: View {
     }
 
     var body: some View {
+        ZStack {
+            OnboardingBackdrop()
+            card
+        }
+    }
+
+    private var card: some View {
         VStack(spacing: 20) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 44, weight: .regular))
-                .foregroundStyle(.tint)
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .frame(width: 88, height: 88)
                 .accessibilityHidden(true)
             Text("MatterMac")
                 .font(.largeTitle.weight(.semibold))
@@ -70,6 +83,7 @@ struct ConnectView: View {
                     .font(.headline)
                 TextField("https://chat.example.org", text: $serverText)
                     .textFieldStyle(.roundedBorder)
+                    .controlSize(.large)
                     .textContentType(.URL)
                     .focused($fieldFocused)
                     .onSubmit(submit)
@@ -105,8 +119,10 @@ struct ConnectView: View {
                     else { Text("Continue") }
                 }
                 .keyboardShortcut(.defaultAction)
+                .glassButtonStyle(prominent: true)
                 .disabled(serverText.trimmingCharacters(in: .whitespaces).isEmpty || isProbing)
             }
+            .controlSize(.large)
 
             Text("""
                 MatterMac saves account sign-ins in macOS Keychain. Signing out removes the saved sign-in. \
@@ -129,6 +145,9 @@ struct ConnectView: View {
                     .frame(maxWidth: 460)
             }
         }
+        .padding(36)
+        .frame(width: 540)
+        .glassSurface(cornerRadius: 28)
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { fieldFocused = true }
@@ -182,6 +201,13 @@ struct LoginView: View {
     enum Field { case loginID, password, mfa, token }
 
     var body: some View {
+        ZStack {
+            OnboardingBackdrop()
+            form
+        }
+    }
+
+    private var form: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
                 Image(systemName: login.discovery.endpoint.scheme == .https ? "lock.fill" : "exclamationmark.triangle.fill")
@@ -285,13 +311,15 @@ struct LoginView: View {
                     if login.isWorking { ProgressView().controlSize(.small) } else { Text(login.method == .browserSSO ? "Continue in Browser" : "Sign In") }
                 }
                 .keyboardShortcut(.defaultAction)
+                .glassButtonStyle(prominent: true)
                 .disabled(login.isWorking || !canSubmit)
             }
-
-
+            .controlSize(.large)
         }
         .textFieldStyle(.roundedBorder)
         .frame(maxWidth: 440)
+        .padding(32)
+        .glassSurface(cornerRadius: 28)
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { focused = login.method == .password ? .loginID : .token }
@@ -313,5 +341,22 @@ struct LoginView: View {
     private func submit() {
         guard canSubmit else { return }
         Task { await login.submit() }
+    }
+}
+
+/// Quiet, static tinted backdrop behind the onboarding cards (no animation).
+struct OnboardingBackdrop: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack {
+            Color(nsColor: .windowBackgroundColor)
+            RadialGradient(colors: [Color.accentColor.opacity(colorScheme == .dark ? 0.28 : 0.18), .clear],
+                           center: .topLeading, startRadius: 40, endRadius: 700)
+            RadialGradient(colors: [Color.purple.opacity(colorScheme == .dark ? 0.20 : 0.12), .clear],
+                           center: .bottomTrailing, startRadius: 40, endRadius: 650)
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
     }
 }
