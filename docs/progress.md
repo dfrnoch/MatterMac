@@ -908,3 +908,56 @@ list below. Names, notifications and UI-test isolation are in
    granted permission (the test host has no bundle); verify manually.
 3. Custom emoji, command dialogs/ephemeral posts, VoiceOver audit, official-client
    peer exchange, and executable-size attribution remain open. Nothing committed.
+
+## 2026-09-25 — parity push: glass UI, threads, search pane, parallel feature merges
+
+The user asked to keep going until MatterMac can replace the official client (calls
+excluded), to improve the UI with Liquid Glass, and to push regularly. Three
+parallel agents worked in isolated git worktrees; the lead merged each branch into
+`main`, resolved conflicts, reran the full suite and pushed. Decisions 0022–0024
+record the agents' work.
+
+- **Lead:**
+  - Liquid Glass composer field and floating glass banners, onboarding cards, and
+    shared `GlassStyle` helpers with material fallbacks before macOS 26.
+  - Threads view for collapsed reply threads, with an unread badge. Open CRT threads
+    are now marked read under the channel visibility policy; before, they never
+    became read.
+  - Trailing results pane for search, Recent Mentions, Saved and Pinned messages.
+  - Pane-wide file drops, Markdown formatting shortcuts and Format menu, and channel
+    rename/purpose/header editing.
+  - Accessibility audit XCUITest with contrast and label fixes. Sidebar width fix.
+- **Agent A (timeline):** hover action bar, pin/save, mark as unread with a read
+  hold, in-app permalinks, who-reacted tooltips, link preview cards, edited
+  indicators. Found and fixed `flagged_post` preferences being dropped.
+- **Agent B (sidebar):** server sidebar categories with collapse, team rail and
+  ⌘1–9, Browse Channels (⇧⌘L), Create Channel, New Message (⇧⌘K), Add Members,
+  ⌥↑/↓ navigation, draft markers.
+- **Agent C (notifications/settings):** alerts follow account and channel
+  `notify_props` and mention keys, optional preview opt-in, in-app sound and Dock
+  bounce, per-channel preference sheet, and a Settings window (⌘,) that separates
+  in-memory local settings from explicit server settings. Found and fixed SwiftUI
+  Settings tabs writing to UserDefaults.
+
+### Verification
+
+- `swift test --package-path Packages/MatterMacKit` after the final merge: **355
+  tests, all passed, zero warnings** (UI 131, Core 128, API 52, Models 17,
+  Realtime 27). Evidence: `/tmp/mm-merge-b.log`.
+- `xcodebuild … -scheme MatterMacUITests … test` with live env via `TEST_RUNNER_*`:
+  **12 tests, 0 failures**. This includes first launch, accessibility audit, the
+  live member list, Settings and the visual tour. Evidence:
+  `/tmp/mm-merged-uitests.log`.
+- New live tests (`LiveThreadsTests`, `LivePostListsTests`, and the agents'
+  `LiveInteractionTests`, `LiveSidebarTests`, `LiveNotificationPreferencesTests`)
+  passed on the local deployments; each test restores or deletes what it changes.
+  Agent B's channel-creation test can leave archived `mm-sidebar-*` channels.
+- Known flakes: `testClosingWindowKeepsAppRunningAndWindowMenuReopensIt` failed once
+  in a full run and passed twice alone. Some UI-target timing tests fail about 1 in
+  6 runs under load, also on older commits (agent A measured this).
+
+### Next
+
+Custom emoji rendering, own-profile editing and picture upload, slash-command
+autocomplete, file search, message-attachment polish, a large-account performance
+pass, and a manual Notification Center check in a signed build.
