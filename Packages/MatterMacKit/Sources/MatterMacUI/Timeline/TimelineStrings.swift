@@ -161,7 +161,26 @@ enum TimelineStrings {
         return formatter
     }()
 
-    static func time(_ timestamp: MattermostTimestamp) -> String { timeFormatter.string(from: timestamp.date) }
+    /// The server's `use_military_time` preference of the visible account; `nil`
+    /// follows the Mac's time format. Set through `TimelineViewController.uses24HourClock`.
+    static var clockOverride: Bool?
+
+    private static let twelveHourFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("hmm")
+        return formatter
+    }()
+
+    private static let twentyFourHourFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("HHmm")
+        return formatter
+    }()
+
+    static func time(_ timestamp: MattermostTimestamp) -> String {
+        let formatter = clockOverride.map { $0 ? twentyFourHourFormatter : twelveHourFormatter } ?? timeFormatter
+        return formatter.string(from: timestamp.date)
+    }
     static func fullDateTime(_ timestamp: MattermostTimestamp) -> String { fullFormatter.string(from: timestamp.date) }
     static func date(_ date: Date) -> String { dateFormatter.string(from: date) }
 

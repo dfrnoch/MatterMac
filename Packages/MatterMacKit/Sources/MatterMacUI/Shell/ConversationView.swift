@@ -80,6 +80,7 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         composer.delegate = self
         loadDraft()
         attachDraftProvider()
+        bindDisplaySettings()
     }
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }

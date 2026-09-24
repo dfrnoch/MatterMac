@@ -49,4 +49,10 @@ extension SessionViewModel {
                                                             ignoreChannelMentions: ignoreChannelMentions)
         channelInfoRevision &+= 1
     }
+
+    /// Presents "Notification Preferences…" for a channel as a sheet on the main window.
+    public func showNotificationPreferences(_ channel: ChannelID) {
+        guard canChangeServerSettings else { return }
+        ChannelNotificationSheet.present(session: self, channel: channel)
+    }
 }

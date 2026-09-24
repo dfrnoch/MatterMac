@@ -32,6 +32,16 @@ public final class TimelineViewController: NSViewController {
         didSet { if TimelineFonts.scaleKey(for: oldValue) != TimelineFonts.scaleKey(for: fontScale) { rendererDidChange(fontScaleChanged: true) } }
     }
 
+    /// 24-hour (`true`) or 12-hour message times from the account's server
+    /// preference; `nil` follows the Mac. Re-renders visible rows when it changes.
+    public var uses24HourClock: Bool? {
+        didSet {
+            guard oldValue != uses24HourClock || TimelineStrings.clockOverride != uses24HourClock else { return }
+            TimelineStrings.clockOverride = uses24HourClock
+            rendererDidChange(fontScaleChanged: false)
+        }
+    }
+
     /// The signed-in user's username for mention highlighting.
     public var currentUsername: String? {
         didSet { if oldValue != currentUsername { rendererDidChange(fontScaleChanged: false) } }

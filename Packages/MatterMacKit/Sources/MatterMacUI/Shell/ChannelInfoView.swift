@@ -93,6 +93,8 @@ struct ChannelInfoView: View {
                                               set: { session.setMuted(channel, $0) }))
                     .help("Muted channels are marked unread only for mentions. This changes your notification setting on the server.")
                     .disabled(details.isArchived)
+                Button("Notification Preferences…") { session.showNotificationPreferences(channel) }
+                    .disabled(details.isArchived)
                 if let partner = details.directPartner {
                     Button("View Profile") { profile = ProfileTarget(id: partner) }
                         .popover(isPresented: profileBinding(partner), arrowEdge: .leading) {

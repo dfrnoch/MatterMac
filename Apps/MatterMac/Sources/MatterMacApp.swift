@@ -25,6 +25,8 @@ struct MatterMacApp: App {
     var body: some Scene {
         MainWindowScene(environment: appDelegate.environment)
             .restorationBehavior(.disabled)
+        SettingsScene(environment: appDelegate.environment)
+            .restorationBehavior(.disabled)
     }
 }
 
@@ -35,6 +37,20 @@ struct MatterMacLegacyApp: App {
 
     var body: some Scene {
         MainWindowScene(environment: appDelegate.environment)
+        SettingsScene(environment: appDelegate.environment)
+    }
+}
+
+/// MatterMac ▸ Settings… (⌘,). Local settings stay in memory; server settings are
+/// explicit changes to the active account (see `MatterMacSettingsView`).
+struct SettingsScene: Scene {
+    let environment: AppEnvironment
+
+    var body: some Scene {
+        Settings {
+            MatterMacSettingsView(environment: environment)
+                .background(WindowRestorationDisabler())
+        }
     }
 }
 
