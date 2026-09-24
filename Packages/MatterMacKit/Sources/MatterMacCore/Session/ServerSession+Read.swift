@@ -45,6 +45,7 @@ extension ServerSession {
     }
 
     func evaluateReadState() {
+        evaluateThreadReadState()
         guard let channel = activeChannel, readConditionsHold(for: channel) else { return }
         guard !isRunning(.readMark) else { return }
         run(.readMark) { session in
@@ -66,6 +67,37 @@ extension ServerSession {
                 guard session.epoch == epoch else { return }
                 // Not retried with the old context: the next visibility change re-evaluates.
                 session.deps.diagnostics.record(.sync, .warning, "view channel failed")
+                session.handleAuthenticationFailureIfNeeded(error)
+            }
+        }
+    }
+
+    /// With collapsed reply threads, a followed thread is marked read (up to its newest
+    /// reply) under the same policy as channels: app active, window visible, the thread
+    /// pane showing its live edge, after a short dwell. Each reply time is reported once.
+    func threadReadTarget() -> (root: PostID, latest: MattermostTimestamp)? {
+        guard collapsedThreadsActive, appIsActive, windowIsVisible, isActiveSessionAlive,
+              let target = openThread, case .thread(let root, _) = target,
+              let window = windows[target], window.isLoaded, !window.hasNewer,
+              visibility[target]?.atLiveEdge == true, let latest = window.entries.last?.createAt else { return nil }
+        if let mark = threadReadMark, mark.root == root, mark.at >= latest { return nil }
+        return (root, latest)
+    }
+
+    func evaluateThreadReadState() {
+        guard let candidate = threadReadTarget(), !isRunning(.threadRead), let team = selectedTeam else { return }
+        run(.threadRead) { session in
+            try? await session.deps.clock.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled, let current = session.threadReadTarget(), current.root == candidate.root else { return }
+            let epoch = session.epoch
+            do {
+                try await session.service.markThreadRead(current.root, at: current.latest, team: team, me: session.me.id)
+                guard session.epoch == epoch else { return }
+                session.threadReadMark = (current.root, current.latest)
+                session.refreshThreadTotals()
+            } catch {
+                guard session.epoch == epoch else { return }
+                session.deps.diagnostics.record(.sync, .warning, "thread read failed")
                 session.handleAuthenticationFailureIfNeeded(error)
             }
         }

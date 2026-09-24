@@ -30,6 +30,8 @@ public actor ServerSession {
     /// Content-free alerts for mentions and direct messages from others (who and where,
     /// never message text). The UI decides whether to show a notification.
     public nonisolated let alerts: AsyncStream<IncomingMessageAlert>
+    /// Unread totals of followed threads (collapsed reply threads) for the Threads view.
+    public nonisolated let threadActivity: AsyncStream<ThreadActivity>
 
     let sidebarContinuation: AsyncStream<SidebarSnapshot>.Continuation
     let timelineContinuation: AsyncStream<TimelineSnapshot>.Continuation
@@ -39,6 +41,10 @@ public actor ServerSession {
     let searchContinuation: AsyncStream<SearchSnapshot>.Continuation
     let noticeContinuation: AsyncStream<SessionNotice>.Continuation
     let alertContinuation: AsyncStream<IncomingMessageAlert>.Continuation
+    let threadActivityContinuation: AsyncStream<ThreadActivity>.Continuation
+    var threadActivityRevision: UInt64 = 0
+    /// The newest reply time already reported read for the open thread (CRT).
+    var threadReadMark: (root: PostID, at: MattermostTimestamp)?
 
     let service: any MattermostService
     let realtime: any RealtimeConnection
@@ -107,6 +113,8 @@ public actor ServerSession {
         case configRefresh
         case authenticationCleanup
         case sendRetry(PendingPostID)
+        case threadTotals
+        case threadRead
     }
 
     struct VisibleRange: Equatable {
@@ -136,6 +144,7 @@ public actor ServerSession {
         (searchUpdates, searchContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
         (notices, noticeContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(8))
         (alerts, alertContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(8))
+        (threadActivity, threadActivityContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
         directory.pin(me)
     }
 
@@ -169,6 +178,7 @@ public actor ServerSession {
             if selectedTeam == nil { selectedTeam = directory.sortedTeams.first?.id }
             markDirty(.sidebar)
             if let team = selectedTeam { await loadChannels(team: team) }
+            refreshThreadTotals()
         } catch {
             guard self.epoch == epoch else { return }
             deps.diagnostics.record(.sync, .error, "teams load failed")
@@ -216,6 +226,7 @@ public actor ServerSession {
         searchContinuation.finish()
         noticeContinuation.finish()
         alertContinuation.finish()
+        threadActivityContinuation.finish()
         deps.diagnostics.record(.lifecycle, .info, "session shut down")
         return outcome
     }

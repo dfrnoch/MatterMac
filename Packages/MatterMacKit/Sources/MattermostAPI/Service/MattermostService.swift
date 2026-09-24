@@ -339,6 +339,14 @@ public protocol MattermostService: Sendable {
     func addReaction(post: PostID, emojiName: String, me: UserID) async throws(APIError) -> Reaction
     func removeReaction(post: PostID, emojiName: String, me: UserID) async throws(APIError)
     func searchPosts(_ query: SearchQuery) async throws(APIError) -> PostPage
+    /// `GET /users/{id}/teams/{team}/threads?extended=true`: followed threads, newest
+    /// reply first. `before` pages older; `totalsOnly` returns only the unread totals.
+    func userThreads(team: TeamID, me: UserID, before: PostID?, perPage: Int, unreadOnly: Bool, totalsOnly: Bool)
+        async throws(APIError) -> UserThreadList
+    /// `PUT` / `DELETE /users/{id}/teams/{team}/threads/{thread}/following`.
+    func setThreadFollowing(_ thread: PostID, following: Bool, team: TeamID, me: UserID) async throws(APIError)
+    /// `PUT /users/{id}/teams/{team}/threads/{thread}/read/{timestamp}`; `thread == nil` marks all read.
+    func markThreadRead(_ thread: PostID?, at timestamp: MattermostTimestamp, team: TeamID, me: UserID) async throws(APIError)
     /// `POST /commands/execute`. Not idempotent: a lost response is `.outcomeUnknown`.
     func executeCommand(_ command: String, channel: ChannelID, team: TeamID?, rootID: PostID?)
         async throws(APIError) -> CommandResult

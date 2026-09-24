@@ -30,6 +30,9 @@ public final class SessionViewModel {
     public var isUnsentRecoveryVisible = false
     public var isSearchVisible = false
     public var isQuickSwitcherVisible = false
+    /// The followed-threads view (collapsed reply threads) in the main area.
+    public var isThreadsViewVisible = false
+    public private(set) var threadActivity: ThreadActivity?
     /// The channel details inspector (members, favorite/mute, leave).
     public var isChannelInfoVisible = false {
         didSet { if isChannelInfoVisible, !oldValue, thread != nil || replyTarget != nil { closeThread() } }
@@ -131,6 +134,12 @@ public final class SessionViewModel {
             }
         })
         subscriptions.append(Task { [weak self] in
+            for await activity in session.threadActivity {
+                guard let self, !self.isDetached, !self.requiresAuthentication, activity.scope == scope else { continue }
+                self.threadActivity = activity
+            }
+        })
+        subscriptions.append(Task { [weak self] in
             for await alert in session.alerts {
                 guard let self, !self.isDetached, !self.requiresAuthentication, alert.scope == scope else { continue }
                 self.app?.deliver(alert)
@@ -227,12 +236,34 @@ public final class SessionViewModel {
         header = nil
         editing = nil
         commandFeedback = nil
+        isThreadsViewVisible = false
         navigationTask = Task {
             guard !Task.isCancelled else { return }
             await session.closeThread()
             guard !Task.isCancelled else { return }
             await session.openChannel(channel, focusing: post)
         }
+    }
+
+    /// Opens a thread from the Threads view: its channel becomes current (for drafts
+    /// and permissions) while the Threads view stays on screen.
+    public func openThreadFromList(root: PostID, channel: ChannelID) {
+        if selectedChannel != channel { select(channel: channel) }
+        isThreadsViewVisible = true
+        openThread(root: root)
+    }
+
+    public func followedThreads(unreadOnly: Bool, before: PostID?) async throws(UserFacingError) -> ThreadsPage {
+        guard !isDetached, !requiresAuthentication else { throw .authenticationRequired }
+        return try await session.followedThreads(unreadOnly: unreadOnly, before: before)
+    }
+
+    public func setThreadFollowing(_ root: PostID, _ following: Bool) {
+        perform { try await $0.setThreadFollowing(root, following) }
+    }
+
+    public func markThreadRead(_ root: PostID?) {
+        perform { try await $0.markThreadRead(root) }
     }
 
     public func selectTeam(_ team: TeamID) {

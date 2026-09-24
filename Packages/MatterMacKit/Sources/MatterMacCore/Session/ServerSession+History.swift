@@ -18,6 +18,7 @@ extension ServerSession {
         selectedTeam = id
         markDirty(.sidebar)
         if !directory.loadedTeams.contains(id) { await loadChannels(team: id) }
+        refreshThreadTotals()
     }
 
     func loadChannels(team: TeamID) async {

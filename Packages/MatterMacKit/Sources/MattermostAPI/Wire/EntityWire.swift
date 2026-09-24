@@ -363,3 +363,69 @@ public struct CommandResponseWire: Decodable, Sendable {
                                gotoLocation: goto.isEmpty ? nil : goto)
     }
 }
+
+/// One followed thread from `GET /users/{id}/teams/{team}/threads` (`ThreadResponse`).
+public struct UserThread: Sendable, Hashable {
+    public let root: Post
+    public let replyCount: Int
+    public let lastReplyAt: MattermostTimestamp
+    public let lastViewedAt: MattermostTimestamp
+    public let unreadReplies: Int
+    public let unreadMentions: Int
+    /// Most recent participants first (bounded).
+    public let participants: [User]
+
+    public init(root: Post, replyCount: Int, lastReplyAt: MattermostTimestamp, lastViewedAt: MattermostTimestamp,
+                unreadReplies: Int, unreadMentions: Int, participants: [User]) {
+        self.root = root
+        self.replyCount = replyCount
+        self.lastReplyAt = lastReplyAt
+        self.lastViewedAt = lastViewedAt
+        self.unreadReplies = unreadReplies
+        self.unreadMentions = unreadMentions
+        self.participants = participants
+    }
+}
+
+public struct UserThreadList: Sendable {
+    public let threads: [UserThread]
+    public let totalUnreadThreads: Int
+    public let totalUnreadMentions: Int
+
+    public init(threads: [UserThread], totalUnreadThreads: Int, totalUnreadMentions: Int) {
+        self.threads = threads
+        self.totalUnreadThreads = totalUnreadThreads
+        self.totalUnreadMentions = totalUnreadMentions
+    }
+}
+
+public struct UserThreadWire: Decodable, Sendable {
+    public let thread: UserThread?
+    enum Keys: String, CodingKey { case reply_count, last_reply_at, last_viewed_at, participants, post, unread_replies, unread_mentions, delete_at }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        // The embedded root "may be null"; such rows cannot be shown or opened.
+        guard let root = try? c.decodeIfPresent(PostWire.self, forKey: .post), c.timestamp(.delete_at).isZero else {
+            thread = nil
+            return
+        }
+        let participants = (try? c.decodeIfPresent(LossyArray<UserWire>.self, forKey: .participants))?.elements ?? []
+        thread = UserThread(root: root.post, replyCount: Int(clamping: c.lenientInt64(.reply_count) ?? 0),
+                            lastReplyAt: c.timestamp(.last_reply_at), lastViewedAt: c.timestamp(.last_viewed_at),
+                            unreadReplies: Int(clamping: c.lenientInt64(.unread_replies) ?? 0),
+                            unreadMentions: Int(clamping: c.lenientInt64(.unread_mentions) ?? 0),
+                            participants: Array(participants.map(\.user).reversed().prefix(8)))
+    }
+}
+
+public struct UserThreadListWire: Decodable, Sendable {
+    public let list: UserThreadList
+    enum Keys: String, CodingKey { case threads, total_unread_threads, total_unread_mentions }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        let threads = (try? c.decodeIfPresent(LossyArray<UserThreadWire>.self, forKey: .threads))?.elements ?? []
+        list = UserThreadList(threads: threads.compactMap(\.thread),
+                              totalUnreadThreads: Int(clamping: c.lenientInt64(.total_unread_threads) ?? 0),
+                              totalUnreadMentions: Int(clamping: c.lenientInt64(.total_unread_mentions) ?? 0))
+    }
+}

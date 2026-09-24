@@ -171,8 +171,9 @@ extension ServerSession {
             markDirty(.sidebar)
         case .threadUpdated(let thread, _), .threadFollowChanged(let thread, _):
             updateThreadRoot(thread)
+            refreshThreadTotals()
         case .threadReadChanged:
-            break
+            refreshThreadTotals()
         case .configChanged, .licenseChanged:
             refreshConfiguration()
         case .emojiAdded, .unhandled:

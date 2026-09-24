@@ -23,6 +23,10 @@ public final class FakeMattermostService: MattermostService {
         public var viewedChannels: [ChannelID] = []
         public var statuses: [UserID: PresenceStatus] = [:]
         public var executedCommands: [String] = []
+        public var threads: [UserThread] = []
+        /// Client config `CollapsedThreads` (`disabled`, `always_on`, …).
+        public var collapsedThreads = "disabled"
+        public var threadReadMarks: [PostID?] = []
         public var commandHandler: (@Sendable (String) async throws -> CommandResult)?
         public var savedPreferences: [Preference] = []
         public var deletedPreferences: [Preference] = []
@@ -72,7 +76,8 @@ public final class FakeMattermostService: MattermostService {
 
     public func fullConfiguration() async throws(APIError) -> ClientConfigWire {
         record("fullConfiguration")
-        var values = ["Version": "11.11.1", "CollapsedThreads": "disabled", "MaxPostSize": "16383", "EnableUserTypingMessages": "true"]
+        var values = ["Version": "11.11.1", "CollapsedThreads": withState({ $0.collapsedThreads }), "MaxPostSize": "16383",
+                      "EnableUserTypingMessages": "true"]
         if let enabled = withState({ $0.attachmentsEnabled }) { values["EnableFileAttachments"] = String(enabled) }
         let data: Data
         do { data = try JSONEncoder().encode(values) } catch { throw .malformedResponse }
@@ -274,6 +279,39 @@ public final class FakeMattermostService: MattermostService {
 
     public func statuses(ids: [UserID]) async throws(APIError) -> [UserID: PresenceStatus] {
         withState { state in Dictionary(ids.map { ($0, state.statuses[$0] ?? .online) }, uniquingKeysWith: { first, _ in first }) }
+    }
+
+    public func userThreads(team: TeamID, me: UserID, before: PostID?, perPage: Int, unreadOnly: Bool, totalsOnly: Bool)
+        async throws(APIError) -> UserThreadList {
+        record("userThreads")
+        return withState { state in
+            var threads = state.threads.filter { !unreadOnly || $0.unreadReplies > 0 }
+                .sorted { $0.lastReplyAt > $1.lastReplyAt }
+            if let before, let index = threads.firstIndex(where: { $0.root.id == before }) {
+                threads = Array(threads[(index + 1)...])
+            }
+            return UserThreadList(threads: totalsOnly ? [] : Array(threads.prefix(perPage)),
+                                  totalUnreadThreads: state.threads.filter { $0.unreadReplies > 0 }.count,
+                                  totalUnreadMentions: state.threads.reduce(0) { $0 + $1.unreadMentions })
+        }
+    }
+
+    public func setThreadFollowing(_ thread: PostID, following: Bool, team: TeamID, me: UserID) async throws(APIError) {
+        record(following ? "followThread" : "unfollowThread")
+        if !following { withState { $0.threads.removeAll { $0.root.id == thread } } }
+    }
+
+    public func markThreadRead(_ thread: PostID?, at timestamp: MattermostTimestamp, team: TeamID, me: UserID)
+        async throws(APIError) {
+        record("markThreadRead")
+        withState { state in
+            state.threadReadMarks.append(thread)
+            state.threads = state.threads.map { item in
+                guard thread == nil || item.root.id == thread else { return item }
+                return UserThread(root: item.root, replyCount: item.replyCount, lastReplyAt: item.lastReplyAt,
+                                  lastViewedAt: timestamp, unreadReplies: 0, unreadMentions: 0, participants: item.participants)
+            }
+        }
     }
 
     public func executeCommand(_ command: String, channel: ChannelID, team: TeamID?, rootID: PostID?)

@@ -259,3 +259,77 @@ public struct IncomingMessageAlert: Hashable, Sendable {
         self.senderName = senderName
     }
 }
+
+/// Followed-thread totals for the Threads toolbar badge.
+public struct ThreadActivity: Hashable, Sendable {
+    public let scope: AccountScope
+    /// Bumps whenever the server reports thread changes; views refetch when visible.
+    public let revision: UInt64
+    /// `false` when collapsed reply threads are off for this account/server.
+    public let isAvailable: Bool
+    public let unreadThreads: Int
+    public let unreadMentions: Int
+
+    public init(scope: AccountScope, revision: UInt64, isAvailable: Bool, unreadThreads: Int, unreadMentions: Int) {
+        self.scope = scope
+        self.revision = revision
+        self.isAvailable = isAvailable
+        self.unreadThreads = unreadThreads
+        self.unreadMentions = unreadMentions
+    }
+}
+
+/// One followed thread in the Threads view. Holds a short plain-text preview only.
+public struct ThreadSummary: Hashable, Sendable, Identifiable {
+    public var id: PostID { rootID }
+    public let rootID: PostID
+    public let channelID: ChannelID
+    public let channelName: String
+    public let authorID: UserID
+    public let authorName: String
+    public let authorAvatarRevision: Int64
+    public let preview: String
+    public let replyCount: Int
+    public let lastReplyAt: MattermostTimestamp
+    public let unreadReplies: Int
+    public let unreadMentions: Int
+    /// Up to five recent participants (display name, id, picture revision).
+    public let participants: [Participant]
+
+    public struct Participant: Hashable, Sendable {
+        public let id: UserID
+        public let name: String
+        public let avatarRevision: Int64
+    }
+
+    public init(rootID: PostID, channelID: ChannelID, channelName: String, authorID: UserID, authorName: String,
+                authorAvatarRevision: Int64, preview: String, replyCount: Int, lastReplyAt: MattermostTimestamp,
+                unreadReplies: Int, unreadMentions: Int, participants: [Participant]) {
+        self.rootID = rootID
+        self.channelID = channelID
+        self.channelName = channelName
+        self.authorID = authorID
+        self.authorName = authorName
+        self.authorAvatarRevision = authorAvatarRevision
+        self.preview = preview
+        self.replyCount = replyCount
+        self.lastReplyAt = lastReplyAt
+        self.unreadReplies = unreadReplies
+        self.unreadMentions = unreadMentions
+        self.participants = participants
+    }
+}
+
+public struct ThreadsPage: Sendable {
+    public let threads: [ThreadSummary]
+    public let hasMore: Bool
+    public let unreadThreads: Int
+    public let unreadMentions: Int
+
+    public init(threads: [ThreadSummary], hasMore: Bool, unreadThreads: Int, unreadMentions: Int) {
+        self.threads = threads
+        self.hasMore = hasMore
+        self.unreadThreads = unreadThreads
+        self.unreadMentions = unreadMentions
+    }
+}

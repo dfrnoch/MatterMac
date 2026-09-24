@@ -25,7 +25,8 @@ struct SessionHarness {
     let wallClock: FixedWallClock
     let channel: Channel
 
-    init(budget: ResourceBudget = .standard, posts: Int = 5, unread: Bool = false) async {
+    init(budget: ResourceBudget = .standard, posts: Int = 5, unread: Bool = false,
+         configure: @Sendable (inout FakeMattermostService.State) -> Void = { _ in }) async {
         let me = CoreFixtures.me
         let service = FakeMattermostService(endpoint: CoreFixtures.endpoint, me: me)
         let channel = CoreFixtures.channel(1, total: Int64(posts))
@@ -40,6 +41,7 @@ struct SessionHarness {
                 let post = CoreFixtures.post(n, channel: channel.id)
                 state.posts[post.id] = post
             }
+            configure(&state)
         }
         let realtime = FakeRealtimeConnection()
         let wallClock = FixedWallClock()

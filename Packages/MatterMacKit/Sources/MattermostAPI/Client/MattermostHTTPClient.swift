@@ -335,6 +335,34 @@ public final class MattermostHTTPClient: MattermostService {
         return result
     }
 
+    public func userThreads(team: TeamID, me: UserID, before: PostID?, perPage: Int, unreadOnly: Bool, totalsOnly: Bool)
+        async throws(APIError) -> UserThreadList {
+        var query = [URLQueryItem(name: "per_page", value: String(min(max(perPage, 1), Self.pageSizeRange.upperBound))),
+                     URLQueryItem(name: "extended", value: "true")]
+        if let before { query.append(URLQueryItem(name: "before", value: before.rawValue)) }
+        if unreadOnly { query.append(URLQueryItem(name: "unread", value: "true")) }
+        if totalsOnly { query.append(URLQueryItem(name: "totalsOnly", value: "true")) }
+        return try await get(UserThreadListWire.self, ["users", me.rawValue, "teams", team.rawValue, "threads"],
+                             query: query, limit: large, priority: .interactive).list
+    }
+
+    public func setThreadFollowing(_ thread: PostID, following: Bool, team: TeamID, me: UserID) async throws(APIError) {
+        _ = try await perform(following ? .put : .delete,
+                              ["users", me.rawValue, "teams", team.rawValue, "threads", thread.rawValue, "following"],
+                              limit: small, priority: .interactive)
+    }
+
+    public func markThreadRead(_ thread: PostID?, at timestamp: MattermostTimestamp, team: TeamID, me: UserID)
+        async throws(APIError) {
+        if let thread {
+            _ = try await perform(.put, ["users", me.rawValue, "teams", team.rawValue, "threads", thread.rawValue, "read",
+                                         String(max(1, timestamp.milliseconds))], limit: small, priority: .interactive)
+        } else {
+            _ = try await perform(.put, ["users", me.rawValue, "teams", team.rawValue, "threads", "read"], limit: small,
+                                  priority: .interactive)
+        }
+    }
+
     public func executeCommand(_ command: String, channel: ChannelID, team: TeamID?, rootID: PostID?)
         async throws(APIError) -> CommandResult {
         let body = ExecuteCommandBody(channel_id: channel.rawValue, team_id: team?.rawValue ?? "",

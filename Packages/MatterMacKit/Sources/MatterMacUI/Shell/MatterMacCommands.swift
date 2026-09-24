@@ -32,6 +32,11 @@ public struct MatterMacCommands: Commands {
             }
             .keyboardShortcut("i", modifiers: [.command, .shift])
             .disabled(session?.selectedChannel == nil)
+            Button(session?.isThreadsViewVisible == true ? "Hide Threads" : "Show Threads") {
+                session?.isThreadsViewVisible.toggle()
+            }
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .disabled(session == nil)
             Button("Close Thread") { session?.closeThread() }
                 .disabled(session?.isThreadVisible != true)
         }
