@@ -1,0 +1,345 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		4D4D00000000000000000411 /* MatterMacUI in Frameworks */ = {isa = PBXBuildFile; productRef = 4D4D00000000000000000401 /* MatterMacUI */; };
+		4D4D00000000000000000412 /* MatterMacPlatform in Frameworks */ = {isa = PBXBuildFile; productRef = 4D4D00000000000000000402 /* MatterMacPlatform */; };
+		4D4D00000000000000000413 /* MatterMacCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4D4D00000000000000000403 /* MatterMacCore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4D4D00000000000000000500 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4D4D00000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4D4D00000000000000000100;
+			remoteInfo = MatterMac;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		4D4D00000000000000000020 /* MatterMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MatterMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4D4D00000000000000000021 /* MatterMacUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MatterMacUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4D4D00000000000000000022 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		4D4D00000000000000000023 /* MatterMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MatterMac.entitlements; sourceTree = "<group>"; };
+		4D4D00000000000000000024 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
+		4D4D00000000000000000025 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		4D4D00000000000000000026 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		4D4D00000000000000000027 /* App.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = App.xcconfig; sourceTree = "<group>"; };
+		4D4D00000000000000000028 /* UITests.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = UITests.xcconfig; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		4D4D00000000000000000010 /* Sources */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		4D4D00000000000000000011 /* Resources */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		4D4D00000000000000000012 /* MatterMacUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			name = MatterMacUITests;
+			path = ../../Tests/MatterMacUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		4D4D00000000000000000102 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4D4D00000000000000000411 /* MatterMacUI in Frameworks */,
+				4D4D00000000000000000412 /* MatterMacPlatform in Frameworks */,
+				4D4D00000000000000000413 /* MatterMacCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4D4D00000000000000000202 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4D4D00000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				4D4D00000000000000000010 /* Sources */,
+				4D4D00000000000000000011 /* Resources */,
+				4D4D00000000000000000004 /* Configuration */,
+				4D4D00000000000000000012 /* MatterMacUITests */,
+				4D4D00000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4D4D00000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4D4D00000000000000000020 /* MatterMac.app */,
+				4D4D00000000000000000021 /* MatterMacUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4D4D00000000000000000004 /* Configuration */ = {
+			isa = PBXGroup;
+			children = (
+				4D4D00000000000000000022 /* Info.plist */,
+				4D4D00000000000000000023 /* MatterMac.entitlements */,
+				4D4D00000000000000000024 /* Shared.xcconfig */,
+				4D4D00000000000000000025 /* Debug.xcconfig */,
+				4D4D00000000000000000026 /* Release.xcconfig */,
+				4D4D00000000000000000027 /* App.xcconfig */,
+				4D4D00000000000000000028 /* UITests.xcconfig */,
+			);
+			path = Configuration;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4D4D00000000000000000100 /* MatterMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4D4D00000000000000000301 /* Build configuration list for PBXNativeTarget "MatterMac" */;
+			buildPhases = (
+				4D4D00000000000000000101 /* Sources */,
+				4D4D00000000000000000102 /* Frameworks */,
+				4D4D00000000000000000103 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4D4D00000000000000000010 /* Sources */,
+				4D4D00000000000000000011 /* Resources */,
+			);
+			name = MatterMac;
+			packageProductDependencies = (
+				4D4D00000000000000000401 /* MatterMacUI */,
+				4D4D00000000000000000402 /* MatterMacPlatform */,
+				4D4D00000000000000000403 /* MatterMacCore */,
+			);
+			productName = MatterMac;
+			productReference = 4D4D00000000000000000020 /* MatterMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+		4D4D00000000000000000200 /* MatterMacUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4D4D00000000000000000302 /* Build configuration list for PBXNativeTarget "MatterMacUITests" */;
+			buildPhases = (
+				4D4D00000000000000000201 /* Sources */,
+				4D4D00000000000000000202 /* Frameworks */,
+				4D4D00000000000000000203 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4D4D00000000000000000501 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				4D4D00000000000000000012 /* MatterMacUITests */,
+			);
+			name = MatterMacUITests;
+			packageProductDependencies = (
+			);
+			productName = MatterMacUITests;
+			productReference = 4D4D00000000000000000021 /* MatterMacUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4D4D00000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					4D4D00000000000000000100 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					4D4D00000000000000000200 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 4D4D00000000000000000100;
+					};
+				};
+			};
+			buildConfigurationList = 4D4D00000000000000000300 /* Build configuration list for PBXProject "MatterMac" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 4D4D00000000000000000002;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				4D4D00000000000000000400 /* XCLocalSwiftPackageReference "../../Packages/MatterMacKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4D4D00000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4D4D00000000000000000100 /* MatterMac */,
+				4D4D00000000000000000200 /* MatterMacUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4D4D00000000000000000103 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4D4D00000000000000000203 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4D4D00000000000000000101 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4D4D00000000000000000201 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4D4D00000000000000000501 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4D4D00000000000000000100 /* MatterMac */;
+			targetProxy = 4D4D00000000000000000500 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		4D4D00000000000000000310 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4D4D00000000000000000025 /* Debug.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		4D4D00000000000000000311 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4D4D00000000000000000026 /* Release.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+		4D4D00000000000000000320 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4D4D00000000000000000027 /* App.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		4D4D00000000000000000321 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4D4D00000000000000000027 /* App.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+		4D4D00000000000000000330 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4D4D00000000000000000028 /* UITests.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		4D4D00000000000000000331 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4D4D00000000000000000028 /* UITests.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4D4D00000000000000000300 /* Build configuration list for PBXProject "MatterMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4D4D00000000000000000310 /* Debug */,
+				4D4D00000000000000000311 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4D4D00000000000000000301 /* Build configuration list for PBXNativeTarget "MatterMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4D4D00000000000000000320 /* Debug */,
+				4D4D00000000000000000321 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4D4D00000000000000000302 /* Build configuration list for PBXNativeTarget "MatterMacUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4D4D00000000000000000330 /* Debug */,
+				4D4D00000000000000000331 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		4D4D00000000000000000400 /* XCLocalSwiftPackageReference "../../Packages/MatterMacKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../Packages/MatterMacKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4D4D00000000000000000401 /* MatterMacUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MatterMacUI;
+		};
+		4D4D00000000000000000402 /* MatterMacPlatform */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MatterMacPlatform;
+		};
+		4D4D00000000000000000403 /* MatterMacCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MatterMacCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 4D4D00000000000000000001 /* Project object */;
+}

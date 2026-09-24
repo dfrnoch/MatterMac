@@ -1,0 +1,396 @@
+import AppKit
+public import Observation
+public import MatterMacModels
+public import MatterMacCore
+import MattermostAPI
+import MatterMacPlatform
+
+/// Runtime UI state. Verified sign-ins persist separately in Keychain.
+@MainActor
+@Observable
+public final class AppModel {
+    public enum Phase {
+        case restoring
+        case connect
+        case login(LoginModel)
+        case main
+    }
+
+    public private(set) var phase: Phase = .connect
+    public let environment: AppEnvironment
+    public let registry: SessionRegistry
+    let layoutCaches: TimelineLayoutCaches
+    public let images: ImagePipeline
+    let loginCoordinator: LoginCoordinator
+    public private(set) var activeSession: SessionViewModel?
+    public private(set) var sessionModels: [ServerSlotID: SessionViewModel] = [:]
+    /// Increments when the slot list changes (drives the server switcher).
+    public private(set) var slotsRevision = 0
+    public var isAddingServer = false
+    public var lastSignOutMessage: String?
+    public private(set) var isReauthenticating = false
+    private var isSigningOut = false
+    private var didRestore = false
+    private var isShuttingDown = false
+    public private(set) var canRetrySavedSignIn = false
+
+    public init(environment: AppEnvironment) {
+        self.environment = environment
+        let dependencies = environment.sessionDependencies
+        self.registry = SessionRegistry(dependencies: dependencies, factory: environment.serviceFactory)
+        self.layoutCaches = TimelineLayoutCaches(budget: environment.budget)
+        self.images = ImagePipeline(budget: environment.budget, diagnostics: environment.diagnostics)
+        self.loginCoordinator = LoginCoordinator(factory: environment.serviceFactory)
+        registry.onChange = { [weak self] in self?.registryChanged() }
+    }
+
+    public var slots: [SessionRegistry.Slot] { registry.slots }
+    public var activeSlotID: ServerSlotID? { registry.activeSlot }
+    public var canAddServer: Bool { registry.canAddSession }
+
+    // MARK: - Connect & login
+
+    /// Validates and probes a server address; moves to the login phase on success.
+    func beginLogin(serverText: String) async -> String? {
+        let endpoint: ServerEndpoint
+        do {
+            endpoint = try ServerURLNormalizer.normalize(serverText, allowInsecureLoopback: environment.allowsInsecureLoopback)
+        } catch {
+            return ServerURLErrorText.describe(error)
+        }
+        do {
+            let discovery = try await loginCoordinator.discover(endpoint)
+            phase = .login(LoginModel(discovery: discovery, app: self))
+            return nil
+        } catch {
+            switch error {
+            case .notMattermost:
+                return String(localized: "No Mattermost server answered at \(endpoint.description). Check the address, including any path such as /chat.")
+            case .redirectedElsewhere:
+                return String(localized: "The server redirected to a different address. Enter the server’s final address directly; MatterMac never follows redirects to another origin with your credentials.")
+            case .unreachable(let failure):
+                return UserFacingErrorText.describe(failure)
+            }
+        }
+    }
+
+    func cancelLogin() {
+        if case .login(let login) = phase { login.cancel() }
+        phase = registry.slots.isEmpty ? .connect : .main
+        isAddingServer = false
+    }
+
+    func completeLogin(_ result: LoginResult, discovery: DiscoveryResult, remember: Bool = true) async throws(SessionRegistry.AddError) {
+        let slot = try registry.add(endpoint: discovery.endpoint, login: result, capabilities: discovery.capabilities)
+        let model = SessionViewModel(slot: slot, app: self)
+        sessionModels[slot.id] = model
+        activeSession = model
+        isAddingServer = false
+        if remember, let accounts = environment.accounts {
+            do {
+                try await accounts.save(.init(endpoint: discovery.endpoint, userID: result.user.id, credential: result.credential))
+                if model.requiresAuthentication || (sessionModels[slot.id] == nil && !isShuttingDown) {
+                    try await accounts.remove(endpoint: discovery.endpoint, userID: result.user.id)
+                }
+            } catch {
+                model.inlineError = "Signed in, but Keychain could not save this account. You may need to sign in again after quitting."
+            }
+        }
+        if !isShuttingDown && remember { phase = .main }
+    }
+
+    public func restoreSavedAccounts(retry: Bool = false) async {
+        guard (!didRestore || retry), !isShuttingDown, let accounts = environment.accounts else { return }
+        if case .restoring = phase { return }
+        didRestore = true
+        canRetrySavedSignIn = false
+        lastSignOutMessage = nil
+        phase = .restoring
+        do {
+            for account in try await accounts.load() {
+                guard !isShuttingDown, !Task.isCancelled else { break }
+                if slots.contains(where: { $0.endpoint == account.endpoint && $0.user.id == account.userID }) { continue }
+                do {
+                    let discovery = try await loginCoordinator.discover(account.endpoint)
+                    let login = try await loginCoordinator.restore(account.endpoint, credential: account.credential, expectedUser: account.userID)
+                    guard !isShuttingDown, !Task.isCancelled else { break }
+                    try await completeLogin(login, discovery: discovery, remember: false)
+                } catch LoginCoordinator.RestoreError.invalidCredential {
+                    try await accounts.remove(endpoint: account.endpoint, userID: account.userID)
+                    lastSignOutMessage = "A saved sign-in has expired or was revoked. Sign in again."
+                } catch LoginCoordinator.RestoreError.accountChanged {
+                    try await accounts.remove(endpoint: account.endpoint, userID: account.userID)
+                    lastSignOutMessage = "A saved sign-in returned a different account and was removed. Sign in again."
+                } catch {
+                    canRetrySavedSignIn = true
+                    lastSignOutMessage = "A saved account could not be connected. Its sign-in remains in Keychain; retry when the server is available."
+                }
+            }
+        } catch {
+            canRetrySavedSignIn = true
+            lastSignOutMessage = "Saved sign-ins could not be read or updated in Keychain. Unlock your login Keychain and retry."
+        }
+        guard !isShuttingDown else { return }
+        phase = slots.isEmpty ? .connect : .main
+        if let message = lastSignOutMessage { activeSession?.inlineError = message }
+    }
+
+    func forgetSavedAccount(_ model: SessionViewModel) async -> Bool {
+        do {
+            try await environment.accounts?.remove(endpoint: model.slot.endpoint, userID: model.scope.user)
+            return true
+        } catch {
+            model.inlineError = "The saved sign-in could not be removed from Keychain. Unlock your login Keychain and try signing out again."
+            return false
+        }
+    }
+
+    public func showAddServer() {
+        guard registry.canAddSession else { return }
+        isAddingServer = true
+        phase = .connect
+    }
+
+    public func activate(_ slot: ServerSlotID) {
+        activeSession?.saveDrafts()
+        activeSession?.updateAppState(isActive: false, isWindowVisible: false)
+        registry.activate(slot)
+    }
+
+    private func registryChanged() {
+        slotsRevision &+= 1
+        if let active = registry.activeSlot {
+            // Switching servers switches the visible identity immediately; the old
+            // model's late snapshots are ignored because they carry another scope.
+            activeSession = sessionModels[active]
+        } else {
+            activeSession = nil
+        }
+        for slot in sessionModels.keys where !registry.slots.contains(where: { $0.id == slot }) {
+            sessionModels[slot]?.detach()
+            sessionModels[slot] = nil
+        }
+        if registry.slots.isEmpty, case .main = phase { phase = .connect }
+    }
+
+    // MARK: - Sign out
+
+    /// Signs out of one server after confirming unsent work (SPEC §7 logout).
+    @discardableResult
+    public func signOut(_ slot: ServerSlotID) async -> Bool {
+        guard !isSigningOut, let model = sessionModels[slot] else { return false }
+        isSigningOut = true
+        defer { isSigningOut = false }
+        let unsentCount = await model.unsentWorkCount()
+        if unsentCount > 0 {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = String(localized: "Sign out and discard unsent messages?")
+            alert.informativeText = String(localized: "\(unsentCount) draft(s) or message(s) have not been confirmed by the server. MatterMac keeps them only in memory; signing out discards them and any selected attachments. Use Review Unsent Work before signing out to copy text or export pasted images.")
+            alert.addButton(withTitle: String(localized: "Cancel"))
+            alert.addButton(withTitle: String(localized: "Sign Out and Discard"))
+            guard alert.runModal() == .alertSecondButtonReturn else { return false }
+        }
+        guard await forgetSavedAccount(model) else { return false }
+        model.prepareForSignOut()
+        environment.drafts.discardAll(for: model.scope)
+        layoutCaches.purge(scope: model.scope)
+        await images.purge(scope: model.scope)
+        let outcome = await registry.remove(slot, revokeServerSession: true)
+        lastSignOutMessage = outcome.map(SignOutText.describe)
+        return true
+    }
+
+    func reauthenticate(_ slot: ServerSlotID) async {
+        guard !isReauthenticating, let model = sessionModels[slot], model.requiresAuthentication else { return }
+        isReauthenticating = true
+        defer { isReauthenticating = false }
+        let endpoint = model.slot.endpoint
+        guard await signOut(slot) else { return }
+        isAddingServer = !registry.slots.isEmpty
+        if let error = await beginLogin(serverText: endpoint.description) {
+            lastSignOutMessage = error
+            phase = .connect
+        }
+    }
+
+    /// Close all sessions. App termination keeps saved tokens valid on the server.
+    public func shutdownAll(preservingSavedSignIns: Bool = false) async {
+        isShuttingDown = true
+        if case .login(let login) = phase { login.cancel() }
+        for model in sessionModels.values {
+            model.prepareForSignOut()
+            environment.drafts.discardAll(for: model.scope)
+            layoutCaches.purge(scope: model.scope)
+            await images.purge(scope: model.scope)
+        }
+        await registry.removeAll(revokeServerSessions: !preservingSavedSignIns)
+    }
+}
+
+enum SignOutText {
+    static func describe(_ outcome: SignOutOutcome) -> String {
+        switch outcome {
+        case .serverSessionRevoked:
+            String(localized: "Signed out. The server confirmed the session was ended, and local session data was cleared.")
+        case .serverLogoutUnconfirmed:
+            String(localized: "Local session data was cleared. Server logout was not confirmed; the session follows your server’s expiry policy.")
+        case .personalAccessTokenDiscardedLocally:
+            String(localized: "The personal access token was removed from this Mac, including Keychain. It remains valid on the server until you revoke it in Mattermost (Profile › Security › Personal Access Tokens).")
+        }
+    }
+}
+
+/// Login form state for one discovered server.
+@MainActor
+@Observable
+public final class LoginModel {
+    public enum Method: Hashable { case password, personalAccessToken, browserSSO }
+    public let discovery: DiscoveryResult
+    weak var app: AppModel?
+    var method: Method = .password
+    var loginID = ""
+    var password = ""
+    var mfaCode = ""
+    var token = ""
+    var ssoProvider: SSOProvider = .openID
+    @ObservationIgnored private var browser: BrowserAuthentication?
+    @ObservationIgnored private var submission: Task<Void, Never>?
+    var needsMFA = false
+    var isWorking = false
+    var errorMessage: String?
+
+    init(discovery: DiscoveryResult, app: AppModel) {
+        self.discovery = discovery
+        self.app = app
+        if let provider = discovery.browserSSOProviders.first { ssoProvider = provider }
+        if !discovery.capabilities.login.passwordLoginAvailable {
+            method = discovery.browserSSOProviders.isEmpty ? .personalAccessToken : .browserSSO
+        }
+    }
+
+    var loginIDPrompt: String {
+        let login = discovery.capabilities.login
+        switch (login.email, login.username, login.ldap) {
+        case (true, true, _): return String(localized: "Email or username")
+        case (true, false, false): return String(localized: "Email")
+        case (false, true, false): return String(localized: "Username")
+        case (_, _, true):
+            return login.ldapFieldName.isEmpty ? String(localized: "Username or AD/LDAP username") : login.ldapFieldName
+        default: return String(localized: "Username")
+        }
+    }
+
+    func cancel() {
+        submission?.cancel()
+        browser?.cancel()
+        password = ""; token = ""; mfaCode = ""
+    }
+
+    func submit() async {
+        guard let app, !isWorking, !Task.isCancelled else { return }
+        isWorking = true
+        errorMessage = nil
+        let task = Task { await performSubmit(app: app) }
+        submission = task
+        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+        submission = nil
+        isWorking = false
+    }
+
+    private func performSubmit(app: AppModel) async {
+        defer { browser = nil }
+        do {
+            let result: LoginResult
+            switch method {
+            case .password:
+                result = try await app.loginCoordinator.login(discovery.endpoint, loginID: loginID, password: password,
+                                                             mfaCode: needsMFA ? mfaCode : nil)
+            case .personalAccessToken:
+                result = try await app.loginCoordinator.authenticate(discovery.endpoint, personalAccessToken: token)
+            case .browserSSO:
+                guard let anchor = NSApp.keyWindow ?? NSApp.mainWindow else { throw BrowserLoginError.browserUnavailable }
+                let attempt = try BrowserLoginAttempt(discovery: discovery, provider: ssoProvider,
+                                                      budget: app.environment.budget)
+                let browser = BrowserAuthentication(budget: app.environment.budget)
+                self.browser = browser
+                let callback = try await browser.authenticate(attempt, anchor: anchor)
+                result = try await app.loginCoordinator.completeBrowserLogin(attempt, callback: callback)
+            }
+            guard !Task.isCancelled, case .login(let current) = app.phase, current === self else {
+                await app.loginCoordinator.discardNewLogin(result, endpoint: discovery.endpoint)
+                return
+            }
+            // Minimize password lifetime in this object (not secure erasure).
+            password = ""
+            token = ""
+            mfaCode = ""
+            do { try await app.completeLogin(result, discovery: discovery) }
+            catch {
+                await app.loginCoordinator.discardNewLogin(result, endpoint: discovery.endpoint)
+                throw error
+            }
+        } catch let error as BrowserLoginError {
+            errorMessage = Self.browserErrorText(error)
+        } catch let error as AuthenticationError {
+            handle(error)
+        } catch let error as SessionRegistry.AddError {
+            switch error {
+            case .limitReached(let limit):
+                errorMessage = String(localized: "MatterMac supports up to \(limit) connected servers at once. Sign out of one first.")
+            case .alreadyConnected:
+                errorMessage = String(localized: "This account is already connected.")
+            }
+        } catch {
+            errorMessage = UserFacingErrorText.describe(.unknown)
+        }
+    }
+
+    static func browserErrorText(_ error: BrowserLoginError) -> String? {
+        switch error {
+        case .cancelled: nil
+        case .unsupportedProvider: "This sign-in provider is not enabled on this server."
+        case .invalidCallback: "The browser response did not match this sign-in attempt. Start sign-in again."
+        case .timedOut: "Browser sign-in timed out. Start sign-in again."
+        case .browserUnavailable: "The system could not open browser sign-in. Check your default browser and try again."
+        case .randomUnavailable: "Secure browser sign-in could not be started. Try again."
+        case .requestFailed(let error): UserFacingErrorText.describe(error)
+        }
+    }
+
+    private func handle(_ error: AuthenticationError) {
+        switch error {
+        case .login(let failure):
+            switch failure {
+            case .mfaRequired:
+                if needsMFA {
+                    errorMessage = String(localized: "Enter the 6-digit code from your authenticator app.")
+                } else {
+                    needsMFA = true
+                    errorMessage = nil
+                }
+            case .invalidMFACode:
+                mfaCode = ""
+                errorMessage = String(localized: "That code was not accepted. Codes can be used only once; wait for the next code and try again.")
+            case .invalidCredentials:
+                errorMessage = String(localized: "The sign-in details were not accepted. Check them and try again.")
+            case .accountLocked:
+                errorMessage = String(localized: "Too many failed attempts. The account is temporarily locked; contact your administrator if this persists.")
+            case .accountDeactivated:
+                errorMessage = String(localized: "This account is deactivated.")
+            case .loginMethodDisabled, .ssoAccountRequiresBrowser:
+                errorMessage = String(localized: "This account can’t sign in with a password here. For single sign-on, use the Browser SSO option if this server advertises it.")
+            case .emailNotVerified:
+                errorMessage = String(localized: "Verify your email address first (see the message from your server), then sign in.")
+            case .api(let api):
+                errorMessage = UserFacingErrorText.describe(ServerSession.userFacing(api))
+            }
+        case .invalidToken:
+            errorMessage = String(localized: "That doesn’t look like a Mattermost access token.")
+        case .personalAccessTokensDisabledOrInvalid:
+            errorMessage = String(localized: "The server rejected this token. It may be invalid or revoked, or personal access tokens may be disabled by your administrator.")
+        case .failed(let failure):
+            errorMessage = UserFacingErrorText.describe(failure)
+        }
+    }
+}

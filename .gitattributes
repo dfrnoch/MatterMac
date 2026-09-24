@@ -1,0 +1,6 @@
+* text=auto
+*.swift text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.md text eol=lf whitespace=-blank-at-eol
+*.png binary

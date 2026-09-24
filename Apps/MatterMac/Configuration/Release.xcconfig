@@ -1,0 +1,15 @@
+// Release.xcconfig — project-level Release configuration (SPEC §5, §23).
+#include "Shared.xcconfig"
+
+// Debug symbols are produced separately as a dSYM; the installed product is
+// stripped (stripping applies to install/archive, i.e. DEPLOYMENT_POSTPROCESSING).
+DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
+STRIP_INSTALLED_PRODUCT = YES
+SWIFT_OPTIMIZATION_LEVEL = -O
+SWIFT_COMPILATION_MODE = wholemodule
+GCC_OPTIMIZATION_LEVEL = s
+ONLY_ACTIVE_ARCH = NO
+ENABLE_NS_ASSERTIONS = YES
+VALIDATE_PRODUCT = YES
+// Never inject com.apple.security.get-task-allow into Release signatures.
+CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO

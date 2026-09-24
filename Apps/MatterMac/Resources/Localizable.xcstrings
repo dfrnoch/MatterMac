@@ -1,0 +1,10 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "MatterMac" : {
+      "comment" : "Main window title and its Window menu item. Product name; not translated.",
+      "shouldTranslate" : false
+    }
+  },
+  "version" : "1.0"
+}

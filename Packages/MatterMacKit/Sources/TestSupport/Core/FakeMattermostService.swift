@@ -1,0 +1,301 @@
+public import Foundation
+import os
+public import MatterMacModels
+public import MattermostAPI
+
+/// Scriptable in-memory `MattermostService` for Core tests. Each operation can be
+/// overridden with a handler; unscripted operations use simple in-memory behavior.
+/// `Gate`s let a test suspend a response to reproduce event/response races.
+public final class FakeMattermostService: MattermostService {
+    public let endpoint: ServerEndpoint
+    private let lock: OSAllocatedUnfairLock<State>
+
+    public struct State: Sendable {
+        public var me: User
+        public var attachmentsEnabled: Bool? = true
+        public var teams: [Team] = []
+        public var channels: [ChannelID: Channel] = [:]
+        public var memberships: [ChannelID: ChannelMembership] = [:]
+        public var posts: [PostID: Post] = [:]
+        public var users: [UserID: User] = [:]
+        public var calls: [String] = []
+        public var createdPosts: [OutgoingPost] = []
+        public var viewedChannels: [ChannelID] = []
+        public var imageHandler: (@Sendable (ImageResource, Int) async throws -> Data)?
+        public var uploadHandler: (@Sendable (UploadSource, ChannelID) async throws -> FileInfo)?
+        public var downloadHandler: (@Sendable (FileID, URL) async throws -> Void)?
+        public var createPostHandler: (@Sendable (OutgoingPost, Int) async throws -> Post)?
+        public var editPostHandler: (@Sendable (PostID, String) async throws -> Post)?
+        public var postsHandler: (@Sendable (ChannelID, PostPageQuery) async throws -> PostPage)?
+        public var unreadHandler: (@Sendable (ChannelID) async throws -> PostPage)?
+        public var postsByIDsHandler: (@Sendable ([PostID]) async throws -> [Post])?
+        public var nextID: Int = 1
+
+        init(me: User) { self.me = me }
+    }
+
+    public init(endpoint: ServerEndpoint, me: User) {
+        self.endpoint = endpoint
+        var initial = State(me: me)
+        initial.users[me.id] = me
+        self.lock = OSAllocatedUnfairLock(initialState: initial)
+    }
+
+    public func withState<T: Sendable>(_ body: @Sendable (inout State) -> T) -> T {
+        lock.withLock { body(&$0) }
+    }
+
+    public var calls: [String] { withState { $0.calls } }
+
+    private func record(_ call: String) { withState { $0.calls.append(call) } }
+
+    public func makeID(_ prefix: String = "p") -> String {
+        withState { state in
+            let n = state.nextID
+            state.nextID += 1
+            let base = prefix + String(n)
+            return base + String(repeating: "x", count: max(0, 26 - base.count))
+        }
+    }
+
+    // MARK: MattermostService
+
+    public func currentUser() async throws(APIError) -> User {
+        record("currentUser")
+        return withState { $0.me }
+    }
+
+    public func fullConfiguration() async throws(APIError) -> ClientConfigWire {
+        record("fullConfiguration")
+        var values = ["Version": "11.11.1", "CollapsedThreads": "disabled", "MaxPostSize": "16383", "EnableUserTypingMessages": "true"]
+        if let enabled = withState({ $0.attachmentsEnabled }) { values["EnableFileAttachments"] = String(enabled) }
+        let data: Data
+        do { data = try JSONEncoder().encode(values) } catch { throw .malformedResponse }
+        do { return try JSONDecoder().decode(ClientConfigWire.self, from: data) } catch { throw .malformedResponse }
+    }
+
+    public func logout() async throws(APIError) { record("logout") }
+    public func preferences() async throws(APIError) -> [Preference] { record("preferences"); return [] }
+    public func teams() async throws(APIError) -> [Team] { record("teams"); return withState { $0.teams } }
+    public func teamMemberships() async throws(APIError) -> [TeamMemberWire] { [] }
+
+    public func channels(team: TeamID) async throws(APIError) -> [Channel] {
+        record("channels")
+        return withState { state in state.channels.values.filter { $0.teamID == team || $0.teamID == nil } }
+    }
+
+    public func channelMemberships(team: TeamID) async throws(APIError) -> [ChannelMembership] {
+        record("channelMemberships")
+        return withState { state in
+            state.memberships.values.filter { member in
+                guard let channel = state.channels[member.channelID] else { return false }
+                return channel.teamID == team || channel.teamID == nil
+            }
+        }
+    }
+
+    public func channel(_ id: ChannelID) async throws(APIError) -> Channel {
+        guard let channel = withState({ $0.channels[id] }) else { throw .notFound(ServerErrorInfo(id: "", statusCode: 404, requestID: nil)) }
+        return channel
+    }
+
+    public func channelMembership(_ id: ChannelID) async throws(APIError) -> ChannelMembership {
+        guard let member = withState({ $0.memberships[id] }) else { throw .forbidden(ServerErrorInfo(id: ServerErrorID.permissions, statusCode: 403, requestID: nil)) }
+        return member
+    }
+
+    public func channelStats(_ id: ChannelID) async throws(APIError) -> ChannelStats { ChannelStats(memberCount: 3, pinnedPostCount: 0) }
+
+    public func createDirectChannel(with other: UserID, me: UserID) async throws(APIError) -> Channel {
+        let ids = [me.rawValue, other.rawValue].sorted()
+        let channel = Channel(id: ChannelID(unchecked: makeID("d")), teamID: nil, type: .direct,
+                              name: ids.joined(separator: "__"), displayName: "")
+        withState { state in
+            state.channels[channel.id] = channel
+            state.memberships[channel.id] = ChannelMembership(channelID: channel.id, userID: me)
+        }
+        return channel
+    }
+
+    public func joinChannel(_ id: ChannelID, me: UserID) async throws(APIError) {}
+    public func leaveChannel(_ id: ChannelID, me: UserID) async throws(APIError) {}
+
+    public func viewChannel(_ id: ChannelID?, previous: ChannelID?, collapsedThreadsSupported: Bool)
+        async throws(APIError) -> [ChannelID: MattermostTimestamp]
+    {
+        record("viewChannel")
+        guard let id else { return [:] }
+        withState { $0.viewedChannels.append(id) }
+        return [id: MattermostTimestamp(milliseconds: 1)]
+    }
+
+    public func searchChannels(team: TeamID, term: String) async throws(APIError) -> [Channel] { [] }
+
+    public func posts(channel: ChannelID, query: PostPageQuery, collapsedThreads: Bool, priority: RequestPriority)
+        async throws(APIError) -> PostPage
+    {
+        record("posts")
+        if let handler = withState({ $0.postsHandler }) { return try await Self.typed { try await handler(channel, query) } }
+        let all = withState { state in state.posts.values.filter { $0.channelID == channel && !$0.isDeleted } }
+            .sorted { $0.createAt > $1.createAt }
+        switch query {
+        case .latest(let perPage):
+            let page = Array(all.prefix(perPage))
+            return PostPage(posts: page, previousPostID: all.count > perPage ? all[perPage].id : nil)
+        case .before(let id, let perPage):
+            guard let index = all.firstIndex(where: { $0.id == id }) else { return PostPage(posts: []) }
+            let older = Array(all[(index + 1)...].prefix(perPage))
+            let hasMore = all.count > index + 1 + perPage
+            return PostPage(posts: older, nextPostID: id, previousPostID: hasMore ? all[index + 1 + perPage].id : nil)
+        case .after(let id, let perPage):
+            guard let index = all.firstIndex(where: { $0.id == id }) else { return PostPage(posts: []) }
+            let newer = Array(all[..<index].suffix(perPage))
+            let hasMore = index > perPage
+            return PostPage(posts: newer, nextPostID: hasMore ? all[index - perPage - 1].id : nil, previousPostID: id)
+        }
+    }
+
+    public func postsAroundLastUnread(channel: ChannelID, me: UserID, limitBefore: Int, limitAfter: Int,
+                                      collapsedThreads: Bool) async throws(APIError) -> PostPage {
+        record("postsAroundLastUnread")
+        if let handler = withState({ $0.unreadHandler }) { return try await Self.typed { try await handler(channel) } }
+        return try await posts(channel: channel, query: .latest(perPage: limitBefore + limitAfter),
+                               collapsedThreads: collapsedThreads, priority: .interactive)
+    }
+
+    public func thread(root: PostID, query: ThreadPageQuery) async throws(APIError) -> PostPage {
+        record("thread")
+        let posts = withState { state in
+            state.posts.values.filter { $0.id == root || $0.rootID == root }.sorted { $0.createAt < $1.createAt }
+        }
+        return PostPage(posts: posts, hasNext: false)
+    }
+
+    public func post(_ id: PostID) async throws(APIError) -> Post {
+        guard let post = withState({ $0.posts[id] }) else { throw .notFound(ServerErrorInfo(id: ServerErrorID.postNotFound, statusCode: 404, requestID: nil)) }
+        return post
+    }
+
+    public func posts(ids: [PostID]) async throws(APIError) -> [Post] {
+        record("postsByIDs")
+        if let handler = withState({ $0.postsByIDsHandler }) { return try await Self.typed { try await handler(ids) } }
+        return withState { state in ids.compactMap { state.posts[$0] } }
+    }
+
+    public func createPost(_ post: OutgoingPost) async throws(APIError) -> Post {
+        let attempt = withState { state -> Int in
+            state.createdPosts.append(post)
+            state.calls.append("createPost")
+            return state.createdPosts.filter { $0.pendingPostID == post.pendingPostID }.count
+        }
+        if let handler = withState({ $0.createPostHandler }) { return try await Self.typed { try await handler(post, attempt) } }
+        return storeCreated(post)
+    }
+
+    /// Bridges an untyped-throws handler (typed-throws closure *types* need the macOS 15
+    /// runtime) back to `APIError`.
+    static func typed<T: Sendable>(_ body: @Sendable () async throws -> T) async throws(APIError) -> T {
+        do { return try await body() } catch let error as APIError { throw error } catch { throw .cancelled }
+    }
+
+    /// Default create behavior, also usable from custom handlers.
+    public func storeCreated(_ outgoing: OutgoingPost, createAt: Int64 = 1_000) -> Post {
+        withState { state in
+            // Server-side dedup by pending_post_id.
+            if let existing = state.posts.values.first(where: { $0.pendingPostID == outgoing.pendingPostID }) { return existing }
+            let n = state.nextID
+            state.nextID += 1
+            let base = "srv" + String(n)
+            let id = PostID(unchecked: base + String(repeating: "q", count: 26 - base.count))
+            let post = Post(id: id, channelID: outgoing.channelID, userID: state.me.id, rootID: outgoing.rootID,
+                            message: outgoing.message, createAt: MattermostTimestamp(milliseconds: createAt + Int64(n)),
+                            fileIDs: outgoing.fileIDs, pendingPostID: outgoing.pendingPostID)
+            state.posts[id] = post
+            return post
+        }
+    }
+
+    public func editPost(_ id: PostID, message: String) async throws(APIError) -> Post {
+        record("editPost")
+        if let handler = withState({ $0.editPostHandler }) { return try await Self.typed { try await handler(id, message) } }
+        guard var post = withState({ $0.posts[id] }) else { throw .notFound(ServerErrorInfo(id: "", statusCode: 404, requestID: nil)) }
+        post.message = message
+        post.editAt = MattermostTimestamp(milliseconds: post.updateAt.milliseconds + 1)
+        post.updateAt = post.editAt
+        let edited = post
+        withState { $0.posts[id] = edited }
+        return edited
+    }
+
+    public func deletePost(_ id: PostID) async throws(APIError) {
+        withState { state in state.posts[id]?.deleteAt = MattermostTimestamp(milliseconds: 9_999) }
+    }
+
+    public func addReaction(post: PostID, emojiName: String, me: UserID) async throws(APIError) -> Reaction {
+        Reaction(userID: me, postID: post, emojiName: emojiName)
+    }
+
+    public func removeReaction(post: PostID, emojiName: String, me: UserID) async throws(APIError) {}
+
+    public func searchPosts(_ query: SearchQuery) async throws(APIError) -> PostPage {
+        record("searchPosts")
+        let hits = withState { state in state.posts.values.filter { $0.message.contains(query.terms) } }
+        return PostPage(posts: hits.sorted { $0.createAt > $1.createAt })
+    }
+
+    public func users(ids: [UserID]) async throws(APIError) -> [User] {
+        record("users")
+        return withState { state in ids.compactMap { state.users[$0] } }
+    }
+
+    public func statuses(ids: [UserID]) async throws(APIError) -> [UserID: PresenceStatus] {
+        Dictionary(uniqueKeysWithValues: ids.map { ($0, PresenceStatus.online) })
+    }
+
+    public func autocompleteUsers(team: TeamID, channel: ChannelID?, name: String, limit: Int)
+        async throws(APIError) -> [User] {
+        withState { state in Array(state.users.values.filter { $0.username.hasPrefix(name) }.prefix(limit)) }
+    }
+
+    public func fileInfo(_ id: FileID) async throws(APIError) -> FileInfo {
+        throw .notFound(ServerErrorInfo(id: "", statusCode: 404, requestID: nil))
+    }
+
+    public func imageData(_ resource: ImageResource, maximumBytes: Int) async throws(APIError) -> Data {
+        record("imageData")
+        if let handler = withState({ $0.imageHandler }) { return try await Self.typed { try await handler(resource, maximumBytes) } }
+        throw .notFound(ServerErrorInfo(id: "", statusCode: 404, requestID: nil))
+    }
+
+    public func upload(_ source: UploadSource, channel: ChannelID, clientID: String,
+                       progress: @escaping @Sendable (TransferProgress) -> Void) async throws(APIError) -> FileInfo {
+        record("upload")
+        if let handler = withState({ $0.uploadHandler }) { return try await Self.typed { try await handler(source, channel) } }
+        return FileInfo(id: FileID(unchecked: makeID("f")), channelID: channel, name: source.fileName, size: source.expectedSize)
+    }
+
+    public func download(_ id: FileID, to destination: URL,
+                         progress: @escaping @Sendable (TransferProgress) -> Void) async throws(APIError) {
+        record("download")
+        if let handler = withState({ $0.downloadHandler }) { try await Self.typed { try await handler(id, destination) } }
+    }
+}
+
+/// A one-shot suspension point for race tests: `wait()` suspends until `open()`.
+public actor Gate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    public init() {}
+
+    public func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    public func open() {
+        isOpen = true
+        for waiter in waiters { waiter.resume() }
+        waiters.removeAll()
+    }
+}

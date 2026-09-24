@@ -1,0 +1,6 @@
+# Official hosted preview image, not yet recognized by actionlint's built-in list:
+# https://github.com/actions/runner-images/issues/14404
+# actionlint uses this key for additional runner labels; CI is GitHub-hosted.
+self-hosted-runner:
+  labels:
+    - xcode-27

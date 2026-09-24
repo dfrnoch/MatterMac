@@ -1,0 +1,10 @@
+// UITests.xcconfig — settings for the MatterMacUITests UI-testing bundle only.
+// Test-only code: never linked into or copied into MatterMac.app.
+
+PRODUCT_NAME = MatterMacUITests
+PRODUCT_BUNDLE_IDENTIFIER = org.mattermac.MatterMacUITests
+GENERATE_INFOPLIST_FILE = YES
+TEST_TARGET_NAME = MatterMac
+SWIFT_EMIT_LOC_STRINGS = NO
+STRING_CATALOG_GENERATE_SYMBOLS = NO
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks @loader_path/../Frameworks

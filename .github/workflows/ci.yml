@@ -1,0 +1,37 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    # Official preview image; see https://github.com/actions/runner-images/issues/14404.
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Record toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Package tests
+        run: swift test --package-path Packages/MatterMacKit
+      - name: Universal app
+        run: |
+          xcodebuild -workspace MatterMac.xcworkspace -scheme MatterMac \
+            -configuration Release -derivedDataPath build build
+          codesign --verify --strict build/Build/Products/Release/MatterMac.app
+          architectures=$(lipo -archs build/Build/Products/Release/MatterMac.app/Contents/MacOS/MatterMac)
+          [[ " $architectures " == *" arm64 "* && " $architectures " == *" x86_64 "* ]]

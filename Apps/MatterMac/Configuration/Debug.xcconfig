@@ -1,0 +1,10 @@
+// Debug.xcconfig — project-level Debug configuration.
+#include "Shared.xcconfig"
+
+DEBUG_INFORMATION_FORMAT = dwarf
+SWIFT_OPTIMIZATION_LEVEL = -Onone
+GCC_OPTIMIZATION_LEVEL = 0
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG $(inherited)
+GCC_PREPROCESSOR_DEFINITIONS = DEBUG=1 $(inherited)
+ONLY_ACTIVE_ARCH = YES
+ENABLE_TESTABILITY = YES

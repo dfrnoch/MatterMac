@@ -1,0 +1,48 @@
+// Shared.xcconfig — project-level settings inherited by every target and
+// configuration. Target-specific settings live in App.xcconfig and
+// UITests.xcconfig; configuration-specific ones in Debug/Release.xcconfig.
+// Rationale for each choice: docs/architecture.md.
+
+SDKROOT = macosx
+SUPPORTED_PLATFORMS = macosx
+MACOSX_DEPLOYMENT_TARGET = 14.0
+// arm64 + x86_64 (Release builds both; Debug builds only the active arch).
+ARCHS = $(ARCHS_STANDARD)
+
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+// Swift 6 language mode implies complete strict concurrency checking; stated
+// explicitly so the intent survives an accidental language-mode change.
+SWIFT_VERSION = 6.0
+SWIFT_STRICT_CONCURRENCY = complete
+// Keep "approachable concurrency" off and its two non-Swift-6 features explicit,
+// matching the MatterMacKit package: nonisolated async functions hop off the
+// caller's actor (NonisolatedNonsendingByDefault OFF).
+SWIFT_APPROACHABLE_CONCURRENCY = NO
+SWIFT_UPCOMING_FEATURE_NONISOLATED_NONSENDING_BY_DEFAULT = NO
+SWIFT_UPCOMING_FEATURE_INFER_ISOLATED_CONFORMANCES = NO
+// Same upcoming features as the package targets.
+SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY = YES
+SWIFT_UPCOMING_FEATURE_INTERNAL_IMPORTS_BY_DEFAULT = YES
+// The app and UI-test targets must stay warning-free.
+SWIFT_TREAT_WARNINGS_AS_ERRORS = YES
+
+// Local ad-hoc signing only. Developer ID signing + notarization is a separate,
+// explicitly authorized release step; no team or certificate is configured here.
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+DEAD_CODE_STRIPPING = YES
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+ENABLE_PREVIEWS = NO
+// No previews, so no preview-only "MatterMac.debug.dylib" split in Debug builds:
+// Debug and Release executables have the same layout and signing behavior.
+ENABLE_DEBUG_DYLIB = NO
+LOCALIZATION_PREFERS_STRING_CATALOGS = YES
+ALWAYS_SEARCH_USER_PATHS = NO
+CLANG_ENABLE_MODULES = YES
+CLANG_ENABLE_OBJC_ARC = YES
+ENABLE_STRICT_OBJC_MSGSEND = YES
+COPY_PHASE_STRIP = NO

@@ -1,0 +1,22 @@
+.local/
+.build/
+DerivedData/
+*.xcresult
+xcuserdata/
+.swiftpm/
+/build/
+.DS_Store
+
+# Credentials, signing material, and local artifacts
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+*.dSYM/
+*.ipa
+*.app/
+*.xcarchive/
+*.log

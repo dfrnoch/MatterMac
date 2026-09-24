@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "mattermost-access-token"
+[[rules.allowlists]]
+description = "Public Swift protocol identifier, not a credential"
+regexTarget = "secret"
+regexes = ['''^MattermostDiscoveryService$''']

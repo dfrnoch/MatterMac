@@ -1,0 +1,29 @@
+// App.xcconfig — settings for the MatterMac application target only
+// (layered on top of the project-level Debug/Release.xcconfig).
+
+PRODUCT_NAME = MatterMac
+PRODUCT_BUNDLE_IDENTIFIER = org.mattermac.MatterMac
+GENERATE_INFOPLIST_FILE = NO
+INFOPLIST_FILE = Configuration/Info.plist
+
+// App-target code is main-actor isolated by default, like MatterMacUI. Work that
+// must leave the main actor lives in MatterMacKit and is marked explicitly.
+SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor
+SWIFT_EMIT_LOC_STRINGS = YES
+
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
+COMBINE_HIDPI_IMAGES = YES
+// Swift back-deployment shims (if the toolchain needs any for macOS 14) are
+// embedded under Contents/Frameworks.
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks
+
+// Hardened runtime + exactly three entitlements: App Sandbox, outgoing
+// network, user-selected file read/write. The entitlements file and the
+// capability build settings below state the same set (every other sandbox
+// capability setting keeps its empty/NO default; verified with codesign).
+ENABLE_HARDENED_RUNTIME = YES
+CODE_SIGN_ENTITLEMENTS = Configuration/MatterMac.entitlements
+ENABLE_APP_SANDBOX = YES
+ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES
+ENABLE_USER_SELECTED_FILES = readwrite

@@ -1,0 +1,88 @@
+# Development-only Mattermost test deployments for MatterMac interoperability tests.
+# This is NOT a MatterMac backend and is never shipped. Loopback-only ports.
+#
+#   docker compose -f Tests/Integration/Server/compose.yaml up -d mm11
+#   docker compose -f Tests/Integration/Server/compose.yaml --profile esr up -d mm10
+#   docker compose -f Tests/Integration/Server/compose.yaml --profile subpath up -d mm11sub
+#
+# Test users are created by bootstrap.sh and BootstrapUsers.swift; their
+# generated passwords live only in the git-ignored .local/ directory.
+name: mattermac-test
+
+x-mm-common: &mm-common
+  restart: unless-stopped
+  # Official team-edition images are published for linux/amd64 only; OrbStack
+  # runs them under Rosetta on Apple silicon.
+  platform: linux/amd64
+  security_opt:
+    - no-new-privileges:true
+  environment: &mm-env
+    MM_SQLSETTINGS_DRIVERNAME: postgres
+    MM_SERVICESETTINGS_ENABLELOCALMODE: "true"
+    MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS: "true"
+    MM_SERVICESETTINGS_ENABLEMULTIFACTORAUTHENTICATION: "true"
+    MM_SERVICESETTINGS_ENABLEPOSTUSERNAMEOVERRIDE: "false"
+    MM_TEAMSETTINGS_ENABLEOPENSERVER: "false"
+    MM_LOGSETTINGS_CONSOLELEVEL: "INFO"
+    MM_LOGSETTINGS_ENABLEFILE: "false"
+    MM_PLUGINSETTINGS_ENABLEUPLOADS: "false"
+    MM_ANNOUNCEMENTSETTINGS_ADMINNOTICESENABLED: "false"
+    MM_ANNOUNCEMENTSETTINGS_USERNOTICESENABLED: "false"
+    MM_SERVICESETTINGS_ENABLESECURITYFIXALERT: "false"
+    MM_LOGSETTINGS_ENABLEDIAGNOSTICS: "false"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mmuser
+      POSTGRES_PASSWORD: mmuser-dev-only
+      POSTGRES_DB: mattermost
+    volumes:
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+      - db-data:/var/lib/postgresql/data
+
+  mm11:
+    <<: *mm-common
+    image: mattermost/mattermost-team-edition:11.11.1
+    depends_on: [db]
+    ports: ["127.0.0.1:8065:8065"]
+    environment:
+      <<: *mm-env
+      MM_SQLSETTINGS_DATASOURCE: postgres://mmuser:mmuser-dev-only@db:5432/mattermost?sslmode=disable&connect_timeout=10
+      MM_SERVICESETTINGS_SITEURL: http://localhost:8065
+    volumes:
+      - mm11-data:/mattermost/data
+
+  mm11sub:
+    <<: *mm-common
+    profiles: [subpath]
+    image: mattermost/mattermost-team-edition:11.11.1
+    depends_on: [db]
+    ports: ["127.0.0.1:8066:8065"]
+    environment:
+      <<: *mm-env
+      MM_SQLSETTINGS_DATASOURCE: postgres://mmuser:mmuser-dev-only@db:5432/mattermost_sub?sslmode=disable&connect_timeout=10
+      MM_SERVICESETTINGS_SITEURL: http://localhost:8066/company/chat
+    volumes:
+      - mm11sub-data:/mattermost/data
+
+  mm10:
+    <<: *mm-common
+    profiles: [esr]
+    image: mattermost/mattermost-team-edition:10.11.24
+    depends_on: [db]
+    ports: ["127.0.0.1:8067:8065"]
+    environment:
+      <<: *mm-env
+      MM_SQLSETTINGS_DATASOURCE: postgres://mmuser:mmuser-dev-only@db:5432/mattermost_esr?sslmode=disable&connect_timeout=10
+      MM_SERVICESETTINGS_SITEURL: http://localhost:8067
+    volumes:
+      - mm10-data:/mattermost/data
+
+volumes:
+  db-data:
+  mm11-data:
+  mm11sub-data:
+  mm10-data:
