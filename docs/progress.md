@@ -729,3 +729,12 @@ minimum-OS and Intel execution, real IMEs/VoiceOver, broader privacy/performance
 audits, Developer ID signing and notarization remain unverified. The next
 publication step is the initial commit and push, followed by inspecting the first
 hosted CI run. No commit or push was made during this preparation.
+
+## 2026-09-24 — commit convention
+
+Pushed the initial implementation as commit `0660fbc` on `main`. Added a
+Conventional Commits rule to `AGENTS.md` for future commits, with type, optional
+scope, and an imperative summary. This documentation-only change does not alter
+the application; package and app checks from the initial-publication section
+above remain the latest execution evidence. The next task is to inspect the first
+hosted CI run and address any reported failure.

@@ -79,6 +79,9 @@ Never pass live credentials on the command line or commit them.
 
 ## Working agreements
 
+- Use Conventional Commits for every new commit: `type(scope): short imperative summary`
+  (omit the scope when it adds nothing). Examples: `feat(sso): restore saved sign-ins`,
+  `fix(composer): bound undo growth`, `docs: clarify local setup`.
 - Compile and run focused tests after meaningful changes; keep zero warnings.
 - Record significant tradeoffs in `docs/decisions/NNNN-title.md`.
 - Update `docs/progress.md` with commands, outcomes, measurements, defects, and the
