@@ -229,6 +229,8 @@ public enum ImageResource: Sendable, Hashable {
     /// `GET /api/v4/image?url=`. Only requested when the server reports `HasImageProxy`;
     /// redirects (the server's answer when the proxy is off) are never followed.
     case proxiedImage(url: String)
+    /// `GET /teams/{id}/image`; `revision` is `last_team_icon_update`.
+    case teamIcon(TeamID, revision: Int64)
 }
 
 /// A user-selected local file to upload, read through a scoped handle with bounded
@@ -367,6 +369,29 @@ public protocol MattermostService: Sendable {
     /// `PUT /channels/{id}/members/{user}/notify_props` with only the changed keys;
     /// the server merges them into the member's existing properties.
     func updateChannelNotifyProps(_ id: ChannelID, _ change: ChannelNotifyPropsChange, me: UserID) async throws(APIError)
+    /// `GET /users/{id}/teams/{team}/channels/categories`, in the server's `order`.
+    func sidebarCategories(team: TeamID, me: UserID) async throws(APIError) -> [SidebarCategory]
+    /// `GET /users/{id}/teams/{team}/channels/categories/{category}`.
+    func sidebarCategory(_ id: SidebarCategoryID, team: TeamID, me: UserID) async throws(APIError) -> SidebarCategory
+    /// `PUT /users/{id}/teams/{team}/channels/categories/{category}`. Replaces the
+    /// category, including its channel list; send a freshly read category.
+    func updateSidebarCategory(_ category: SidebarCategory) async throws(APIError) -> SidebarCategory
+    /// `GET /users/me/teams/unread` (DMs/GMs are not included).
+    func teamUnreads(includeCollapsedThreads: Bool) async throws(APIError) -> [TeamUnread]
+    /// `GET /teams/{id}/channels` (public, not archived, display-name order).
+    func publicChannels(team: TeamID, page: Int, perPage: Int) async throws(APIError) -> [Channel]
+    /// `GET /teams/{id}/channels/deleted`. The server's "none" 404 is `[]`.
+    func archivedChannels(team: TeamID, page: Int, perPage: Int) async throws(APIError) -> [Channel]
+    /// `POST /channels/stats/member_count`.
+    func channelMemberCounts(_ ids: [ChannelID]) async throws(APIError) -> [ChannelID: Int]
+    /// `POST /channels` (public or private team channel).
+    func createChannel(_ request: NewChannelRequest) async throws(APIError) -> Channel
+    /// `POST /channels/group`: the server adds the caller; 3–8 members in total.
+    func createGroupChannel(with users: [UserID]) async throws(APIError) -> Channel
+    /// `POST /channels/{id}/members` for other users (`user_id` or `user_ids`).
+    func addChannelMembers(_ id: ChannelID, users: [UserID]) async throws(APIError)
+    /// `POST /users/search`.
+    func searchUsers(_ query: UserSearchQuery) async throws(APIError) -> [User]
 
     // Posts
     func posts(channel: ChannelID, query: PostPageQuery, collapsedThreads: Bool, priority: RequestPriority)

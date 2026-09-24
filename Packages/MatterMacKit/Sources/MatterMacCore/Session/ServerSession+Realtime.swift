@@ -75,6 +75,7 @@ extension ServerSession {
         guard isActiveSessionAlive else { return }
         switch event {
         case .posted(let posted):
+            noteTeamActivity(posted.teamID)
             handlePosted(posted)
         case .postEdited(let post):
             journal.append(.upsert(post))
@@ -173,6 +174,8 @@ extension ServerSession {
             refreshThreadTotals()
         case .configChanged, .licenseChanged:
             refreshConfiguration()
+        case .sidebarCategoriesChanged(let team):
+            handleSidebarCategoriesChanged(team: team)
         case .emojiAdded, .unhandled:
             break
         }

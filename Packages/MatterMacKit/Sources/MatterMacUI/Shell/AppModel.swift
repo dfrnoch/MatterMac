@@ -141,8 +141,7 @@ public final class AppModel {
         let total = sessionModels.values.reduce(0) { sum, model in
             guard let sidebar = model.sidebar else { return sum }
             let teams = sidebar.teams.reduce(0) { $0 + $1.mentionCount }
-            let directs = sidebar.sections.filter { $0.kind == .directMessages }.flatMap(\.rows)
-                .reduce(0) { $0 + $1.mentionCount }
+            let directs = sidebar.directMessageMentions
             return sum + teams + directs
         }
         let label = total > 0 ? (total > 99 ? "99+" : String(total)) : nil

@@ -126,6 +126,9 @@ public actor ServerSession {
         case sendRetry(PendingPostID)
         case threadTotals
         case threadRead
+        case sidebarCategories(TeamID)
+        case categoryUpdate(SidebarCategoryID)
+        case teamUnreads
     }
 
     struct VisibleRange: Equatable {
@@ -380,6 +383,7 @@ public actor ServerSession {
     func applyNameDisplay(_ wire: ClientConfigWire) {
         directory.serverNameFormat = wire.teammateNameDisplay.flatMap(NameFormat.init(rawValue:)) ?? .username
         directory.isNameFormatLocked = wire.lockTeammateNameDisplay ?? false
+        directory.viewArchivedChannels = wire.viewArchivedChannels ?? ((capabilities.version?.major ?? 11) >= 11)
     }
 
     func teamName(for channel: Channel?) -> String? {

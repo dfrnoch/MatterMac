@@ -148,7 +148,7 @@ struct MainWindowView: View {
     var body: some View {
         NavigationSplitView {
             SidebarView(app: app, session: session)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 340)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 200, max: 340)
         } detail: {
             ZStack(alignment: .top) {
                 conversationArea

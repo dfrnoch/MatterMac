@@ -64,6 +64,24 @@ public struct DirectoryStore: Sendable {
     private let channelLimit: Int
     /// Users that must not be evicted (current user, visible DM partners).
     public var pinnedUsers: [UserID: User] = [:]
+    /// Server sidebar categories per team, in display order. Kept for at most
+    /// `categoryTeamLimit` teams (least recently stored dropped first).
+    public private(set) var categories: [TeamID: [SidebarCategory]] = [:]
+    private var categoryTeamOrder: [TeamID] = []
+    /// Teams whose categories could not be loaded; their sidebar is synthesized.
+    public var categoriesUnavailable: Set<TeamID> = []
+    /// `/users/me/teams/unread`, for teams whose channels are not loaded.
+    public var teamUnreads: [TeamID: TeamUnread] = [:]
+    /// Whether archived channels can be browsed (v10 setting; always on in v11).
+    public var viewArchivedChannels = true
+    /// Local, in-memory presentation choice ("Group unread channels separately").
+    public var groupsUnreads = false
+    /// The active channel stays in the Unreads group until the user leaves it.
+    public var stickyUnread: ChannelID?
+    /// Collapse changes being written to the server (at most one per category).
+    public var pendingCollapse: [SidebarCategoryID: Bool] = [:]
+    public static let categoryTeamLimit = 8
+    public static let categoriesPerTeam = 500
 
     public init(budget: ResourceBudget) {
         self.users = CostLRU(countLimit: budget.directoryDetails.count, costLimit: budget.directoryDetails.bytes)
@@ -87,6 +105,8 @@ public struct DirectoryStore: Sendable {
     public mutating func removeTeam(_ id: TeamID) -> [ChannelID] {
         teams[id] = nil
         loadedTeams.remove(id)
+        removeCategories(team: id)
+        teamUnreads[id] = nil
         let removed = channels.values.filter { $0.teamID == id }.map(\.id)
         for channel in removed {
             channels[channel] = nil
@@ -178,6 +198,45 @@ public struct DirectoryStore: Sendable {
         let mentions = collapsedThreads ? member.mentionCountRoot : member.mentionCount
         let muted = member.markUnread == .mention
         return (mentions > 0 || (!muted && messages > 0), max(0, messages), max(0, mentions))
+    }
+
+    // MARK: Sidebar categories
+
+    /// Stores a team's categories (bounded per team and in total ids); the number of
+    /// teams with retained categories is bounded by `categoryTeamLimit`.
+    public mutating func replaceCategories(team: TeamID, _ list: [SidebarCategory]) {
+        var budget = channelLimit
+        var kept: [SidebarCategory] = []
+        for var category in list.prefix(Self.categoriesPerTeam) where category.teamID == team {
+            // A collapse change still being saved wins over an older server copy.
+            if let collapsed = pendingCollapse[category.id] { category.isCollapsed = collapsed }
+            if category.channelIDs.count > budget {
+                category.channelIDs = Array(category.channelIDs.prefix(budget))
+                // A truncated list must never be written back to the server.
+                category.droppedChannelIDs += 1
+            }
+            budget -= category.channelIDs.count
+            kept.append(category)
+        }
+        categories[team] = kept
+        categoriesUnavailable.remove(team)
+        categoryTeamOrder.removeAll { $0 == team }
+        categoryTeamOrder.append(team)
+        while categoryTeamOrder.count > Self.categoryTeamLimit {
+            categories[categoryTeamOrder.removeFirst()] = nil
+        }
+    }
+
+    public mutating func updateCategory(_ id: SidebarCategoryID, team: TeamID, _ body: (inout SidebarCategory) -> Void) {
+        guard var list = categories[team], let index = list.firstIndex(where: { $0.id == id }) else { return }
+        body(&list[index])
+        categories[team] = list
+    }
+
+    public mutating func removeCategories(team: TeamID) {
+        categories[team] = nil
+        categoryTeamOrder.removeAll { $0 == team }
+        categoriesUnavailable.remove(team)
     }
 
     // MARK: Users
@@ -280,5 +339,10 @@ public struct DirectoryStore: Sendable {
         favorites.removeAll()
         savedPosts.removeAll()
         savedPostsTruncated = false
+        categories.removeAll()
+        categoryTeamOrder.removeAll()
+        categoriesUnavailable.removeAll()
+        teamUnreads.removeAll()
+        stickyUnread = nil
     }
 }

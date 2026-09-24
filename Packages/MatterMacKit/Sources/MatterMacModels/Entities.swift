@@ -39,14 +39,17 @@ public struct Team: Hashable, Sendable, Identifiable {
     public var displayName: String
     public var isOpenInvite: Bool
     public var deleteAt: MattermostTimestamp
+    /// `last_team_icon_update`; 0 means the team has no custom icon.
+    public var iconRevision: Int64
 
     public init(id: TeamID, name: String, displayName: String, isOpenInvite: Bool = false,
-                deleteAt: MattermostTimestamp = .zero) {
+                deleteAt: MattermostTimestamp = .zero, iconRevision: Int64 = 0) {
         self.id = id
         self.name = name
         self.displayName = displayName
         self.isOpenInvite = isOpenInvite
         self.deleteAt = deleteAt
+        self.iconRevision = iconRevision
     }
 }
 

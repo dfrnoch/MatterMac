@@ -3,7 +3,7 @@ public import MatterMacModels
 
 public struct TeamWire: Decodable, Sendable {
     public let team: Team
-    enum Keys: String, CodingKey { case id, name, display_name, type, allow_open_invite, delete_at }
+    enum Keys: String, CodingKey { case id, name, display_name, type, allow_open_invite, delete_at, last_team_icon_update }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         team = Team(
@@ -11,7 +11,8 @@ public struct TeamWire: Decodable, Sendable {
             name: String((c.lenientString(.name) ?? "").prefix(128)),
             displayName: String((c.lenientString(.display_name) ?? "").prefix(256)),
             isOpenInvite: c.lenientBool(.allow_open_invite) ?? false,
-            deleteAt: c.timestamp(.delete_at))
+            deleteAt: c.timestamp(.delete_at),
+            iconRevision: max(0, c.lenientInt64(.last_team_icon_update) ?? 0))
     }
 }
 
@@ -320,6 +321,9 @@ public struct ClientConfigWire: Decodable, Sendable {
     /// `TeammateNameDisplay` (`username`, `nickname_full_name`, `full_name`).
     public let teammateNameDisplay: String?
     public let lockTeammateNameDisplay: Bool?
+    /// v10 `ExperimentalViewArchivedChannels`; v11 removed the setting (archived
+    /// channels are always viewable there), so it is absent.
+    public let viewArchivedChannels: Bool?
 
     enum Keys: String, CodingKey {
         case Version, BuildNumber, SiteName, EnableSignInWithEmail, EnableSignInWithUsername, EnableLdap
@@ -329,7 +333,7 @@ public struct ClientConfigWire: Decodable, Sendable {
         case EnableFileAttachments, EnableCustomEmoji, EnableUserAccessTokens, PostEditTimeLimit
         case UniqueEmojiReactionLimitPerPost, ExperimentalTownSquareIsReadOnly
         case TimeBetweenUserTypingUpdatesMilliseconds, EnableUserTypingMessages, WebsocketURL
-        case TeammateNameDisplay, LockTeammateNameDisplay
+        case TeammateNameDisplay, LockTeammateNameDisplay, ExperimentalViewArchivedChannels
         case HasImageProxy, EnableLinkPreviews
     }
 
@@ -377,6 +381,7 @@ public struct ClientConfigWire: Decodable, Sendable {
         websocketURL = c.lenientString(.WebsocketURL, maxBytes: 2_048).flatMap { $0.isEmpty ? nil : $0 }
         teammateNameDisplay = c.lenientString(.TeammateNameDisplay, maxBytes: 32).flatMap { $0.isEmpty ? nil : $0 }
         lockTeammateNameDisplay = bool(.LockTeammateNameDisplay)
+        viewArchivedChannels = bool(.ExperimentalViewArchivedChannels)
     }
 }
 

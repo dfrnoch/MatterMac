@@ -189,6 +189,107 @@ public final class MattermostHTTPClient: MattermostService {
         return true
     }
 
+    // MARK: Sidebar categories, browsing and membership
+
+    public func sidebarCategories(team: TeamID, me: UserID) async throws(APIError) -> [SidebarCategory] {
+        try await get(OrderedSidebarCategoriesWire.self, ["users", me.rawValue, "teams", team.rawValue, "channels", "categories"],
+                      limit: large, priority: .interactive).categories
+    }
+
+    public func sidebarCategory(_ id: SidebarCategoryID, team: TeamID, me: UserID) async throws(APIError) -> SidebarCategory {
+        try await get(SidebarCategoryWire.self,
+                      ["users", me.rawValue, "teams", team.rawValue, "channels", "categories", id.rawValue],
+                      limit: large, priority: .interactive).category
+    }
+
+    public func updateSidebarCategory(_ category: SidebarCategory) async throws(APIError) -> SidebarCategory {
+        guard category.droppedChannelIDs == 0 else { throw .badRequest(Self.clientError("mattermac.client.unreadable_category")) }
+        return try await send(.put, ["users", category.userID.rawValue, "teams", category.teamID.rawValue, "channels",
+                                     "categories", category.id.rawValue],
+                              body: SidebarCategoryBody(category), decode: SidebarCategoryWire.self, limit: large).category
+    }
+
+    public func teamUnreads(includeCollapsedThreads: Bool) async throws(APIError) -> [TeamUnread] {
+        var query: [URLQueryItem] = []
+        if includeCollapsedThreads { query.append(URLQueryItem(name: "include_collapsed_threads", value: "true")) }
+        return try await get(LossyArray<TeamUnreadWire>.self, ["users", "me", "teams", "unread"], query: query,
+                             limit: large, priority: .background).elements.map(\.unread)
+    }
+
+    public func publicChannels(team: TeamID, page: Int, perPage: Int) async throws(APIError) -> [Channel] {
+        try await get(LossyArray<ChannelWire>.self, ["teams", team.rawValue, "channels"],
+                      query: Self.pageQuery(page: page, perPage: perPage), limit: large, priority: .interactive)
+            .elements.map(\.channel).filter(Self.isMessageChannel)
+    }
+
+    public func archivedChannels(team: TeamID, page: Int, perPage: Int) async throws(APIError) -> [Channel] {
+        do {
+            return try await get(LossyArray<ChannelWire>.self, ["teams", team.rawValue, "channels", "deleted"],
+                                 query: Self.pageQuery(page: page, perPage: perPage), limit: large, priority: .interactive)
+                .elements.map(\.channel).filter(Self.isMessageChannel)
+        } catch {
+            if case .notFound(let info) = error, info.id == ServerErrorID.deletedChannelsNotFound { return [] }
+            throw error
+        }
+    }
+
+    /// `DELETE /channels/{id}` (archive; `permanent` needs an administrator and
+    /// `EnableAPIChannelDeletion`). Not exposed in the app; live-test cleanup only.
+    func deleteChannel(_ id: ChannelID, permanent: Bool) async throws(APIError) {
+        _ = try await perform(.delete, ["channels", id.rawValue],
+                              query: permanent ? [URLQueryItem(name: "permanent", value: "true")] : [],
+                              limit: small, priority: .interactive)
+    }
+
+    static func pageQuery(page: Int, perPage: Int) -> [URLQueryItem] {
+        [URLQueryItem(name: "page", value: String(max(0, page))),
+         URLQueryItem(name: "per_page", value: String(clampPage(perPage)))]
+    }
+
+    public func channelMemberCounts(_ ids: [ChannelID]) async throws(APIError) -> [ChannelID: Int] {
+        var result: [ChannelID: Int] = [:]
+        for chunk in Self.uniqueChunks(ids.map(\.rawValue)) {
+            let wire = try await send(.post, ["channels", "stats", "member_count"], body: chunk,
+                                      decode: ChannelMemberCountsWire.self, limit: small, priority: .background)
+            result.merge(wire.counts) { first, _ in first }
+        }
+        return result
+    }
+
+    public func createChannel(_ request: NewChannelRequest) async throws(APIError) -> Channel {
+        guard ChannelNameRules.problem(with: request.name) == nil else {
+            throw .badRequest(Self.clientError("mattermac.client.invalid_channel_name"))
+        }
+        let body = CreateChannelBody(team_id: request.team.rawValue, name: request.name,
+                                     display_name: request.displayName, purpose: request.purpose,
+                                     type: request.isPrivate ? "P" : "O")
+        return try await send(.post, ["channels"], body: body, decode: ChannelWire.self, limit: small).channel
+    }
+
+    public func createGroupChannel(with users: [UserID]) async throws(APIError) -> Channel {
+        try await send(.post, ["channels", "group"], body: users.map(\.rawValue), decode: ChannelWire.self,
+                       limit: small).channel
+    }
+
+    public func addChannelMembers(_ id: ChannelID, users: [UserID]) async throws(APIError) {
+        guard !users.isEmpty else { return }
+        guard users.count <= 1_000 else { throw .overloaded }
+        let body = users.count == 1
+            ? AddChannelMembersBody(user_id: users[0].rawValue, user_ids: nil)
+            : AddChannelMembersBody(user_id: nil, user_ids: users.map(\.rawValue))
+        _ = try await perform(.post, ["channels", id.rawValue, "members"], body: try RequestBodyEncoding.encode(body),
+                              limit: large, priority: .interactive)
+    }
+
+    public func searchUsers(_ query: UserSearchQuery) async throws(APIError) -> [User] {
+        let term = String(query.term.trimmingCharacters(in: .whitespacesAndNewlines).prefix(64))
+        guard !term.isEmpty else { return [] }
+        let body = UserSearchBody(term: term, team_id: query.team.rawValue, not_in_channel_id: query.notInChannel?.rawValue,
+                                  allow_inactive: false, limit: min(max(query.limit, 1), 100))
+        return try await send(.post, ["users", "search"], body: body, decode: LossyArray<UserWire>.self, limit: large)
+            .elements.map(\.user)
+    }
+
     // MARK: Posts
 
     public func posts(channel: ChannelID, query: PostPageQuery, collapsedThreads: Bool, priority: RequestPriority)
@@ -505,6 +606,8 @@ public final class MattermostHTTPClient: MattermostService {
                 throw .badRequest(clientError("mattermac.client.invalid_image_url"))
             }
             return (["image"], [URLQueryItem(name: "url", value: link.url.absoluteString)])
+        case .teamIcon(let team, let revision):
+            return (["teams", team.rawValue, "image"], [URLQueryItem(name: "_", value: String(revision))])
         }
     }
 

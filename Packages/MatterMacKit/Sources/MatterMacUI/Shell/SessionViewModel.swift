@@ -46,6 +46,8 @@ public final class SessionViewModel {
     /// The followed-threads view (collapsed reply threads) in the main area.
     public var isThreadsViewVisible = false
     public private(set) var threadActivity: ThreadActivity?
+    /// Browse/create channels, new direct or group message, add members.
+    public var directorySheet: DirectorySheet?
     /// The channel details inspector (members, favorite/mute, leave).
     public var isChannelInfoVisible = false {
         didSet {
@@ -56,6 +58,7 @@ public final class SessionViewModel {
     }
     /// Bumped after an explicit channel setting change so the inspector reloads.
     public internal(set) var channelInfoRevision: UInt64 = 0
+    func bumpChannelInfoRevision() { channelInfoRevision &+= 1 }
     public var isThreadVisible: Bool { thread != nil }
     public var inlineError: String?
     /// The latest ephemeral slash-command reply, shown until dismissed.
@@ -188,7 +191,7 @@ public final class SessionViewModel {
             threadDraftProvider?.discardEditingState()
             sidebar = nil; timeline = nil; thread = nil; header = nil; search = nil
             selectedChannel = nil; replyTarget = nil; editing = nil
-            isSearchVisible = false; isQuickSwitcherVisible = false
+            isSearchVisible = false; isQuickSwitcherVisible = false; directorySheet = nil
             _ = await app?.forgetSavedAccount(self)
         } else if requiresAuthentication { return } // Keep the required recovery action visible.
         switch notice {

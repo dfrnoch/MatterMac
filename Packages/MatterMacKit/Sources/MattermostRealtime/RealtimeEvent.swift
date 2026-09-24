@@ -40,6 +40,10 @@ public enum RealtimeEvent: Sendable {
     case userRoleUpdated(userID: UserID)
     case preferencesChanged([Preference])
     case preferencesDeleted([Preference])
+    /// `sidebar_category_created`/`_updated`/`_deleted`/`_order_updated`. Core re-reads
+    /// the team's categories instead of trusting the partial payload; `teamID` is nil
+    /// for the data-less variant emitted when favorites preferences are saved.
+    case sidebarCategoriesChanged(teamID: TeamID?)
     case threadUpdated(threadID: PostID, channelID: ChannelID?)
     case threadReadChanged(threadID: PostID?, channelID: ChannelID?)
     case threadFollowChanged(threadID: PostID, isFollowing: Bool)

@@ -422,8 +422,16 @@ public enum RealtimeFixtures {
     }
 
     /// An event MatterMac does not handle (observed: sent after preference saves).
-    public static func sidebarCategoryUpdated(userID: String = aliceID, seq: Int64) -> String {
-        envelope(event: "sidebar_category_updated", data: "{}", broadcast: Broadcast(userID: userID), seq: seq)
+    /// The data-less variant (favorites preference saved) when `teamID` is empty.
+    public static func sidebarCategoryUpdated(userID: String = aliceID, teamID: String = "", seq: Int64) -> String {
+        envelope(event: "sidebar_category_updated", data: teamID.isEmpty ? "null" : "{\"updatedCategories\":\"[]\"}",
+                 broadcast: Broadcast(userID: userID, teamID: teamID), seq: seq)
+    }
+
+    public static func sidebarCategoryEvent(_ name: String, userID: String = aliceID, teamID: String = teamID,
+                                            seq: Int64) -> String {
+        envelope(event: name, data: "{\"category_id\":\"favorites_\(userID)_\(teamID)\",\"order\":[]}",
+                 broadcast: Broadcast(userID: userID, teamID: teamID), seq: seq)
     }
 
     public static func unknown(_ name: String, seq: Int64) -> String {

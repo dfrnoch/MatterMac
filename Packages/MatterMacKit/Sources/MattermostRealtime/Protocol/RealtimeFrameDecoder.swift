@@ -136,6 +136,10 @@ enum HandledEventName: String {
     case emojiAdded = "emoji_added"
     case configChanged = "config_changed"
     case licenseChanged = "license_changed"
+    case sidebarCategoryCreated = "sidebar_category_created"
+    case sidebarCategoryUpdated = "sidebar_category_updated"
+    case sidebarCategoryDeleted = "sidebar_category_deleted"
+    case sidebarCategoryOrderUpdated = "sidebar_category_order_updated"
 
     /// Durable events change server state Core mirrors. A malformed durable event is
     /// never ignored: it becomes `.resynchronize(.malformedEvent)`. Typing and the
@@ -227,6 +231,11 @@ private struct EnvelopeWire: Decodable {
         case .configChanged: return .configChanged
         case .licenseChanged: return .licenseChanged
         case .hello: throw PayloadError.unexpected
+        case .sidebarCategoryCreated, .sidebarCategoryUpdated, .sidebarCategoryDeleted, .sidebarCategoryOrderUpdated:
+            // Payloads (category ids, order, updated categories) are not needed: Core
+            // re-reads the team's categories. The team comes from the broadcast.
+            return .sidebarCategoriesChanged(teamID: try broadcast.teamID
+                ?? data?.optionalID(TeamID.self, "team_id"))
         default: break
         }
         guard let data else { throw PayloadError.missingData }
@@ -361,7 +370,8 @@ private struct EnvelopeWire: Decodable {
         case .threadFollowChanged:
             guard let state = data.lenientBool("state") else { throw PayloadError.missingField }
             return .threadFollowChanged(threadID: try data.requiredID(PostID.self, "thread_id"), isFollowing: state)
-        case .hello, .emojiAdded, .configChanged, .licenseChanged:
+        case .hello, .emojiAdded, .configChanged, .licenseChanged, .sidebarCategoryCreated, .sidebarCategoryUpdated,
+             .sidebarCategoryDeleted, .sidebarCategoryOrderUpdated:
             throw PayloadError.unexpected
         }
     }

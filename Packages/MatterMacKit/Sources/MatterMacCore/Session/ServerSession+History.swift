@@ -35,6 +35,7 @@ extension ServerSession {
             for partner in partners where directory.peekUser(partner) == nil { missingUsers.insert(partner) }
             markDirty([.sidebar, .header])
             refreshPresenceSoon()
+            refreshSidebarOrganization(team: team)
         } catch {
             guard self.epoch == epoch else { return }
             deps.diagnostics.record(.sync, .error, "channel list load failed")
