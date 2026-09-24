@@ -43,6 +43,9 @@ public struct MatterMacRootView: View {
                                     set: { model.isCompatibilityVisible = $0 })) {
             CompatibilityView(app: model)
         }
+        .sheet(isPresented: Binding(get: { model.isShortcutsVisible }, set: { model.isShortcutsVisible = $0 })) {
+            KeyboardShortcutsView()
+        }
     }
 }
 

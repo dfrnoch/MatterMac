@@ -29,6 +29,8 @@ public final class AppModel {
     public var isAddingServer = false
     /// About / Compatibility panel (SPEC §19).
     public var isCompatibilityVisible = false
+    /// Help › Keyboard Shortcuts (⌘/).
+    public var isShortcutsVisible = false
     public var lastSignOutMessage: String?
     public private(set) var isReauthenticating = false
     private var isSigningOut = false

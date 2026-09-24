@@ -20,6 +20,11 @@ public struct MatterMacCommands: Commands {
         CommandGroup(replacing: .appInfo) {
             Button("About MatterMac") { environment.appModel?.isCompatibilityVisible = true }
         }
+        CommandGroup(replacing: .help) {
+            Button("Keyboard Shortcuts") { environment.appModel?.isShortcutsVisible = true }
+                .keyboardShortcut("/", modifiers: .command)
+            Button("About and Compatibility") { environment.appModel?.isCompatibilityVisible = true }
+        }
         CommandMenu("Format") {
             // Sent to the focused composer; shortcuts are handled there while typing.
             formatItem("Bold", #selector(ComposerTextView.formatBold(_:)), "b", .command)
