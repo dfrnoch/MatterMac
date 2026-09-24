@@ -38,6 +38,9 @@ public struct ResourceBudget: Sendable, Hashable {
     public var unsentText = CountAndBytes(count: 100, bytes: 4 * .mebibyte)
     public var pastedImageBytes = 8 * .mebibyte
     public var directoryDetails = CountAndBytes(count: 5_000, bytes: 8 * .mebibyte)
+    /// Saved (`flagged_post` preference) post ids tracked per session. Saves beyond this
+    /// are still on the server but show as unsaved here.
+    public var savedPostIDs = 5_000
     /// Channel summaries shown in the sidebar, per session.
     public var sidebarChannelsPerSession = 5_000
     public var requestsPerServer = 6

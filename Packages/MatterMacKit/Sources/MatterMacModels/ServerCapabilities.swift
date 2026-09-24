@@ -103,6 +103,10 @@ public struct ServerCapabilities: Hashable, Sendable {
     public var postEditTimeLimitSeconds: Int?
     public var uniqueReactionLimitPerPost: Int?
     public var experimentalTownSquareReadOnly: Bool?
+    /// `HasImageProxy`: external images can be fetched through `/api/v4/image`.
+    public var hasImageProxy: Bool?
+    /// `EnableLinkPreviews`: the server generates website previews.
+    public var linkPreviewsEnabled: Bool?
 
     public init(version: ServerVersion? = nil, buildNumber: String = "", siteName: String = "",
                 login: LoginOptions = LoginOptions(), collapsedThreads: CollapsedThreadsMode = .unknown,

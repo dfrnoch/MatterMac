@@ -35,6 +35,11 @@ public final class FakeMattermostService: MattermostService {
         public var unreadHandler: (@Sendable (ChannelID) async throws -> PostPage)?
         public var postsByIDsHandler: (@Sendable ([PostID]) async throws -> [Post])?
         public var nextID: Int = 1
+        public var pinChanges: [(PostID, Bool)] = []
+        public var unreadMarks: [PostID] = []
+        public var markUnreadHandler: (@Sendable (PostID) async throws -> ChannelUnreadState)?
+        public var pinHandler: (@Sendable (PostID, Bool) async throws -> Void)?
+        public var preferencesList: [Preference] = []
 
         init(me: User) { self.me = me }
     }
@@ -80,7 +85,10 @@ public final class FakeMattermostService: MattermostService {
     }
 
     public func logout() async throws(APIError) { record("logout") }
-    public func preferences() async throws(APIError) -> [Preference] { record("preferences"); return [] }
+    public func preferences() async throws(APIError) -> [Preference] {
+        record("preferences")
+        return withState { $0.preferencesList }
+    }
     public func savePreferences(_ preferences: [Preference], me: UserID) async throws(APIError) {
         record("savePreferences")
         withState { $0.savedPreferences.append(contentsOf: preferences) }
@@ -282,6 +290,38 @@ public final class FakeMattermostService: MattermostService {
         withState { $0.executedCommands.append(command) }
         if let handler = withState({ $0.commandHandler }) { return try await Self.typed { try await handler(command) } }
         return CommandResult(isEphemeral: true, text: "", gotoLocation: nil)
+    }
+
+    public func setPinned(_ id: PostID, pinned: Bool) async throws(APIError) {
+        record(pinned ? "pin" : "unpin")
+        withState { $0.pinChanges.append((id, pinned)) }
+        if let handler = withState({ $0.pinHandler }) { try await Self.typed { try await handler(id, pinned) } }
+        withState { state in
+            guard var post = state.posts[id] else { return }
+            post.isPinned = pinned
+            post.updateAt = MattermostTimestamp(milliseconds: post.updateAt.milliseconds + 1)
+            state.posts[id] = post
+        }
+    }
+
+    public func markUnread(from post: PostID, me: UserID) async throws(APIError) -> ChannelUnreadState {
+        record("markUnread")
+        withState { $0.unreadMarks.append(post) }
+        if let handler = withState({ $0.markUnreadHandler }) { return try await Self.typed { try await handler(post) } }
+        guard let stored = withState({ $0.posts[post] }) else {
+            throw .notFound(ServerErrorInfo(id: ServerErrorID.postNotFound, statusCode: 404, requestID: nil))
+        }
+        return withState { state in
+            let channel = state.channels[stored.channelID]
+            let newer = state.posts.values.filter { $0.channelID == stored.channelID && $0.createAt >= stored.createAt }
+            let total = channel?.totalMessageCount ?? Int64(newer.count)
+            return ChannelUnreadState(channelID: stored.channelID,
+                                      lastViewedAt: MattermostTimestamp(milliseconds: stored.createAt.milliseconds - 1),
+                                      messageCount: max(0, total - Int64(newer.count)),
+                                      messageCountRoot: max(0, (channel?.totalMessageCountRoot ?? total)
+                                          - Int64(newer.filter { $0.rootID == nil }.count)),
+                                      mentionCount: 0, mentionCountRoot: 0, urgentMentionCount: 0)
+        }
     }
 
     public func setStatus(_ status: PresenceStatus, me: UserID) async throws(APIError) {

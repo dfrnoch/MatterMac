@@ -18,7 +18,8 @@ public enum PostDecodingLimits {
 }
 
 /// `Post` as sent by the server. Decodes directly into the domain value; nothing else
-/// from the wire payload (embeds, plugin props, translations) is retained.
+/// from the wire payload (plugin props, translations, other embed types) is retained.
+/// The first OpenGraph or image embed is kept as a bounded `LinkPreview`.
 public struct PostWire: Decodable, Sendable {
     public let post: Post
     /// `original_id` non-empty marks a hidden edit-history row (returned by `since`
@@ -82,7 +83,8 @@ public struct PostWire: Decodable, Sendable {
             pendingPostID: pending,
             replyCount: Int(clamping: c.lenientInt64(.reply_count) ?? 0),
             lastReplyAt: c.timestamp(.last_reply_at),
-            props: props
+            props: props,
+            linkPreview: props.attachments.isEmpty ? metadata?.linkPreview : nil
         )
         self.isEditHistoryRow = !((try? c.decodeIfPresent(String.self, forKey: .original_id)) ?? "").isEmpty
         self.messageTruncated = truncated
@@ -92,13 +94,119 @@ public struct PostWire: Decodable, Sendable {
 struct PostMetadataWire: Decodable, Sendable {
     var files: LossyArray<FileInfoWireElement>
     var reactions: LossyArray<ReactionWire>
+    var linkPreview: LinkPreview?
 
-    enum Keys: String, CodingKey { case files, reactions }
+    enum Keys: String, CodingKey { case files, reactions, embeds, images }
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         files = (try? c.decodeIfPresent(LossyArray<FileInfoWireElement>.self, forKey: .files)) ?? LossyArray(elements: [])
         reactions = (try? c.decodeIfPresent(LossyArray<ReactionWire>.self, forKey: .reactions)) ?? LossyArray(elements: [])
+        linkPreview = nil
+        // The server adds at most one link embed (for the first link). Only the first
+        // few entries are examined; permalink, boards and plain link embeds are ignored.
+        let embeds = (try? c.decodeIfPresent(LossyArray<EmbedWire>.self, forKey: .embeds))?.elements ?? []
+        guard let embed = embeds.prefix(4).first(where: { $0.preview != nil }), var preview = embed.preview else { return }
+        if var image = preview.image {
+            // `metadata.images` is keyed by the exact image URL; only that one entry is read.
+            if let images = try? c.nestedContainer(keyedBy: DynamicKey.self, forKey: .images),
+               let measured = try? images.decodeIfPresent(PostImageWire.self, forKey: DynamicKey(image.url)) {
+                if measured.isSVG {
+                    preview.image = nil
+                } else {
+                    image.width = measured.width ?? image.width
+                    image.height = measured.height ?? image.height
+                    preview.image = image
+                }
+            } else {
+                preview.image = image
+            }
+        }
+        if preview.kind == .image && preview.image == nil { return }
+        linkPreview = preview
+    }
+}
+
+/// One `metadata.embeds` entry. `opengraph` and `image` become a `LinkPreview`.
+struct EmbedWire: Decodable, Sendable {
+    let preview: LinkPreview?
+
+    enum Keys: String, CodingKey { case type, url, data }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        let type = c.lenientString(.type, maxBytes: 32) ?? ""
+        guard let raw = c.lenientString(.url, maxBytes: LinkPreview.maximumURLBytes), let link = SafeLink(raw),
+              link.kind == .web else {
+            preview = nil
+            return
+        }
+        switch type {
+        case "image":
+            preview = LinkPreview(kind: .image, link: link, image: LinkPreview.Image(url: link.url.absoluteString))
+        case "opengraph":
+            guard let data = try? c.decodeIfPresent(OpenGraphWire.self, forKey: .data),
+                  !data.title.isEmpty || !data.description.isEmpty else {
+                preview = nil
+                return
+            }
+            preview = LinkPreview(kind: .website, link: link, title: data.title, description: data.description,
+                                  siteName: data.siteName, image: data.image)
+        default:
+            preview = nil
+        }
+    }
+}
+
+/// The OpenGraph subset MatterMac shows (`github.com/dyatlov/go-opengraph` JSON).
+struct OpenGraphWire: Decodable, Sendable {
+    let title: String
+    let description: String
+    let siteName: String
+    let image: LinkPreview.Image?
+
+    enum Keys: String, CodingKey { case title, description, site_name, images }
+
+    struct ImageWire: Decodable, Sendable {
+        let image: LinkPreview.Image?
+        enum Keys: String, CodingKey { case url, secure_url, width, height }
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            let secure = c.lenientString(.secure_url, maxBytes: LinkPreview.maximumURLBytes) ?? ""
+            let plain = c.lenientString(.url, maxBytes: LinkPreview.maximumURLBytes) ?? ""
+            // Only absolute http(s) URLs; the server keys `metadata.images` by this string.
+            let raw = [secure, plain].first { SafeLink($0)?.kind == .web }
+            func dimension(_ key: Keys) -> Int? {
+                c.lenientInt64(key).flatMap { $0 > 0 && $0 < 100_000 ? Int($0) : nil }
+            }
+            image = raw.map { LinkPreview.Image(url: $0, width: dimension(.width), height: dimension(.height)) }
+        }
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        // Read a little beyond the retained bound so `LinkPreview.bounded` can mark truncation.
+        title = c.lenientString(.title, maxBytes: LinkPreview.maximumTitleBytes * 2) ?? ""
+        description = c.lenientString(.description, maxBytes: LinkPreview.maximumDescriptionBytes * 2) ?? ""
+        siteName = c.lenientString(.site_name, maxBytes: LinkPreview.maximumSiteNameBytes * 2) ?? ""
+        let images = (try? c.decodeIfPresent(LossyArray<ImageWire>.self, forKey: .images))?.elements ?? []
+        image = images.prefix(4).lazy.compactMap(\.image).first
+    }
+}
+
+/// `metadata.images[url]`: `{width, height, format, frame_count}`.
+struct PostImageWire: Decodable, Sendable {
+    let width: Int?
+    let height: Int?
+    let isSVG: Bool
+
+    enum Keys: String, CodingKey { case width, height, format }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        width = c.lenientInt64(.width).flatMap { $0 > 0 && $0 < 100_000 ? Int($0) : nil }
+        height = c.lenientInt64(.height).flatMap { $0 > 0 && $0 < 100_000 ? Int($0) : nil }
+        isSVG = (c.lenientString(.format, maxBytes: 16) ?? "").lowercased() == "svg"
     }
 }
 

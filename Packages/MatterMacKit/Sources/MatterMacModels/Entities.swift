@@ -452,6 +452,8 @@ public struct Post: Hashable, Sendable, Identifiable {
     public var replyCount: Int
     public var lastReplyAt: MattermostTimestamp
     public var props: PostProps
+    /// Server-provided preview of the post's first link (`metadata.embeds`), if any.
+    public var linkPreview: LinkPreview?
 
     public init(id: PostID, channelID: ChannelID, userID: UserID, rootID: PostID? = nil, message: String,
                 type: PostType = .normal, createAt: MattermostTimestamp,
@@ -459,7 +461,7 @@ public struct Post: Hashable, Sendable, Identifiable {
                 deleteAt: MattermostTimestamp = .zero, isPinned: Bool = false, fileIDs: [FileID] = [],
                 files: [FileInfo] = [], reactions: [Reaction] = [], reactionsTruncated: Bool = false,
                 hasReactions: Bool = false, pendingPostID: PendingPostID? = nil, replyCount: Int = 0,
-                lastReplyAt: MattermostTimestamp = .zero, props: PostProps = .empty) {
+                lastReplyAt: MattermostTimestamp = .zero, props: PostProps = .empty, linkPreview: LinkPreview? = nil) {
         self.id = id
         self.channelID = channelID
         self.userID = userID
@@ -480,6 +482,7 @@ public struct Post: Hashable, Sendable, Identifiable {
         self.replyCount = replyCount
         self.lastReplyAt = lastReplyAt
         self.props = props
+        self.linkPreview = linkPreview
     }
 
     public var isDeleted: Bool { !deleteAt.isZero }
