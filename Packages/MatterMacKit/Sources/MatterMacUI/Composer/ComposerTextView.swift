@@ -250,6 +250,10 @@ final class ComposerTextView: NSTextView {
             host?.composerTextViewRequestsSend(self)
             return true
         }
+        if window?.firstResponder === self, !hasMarkedText(), let style = Self.markdownStyle(for: event) {
+            applyMarkdown(style)
+            return true
+        }
         return super.performKeyEquivalent(with: event)
     }
 

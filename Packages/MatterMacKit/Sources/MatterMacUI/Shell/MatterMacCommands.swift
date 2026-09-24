@@ -1,3 +1,4 @@
+import AppKit
 public import SwiftUI
 
 extension FocusedValues {
@@ -18,6 +19,15 @@ public struct MatterMacCommands: Commands {
     public var body: some Commands {
         CommandGroup(replacing: .appInfo) {
             Button("About MatterMac") { environment.appModel?.isCompatibilityVisible = true }
+        }
+        CommandMenu("Format") {
+            // Sent to the focused composer; shortcuts are handled there while typing.
+            formatItem("Bold", #selector(ComposerTextView.formatBold(_:)), "b", .command)
+            formatItem("Italic", #selector(ComposerTextView.formatItalic(_:)), "i", .command)
+            formatItem("Strikethrough", #selector(ComposerTextView.formatStrikethrough(_:)), "x", [.command, .shift])
+            formatItem("Code", #selector(ComposerTextView.formatCode(_:)), "c", [.command, .option])
+            formatItem("Link", #selector(ComposerTextView.formatLink(_:)), "k", [.command, .option])
+            Button("Quote") { NSApp.sendAction(#selector(ComposerTextView.formatQuote(_:)), to: nil, from: nil) }
         }
         CommandMenu("Go") {
             Button("Quick Switcher…") { session?.isQuickSwitcherVisible = true }
@@ -45,5 +55,11 @@ public struct MatterMacCommands: Commands {
             Button("Close Thread") { session?.closeThread() }
                 .disabled(session?.isThreadVisible != true)
         }
+    }
+
+    private func formatItem(_ title: LocalizedStringKey, _ action: Selector, _ key: KeyEquivalent,
+                            _ modifiers: EventModifiers) -> some View {
+        Button(title) { NSApp.sendAction(action, to: nil, from: nil) }
+            .keyboardShortcut(key, modifiers: modifiers)
     }
 }
