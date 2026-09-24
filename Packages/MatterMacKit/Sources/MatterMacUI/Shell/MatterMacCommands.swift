@@ -26,6 +26,11 @@ public struct MatterMacCommands: Commands {
             Button("Search Messages…") { session?.isSearchVisible = true }
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(session == nil)
+            Button("Recent Mentions") { session?.showRecentMentions() }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+                .disabled(session == nil)
+            Button("Saved Messages") { session?.showSavedPosts() }
+                .disabled(session == nil)
             Divider()
             Button(session?.isChannelInfoVisible == true ? "Hide Channel Info" : "Show Channel Info") {
                 session?.isChannelInfoVisible.toggle()

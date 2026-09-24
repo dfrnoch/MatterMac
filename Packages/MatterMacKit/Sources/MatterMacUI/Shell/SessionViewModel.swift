@@ -28,14 +28,29 @@ public final class SessionViewModel {
     public private(set) var isCopyingUnsentText = false
     @ObservationIgnored private var recoveryTask: Task<Void, Never>?
     public var isUnsentRecoveryVisible = false
-    public var isSearchVisible = false
+    /// The results pane (search, recent mentions, saved, pinned) in the trailing area.
+    public var isSearchVisible = false {
+        didSet {
+            guard isSearchVisible != oldValue else { return }
+            if isSearchVisible {
+                isChannelInfoVisible = false
+                if thread != nil || replyTarget != nil { closeThread() }
+            } else {
+                clearSearch()
+            }
+        }
+    }
     public var isQuickSwitcherVisible = false
     /// The followed-threads view (collapsed reply threads) in the main area.
     public var isThreadsViewVisible = false
     public private(set) var threadActivity: ThreadActivity?
     /// The channel details inspector (members, favorite/mute, leave).
     public var isChannelInfoVisible = false {
-        didSet { if isChannelInfoVisible, !oldValue, thread != nil || replyTarget != nil { closeThread() } }
+        didSet {
+            guard isChannelInfoVisible, !oldValue else { return }
+            if thread != nil || replyTarget != nil { closeThread() }
+            if isSearchVisible { isSearchVisible = false }
+        }
     }
     /// Bumped after an explicit channel setting change so the inspector reloads.
     public private(set) var channelInfoRevision: UInt64 = 0
@@ -223,9 +238,11 @@ public final class SessionViewModel {
 
     // MARK: - Navigation
 
-    public func select(channel: ChannelID, focusing post: PostID? = nil) {
+    /// `thread` opens that thread once the channel has been opened (after the old
+    /// thread is closed), so a late close cannot dismiss it.
+    public func select(channel: ChannelID, focusing post: PostID? = nil, thread root: PostID? = nil) {
         guard !isDetached, !requiresAuthentication else { return }
-        guard channel != selectedChannel || post != nil else { return }
+        guard channel != selectedChannel || post != nil || root != nil else { return }
         navigationTask?.cancel()
         directMessageTask?.cancel()
         saveDrafts()
@@ -237,20 +254,27 @@ public final class SessionViewModel {
         editing = nil
         commandFeedback = nil
         isThreadsViewVisible = false
+        replyTarget = root
         navigationTask = Task {
             guard !Task.isCancelled else { return }
             await session.closeThread()
             guard !Task.isCancelled else { return }
             await session.openChannel(channel, focusing: post)
+            guard !Task.isCancelled, let root else { return }
+            await session.openThread(root: root, channel: channel)
         }
     }
 
     /// Opens a thread from the Threads view: its channel becomes current (for drafts
     /// and permissions) while the Threads view stays on screen.
     public func openThreadFromList(root: PostID, channel: ChannelID) {
-        if selectedChannel != channel { select(channel: channel) }
-        isThreadsViewVisible = true
-        openThread(root: root)
+        if selectedChannel != channel {
+            select(channel: channel, thread: root)
+            isThreadsViewVisible = true
+        } else {
+            isThreadsViewVisible = true
+            openThread(root: root)
+        }
     }
 
     public func followedThreads(unreadOnly: Bool, before: PostID?) async throws(UserFacingError) -> ThreadsPage {
@@ -313,6 +337,29 @@ public final class SessionViewModel {
 
     public func quickSwitcherResults(_ query: String) async -> [QuickSwitchItem] {
         await session.quickSwitcherResults(query: query)
+    }
+
+    public func showRecentMentions() {
+        isSearchVisible = true
+        Task { await session.showRecentMentions() }
+    }
+
+    public func showSavedPosts() {
+        isSearchVisible = true
+        Task { await session.showSavedPosts() }
+    }
+
+    public func showPinnedPosts() {
+        guard let channel = selectedChannel else { return }
+        isSearchVisible = true
+        Task { await session.showPinnedPosts(channel: channel) }
+    }
+
+    /// Opens a result's thread in the trailing pane (replacing the results).
+    public func openThread(for result: SearchResultItem) {
+        let root = result.rootID ?? result.postID
+        isSearchVisible = false
+        if selectedChannel != result.channelID { select(channel: result.channelID, thread: root) } else { openThread(root: root) }
     }
 
     public func runSearch(_ terms: String) {

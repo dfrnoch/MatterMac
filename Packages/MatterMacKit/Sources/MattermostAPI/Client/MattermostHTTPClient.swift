@@ -335,6 +335,18 @@ public final class MattermostHTTPClient: MattermostService {
         return result
     }
 
+    public func flaggedPosts(me: UserID, page: Int, perPage: Int) async throws(APIError) -> PostPage {
+        let size = min(max(perPage, 1), Self.pageSizeRange.upperBound)
+        return PostPage(wire: try await get(PostListWire.self, ["users", me.rawValue, "posts", "flagged"], query: [
+            URLQueryItem(name: "page", value: String(max(0, page))), URLQueryItem(name: "per_page", value: String(size)),
+        ], limit: large, priority: .interactive))
+    }
+
+    public func pinnedPosts(channel: ChannelID) async throws(APIError) -> PostPage {
+        PostPage(wire: try await get(PostListWire.self, ["channels", channel.rawValue, "pinned"], limit: large,
+                                     priority: .interactive))
+    }
+
     public func userThreads(team: TeamID, me: UserID, before: PostID?, perPage: Int, unreadOnly: Bool, totalsOnly: Bool)
         async throws(APIError) -> UserThreadList {
         var query = [URLQueryItem(name: "per_page", value: String(min(max(perPage, 1), Self.pageSizeRange.upperBound))),

@@ -40,6 +40,9 @@ struct MainWindowView: View {
                         ConversationView(session: session, target: thread.target, snapshot: thread)
                     }
                     .frame(minWidth: 240, idealWidth: 360)
+                } else if session.isSearchVisible {
+                    SearchPane(session: session)
+                        .frame(minWidth: 280, idealWidth: 380)
                 } else if session.isChannelInfoVisible {
                     TrailingPane(title: "Channel Info", systemImage: "info.circle",
                                  close: { session.isChannelInfoVisible = false }) {
@@ -174,10 +177,17 @@ struct MainWindowView: View {
                     Label("Quick Switcher", systemImage: "arrow.left.arrow.right.square")
                 }
                 .help("Switch to a channel or person (⌘K)")
-                Button { session.isSearchVisible = true } label: {
+                Menu {
+                    Button { session.showRecentMentions() } label: { Label("Recent Mentions", systemImage: "at") }
+                    Button { session.showSavedPosts() } label: { Label("Saved Messages", systemImage: "bookmark") }
+                    Button { session.showPinnedPosts() } label: { Label("Pinned Messages", systemImage: "pin") }
+                        .disabled(session.selectedChannel == nil)
+                } label: {
                     Label("Search", systemImage: "magnifyingglass")
+                } primaryAction: {
+                    session.isSearchVisible = true
                 }
-                .help("Search messages on the server (⌘F)")
+                .help("Search messages on the server (⌘F); hold for mentions, saved and pinned")
                 Toggle(isOn: $session.isChannelInfoVisible) {
                     Label("Channel Info", systemImage: "info.circle")
                 }
@@ -187,7 +197,6 @@ struct MainWindowView: View {
         }
         .focusedSceneValue(\.matterMacSession, session)
         .sheet(isPresented: $session.isQuickSwitcherVisible) { QuickSwitcherView(session: session) }
-        .sheet(isPresented: $session.isSearchVisible) { SearchPanel(session: session) }
         .sheet(isPresented: $session.isUnsentRecoveryVisible) { UnsentRecoveryView(session: session) }
     }
 }

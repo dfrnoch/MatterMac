@@ -24,6 +24,8 @@ public final class FakeMattermostService: MattermostService {
         public var statuses: [UserID: PresenceStatus] = [:]
         public var executedCommands: [String] = []
         public var threads: [UserThread] = []
+        /// Saved (flagged) post ids, newest first.
+        public var flagged: [PostID] = []
         /// Client config `CollapsedThreads` (`disabled`, `always_on`, …).
         public var collapsedThreads = "disabled"
         public var threadReadMarks: [PostID?] = []
@@ -279,6 +281,18 @@ public final class FakeMattermostService: MattermostService {
 
     public func statuses(ids: [UserID]) async throws(APIError) -> [UserID: PresenceStatus] {
         withState { state in Dictionary(ids.map { ($0, state.statuses[$0] ?? .online) }, uniquingKeysWith: { first, _ in first }) }
+    }
+
+    public func flaggedPosts(me: UserID, page: Int, perPage: Int) async throws(APIError) -> PostPage {
+        record("flaggedPosts")
+        let posts = withState { state in state.flagged.compactMap { state.posts[$0] } }
+        return PostPage(posts: Array(posts.dropFirst(page * perPage).prefix(perPage)))
+    }
+
+    public func pinnedPosts(channel: ChannelID) async throws(APIError) -> PostPage {
+        record("pinnedPosts")
+        return PostPage(posts: withState { state in state.posts.values.filter { $0.channelID == channel && $0.isPinned }
+            .sorted { $0.createAt > $1.createAt } })
     }
 
     public func userThreads(team: TeamID, me: UserID, before: PostID?, perPage: Int, unreadOnly: Bool, totalsOnly: Bool)

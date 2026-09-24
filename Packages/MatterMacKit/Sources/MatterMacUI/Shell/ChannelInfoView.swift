@@ -99,6 +99,12 @@ struct ChannelInfoView: View {
                             UserProfileCard(session: session, lookup: .id(partner)) { profile = nil }
                         }
                 }
+                Button {
+                    session.showPinnedPosts()
+                } label: {
+                    Label(details.pinnedPostCount.map { String(localized: "Pinned Messages (\($0))") }
+                          ?? String(localized: "Pinned Messages"), systemImage: "pin")
+                }
                 if let link = details.link {
                     Button("Copy Channel Link") {
                         NSPasteboard.general.clearContents()

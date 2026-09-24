@@ -233,6 +233,7 @@ extension ServerSession {
         let trimmed = terms.trimmingCharacters(in: .whitespacesAndNewlines)
         tasks[.search]?.cancel()
         releaseSearchResults()
+        searchKind = .terms
         searchState.generation &+= 1
         searchState.terms = trimmed
         searchState.page = 0
@@ -249,6 +250,7 @@ extension ServerSession {
     public func loadMoreSearchResults() {
         guard searchState.canLoadMore, searchState.state == .results, let team = selectedTeam else { return }
         searchState.page += 1
+        if searchKind != .terms { runList(searchKind, team: team, page: searchState.page); return }
         runSearch(team: team, page: searchState.page)
     }
 
@@ -256,6 +258,7 @@ extension ServerSession {
         tasks[.search]?.cancel()
         releaseSearchResults()
         searchState = SearchModel()
+        searchKind = .terms
         markDirty(.search)
     }
 
@@ -310,12 +313,14 @@ extension ServerSession {
             let preview = String(entry.document.plainText.prefix(280))
             return SearchResultItem(postID: post.id, channelID: post.channelID,
                                     channelName: channel.map { displayName(of: $0) } ?? String(localized: "Unavailable channel"),
-                                    author: author, createdAt: post.createAt, preview: preview, rootID: post.rootID)
+                                    author: author, createdAt: post.createAt, preview: preview, rootID: post.rootID,
+                                    authorID: post.userID,
+                                    authorAvatarRevision: directory.peekUser(post.userID)?.lastPictureUpdate.milliseconds ?? 0)
         }
         searchContinuation.yield(SearchSnapshot(scope: scope, generation: searchState.generation, terms: searchState.terms,
                                                 state: searchState.state, items: items,
                                                 isTruncated: searchState.isTruncated,
-                                                canLoadMore: searchState.canLoadMore))
+                                                canLoadMore: searchState.canLoadMore, kind: searchKind))
     }
 
     /// Opens a search result (or permalink) in its real channel context.

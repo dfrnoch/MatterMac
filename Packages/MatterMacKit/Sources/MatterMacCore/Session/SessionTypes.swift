@@ -52,10 +52,14 @@ public struct SearchResultItem: Hashable, Sendable, Identifiable {
     public let createdAt: MattermostTimestamp
     public let preview: String
     public let rootID: PostID?
+    public let authorID: UserID?
+    public let authorAvatarRevision: Int64
     public var id: PostID { postID }
 
     public init(postID: PostID, channelID: ChannelID, channelName: String, author: String, createdAt: MattermostTimestamp,
-                preview: String, rootID: PostID?) {
+                preview: String, rootID: PostID?, authorID: UserID? = nil, authorAvatarRevision: Int64 = 0) {
+        self.authorID = authorID
+        self.authorAvatarRevision = authorAvatarRevision
         self.postID = postID
         self.channelID = channelID
         self.channelName = channelName
@@ -64,6 +68,14 @@ public struct SearchResultItem: Hashable, Sendable, Identifiable {
         self.preview = preview
         self.rootID = rootID
     }
+}
+
+/// What the results pane lists: a server search, or a server-side post list.
+public enum SearchKind: Sendable, Hashable {
+    case terms
+    case recentMentions
+    case saved
+    case pinned(ChannelID)
 }
 
 public struct SearchSnapshot: Sendable, Hashable {
@@ -80,9 +92,11 @@ public struct SearchSnapshot: Sendable, Hashable {
     public let items: [SearchResultItem]
     public let isTruncated: Bool
     public let canLoadMore: Bool
+    public let kind: SearchKind
 
     public init(scope: AccountScope, generation: UInt64, terms: String, state: State, items: [SearchResultItem],
-                isTruncated: Bool, canLoadMore: Bool) {
+                isTruncated: Bool, canLoadMore: Bool, kind: SearchKind = .terms) {
+        self.kind = kind
         self.scope = scope
         self.generation = generation
         self.terms = terms

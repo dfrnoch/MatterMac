@@ -43,6 +43,8 @@ public actor ServerSession {
     let alertContinuation: AsyncStream<IncomingMessageAlert>.Continuation
     let threadActivityContinuation: AsyncStream<ThreadActivity>.Continuation
     var threadActivityRevision: UInt64 = 0
+    /// What the current search results represent.
+    var searchKind: SearchKind = .terms
     /// The newest reply time already reported read for the open thread (CRT).
     var threadReadMark: (root: PostID, at: MattermostTimestamp)?
 
