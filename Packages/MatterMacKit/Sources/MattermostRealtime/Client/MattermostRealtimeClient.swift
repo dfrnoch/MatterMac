@@ -628,7 +628,10 @@ public actor MattermostRealtimeClient: RealtimeConnection {
             socketLost(serverClosedBeforeHandshake: false)
             return false
         }
-        socket?.outstandingPing = sendAction(.ping, purpose: .ping)
+        // Evaluate first: `sendAction` reads `socket`, so it must not run inside the
+        // optional-chained write access (a runtime exclusivity violation).
+        let seq = sendAction(.ping, purpose: .ping)
+        socket?.outstandingPing = seq
         return true
     }
 
