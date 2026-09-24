@@ -6,9 +6,19 @@ extension ServerSession {
     /// active, its window is visible, the channel is the visible conversation, and the
     /// timeline shows the live edge (so the newest content is exposed). Receiving an
     /// event or fetching data never marks anything read.
-    public func updateVisibility(target: TimelineTarget, first: PostID?, last: PostID?, atLiveEdge: Bool) {
+    ///
+    /// After "Mark as Unread" (`manualUnreadHold`) the channel is not marked viewed
+    /// again until the user acts: scrolls its timeline (`userScrolled`), sends a message
+    /// in it, or opens another channel. Snapshot updates, new posts, app activation and
+    /// window changes do not end the hold (decision 0022).
+    public func updateVisibility(target: TimelineTarget, first: PostID?, last: PostID?, atLiveEdge: Bool,
+                                 userScrolled: Bool = false) {
+        if userScrolled, case .channel(let channel) = target, manualUnreadHold == channel {
+            manualUnreadHold = nil
+            markDirty(.sidebar)
+        }
         let range = VisibleRange(first: first, last: last, atLiveEdge: atLiveEdge)
-        guard visibility[target] != range else { return }
+        guard visibility[target] != range || userScrolled else { return }
         visibility[target] = range
         evaluateReadState()
     }
@@ -36,7 +46,7 @@ extension ServerSession {
     }
 
     func readConditionsHold(for channel: ChannelID) -> Bool {
-        guard appIsActive, windowIsVisible, activeChannel == channel, isActiveSessionAlive,
+        guard appIsActive, windowIsVisible, activeChannel == channel, isActiveSessionAlive, manualUnreadHold != channel,
               let window = windows[.channel(channel)], window.isLoaded, !window.hasNewer,
               visibility[.channel(channel)]?.atLiveEdge == true
         else { return false }

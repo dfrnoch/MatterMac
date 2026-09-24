@@ -77,6 +77,7 @@ extension ServerSession {
         guard isActiveSessionAlive, directory.channels[id] != nil else { return }
         let target = TimelineTarget.channel(id)
         activeChannel = id
+        if manualUnreadHold != id { manualUnreadHold = nil }
         if let team = directory.channels[id]?.teamID, team != selectedTeam {
             selectedTeam = team
         }

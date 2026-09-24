@@ -186,6 +186,8 @@ extension ServerSession {
         tasks[.sendRetry(id)]?.cancel()
         var canonical = post
         canonical.pendingPostID = id
+        // Sending in a channel marked unread is the user acting there again.
+        if manualUnreadHold == post.channelID { manualUnreadHold = nil }
         insertLive(canonical)
         deps.diagnostics.record(.send, .info, "send confirmed")
         markDirty([.timeline, .thread, .sidebar])

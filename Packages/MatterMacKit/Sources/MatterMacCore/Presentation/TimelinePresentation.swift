@@ -126,12 +126,19 @@ public struct ReactionGroup: Hashable, Sendable, Identifiable {
     public let emojiName: String
     public let count: Int
     public let includesCurrentUser: Bool
+    /// Display names of the first reactors (at most `maximumReactorNames`, the current
+    /// user first as "You" when included), for "who reacted" tooltips. Reactors whose
+    /// profiles are not retained yet are omitted and counted in `count` only.
+    public let reactorNames: [String]
     public var id: String { emojiName }
 
-    public init(emojiName: String, count: Int, includesCurrentUser: Bool) {
+    public static let maximumReactorNames = 10
+
+    public init(emojiName: String, count: Int, includesCurrentUser: Bool, reactorNames: [String] = []) {
         self.emojiName = emojiName
         self.count = count
         self.includesCurrentUser = includesCurrentUser
+        self.reactorNames = Array(reactorNames.prefix(Self.maximumReactorNames))
     }
 }
 
@@ -155,14 +162,23 @@ public struct PostActionHints: Hashable, Sendable {
     public var canEdit: Bool
     public var canDelete: Bool
     public var canCopyLink: Bool
+    /// Pin/unpin (`POST /posts/{id}/pin`); needs only read access on the server.
+    public var canPin: Bool
+    /// Save/unsave (`flagged_post` preference).
+    public var canSave: Bool
+    /// Mark the channel unread from this post (channel timelines only).
+    public var canMarkUnread: Bool
 
     public init(canReply: Bool = false, canReact: Bool = false, canEdit: Bool = false, canDelete: Bool = false,
-                canCopyLink: Bool = false) {
+                canCopyLink: Bool = false, canPin: Bool = false, canSave: Bool = false, canMarkUnread: Bool = false) {
         self.canReply = canReply
         self.canReact = canReact
         self.canEdit = canEdit
         self.canDelete = canDelete
         self.canCopyLink = canCopyLink
+        self.canPin = canPin
+        self.canSave = canSave
+        self.canMarkUnread = canMarkUnread
     }
 
     public static let none = PostActionHints()
@@ -190,12 +206,20 @@ public struct PostPresentation: Hashable, Sendable {
     public let actions: PostActionHints
     /// Server permalink, when the team context is known.
     public let permalink: URL?
+    /// Saved by the current user (`flagged_post` preference).
+    public let isSaved: Bool
+    /// Last edit time, when edited.
+    public let editedAt: MattermostTimestamp?
+    /// Server-provided link preview. `image` is `nil` unless it can be fetched through
+    /// the server's image proxy.
+    public let linkPreview: LinkPreview?
 
     public init(postID: PostID?, pendingID: PendingPostID?, channelID: ChannelID, rootID: PostID?,
                 author: AuthorPresentation, createdAt: MattermostTimestamp, isContinuation: Bool,
                 body: MessageBody, isEdited: Bool, isPinned: Bool, files: [FileInfo], reactions: [ReactionGroup],
                 replyCount: Int, showsThreadContext: Bool, sendState: SendState?, actions: PostActionHints,
-                permalink: URL?) {
+                permalink: URL?, isSaved: Bool = false, editedAt: MattermostTimestamp? = nil,
+                linkPreview: LinkPreview? = nil) {
         self.postID = postID
         self.pendingID = pendingID
         self.channelID = channelID
@@ -213,6 +237,9 @@ public struct PostPresentation: Hashable, Sendable {
         self.sendState = sendState
         self.actions = actions
         self.permalink = permalink
+        self.isSaved = isSaved
+        self.editedAt = editedAt
+        self.linkPreview = linkPreview
     }
 }
 
