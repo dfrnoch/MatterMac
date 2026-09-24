@@ -19,6 +19,16 @@ public struct MatterMacCommands: Commands {
         CommandGroup(replacing: .appInfo) {
             Button("About MatterMac") { environment.appModel?.isCompatibilityVisible = true }
         }
+        CommandGroup(after: .newItem) {
+            Button("New Channel…") { session?.directorySheet = .createChannel }
+                .disabled(session?.sidebar == nil)
+            Button("New Direct Message…") { session?.directorySheet = .newMessage }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
+                .disabled(session?.sidebar == nil)
+            Button("Browse Channels…") { session?.directorySheet = .browseChannels }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+                .disabled(session?.sidebar == nil)
+        }
         CommandMenu("Go") {
             Button("Quick Switcher…") { session?.isQuickSwitcherVisible = true }
                 .keyboardShortcut("k", modifiers: .command)
@@ -34,6 +44,28 @@ public struct MatterMacCommands: Commands {
             .disabled(session?.selectedChannel == nil)
             Button("Close Thread") { session?.closeThread() }
                 .disabled(session?.isThreadVisible != true)
+            Divider()
+            // ⌥↑/⌥↓ take precedence over the composer's paragraph moves, as in the
+            // official client (decision 0023).
+            Button("Previous Channel") { session?.selectAdjacentChannel(-1, unreadOnly: false) }
+                .keyboardShortcut(.upArrow, modifiers: .option)
+                .disabled(session?.sidebar == nil)
+            Button("Next Channel") { session?.selectAdjacentChannel(1, unreadOnly: false) }
+                .keyboardShortcut(.downArrow, modifiers: .option)
+                .disabled(session?.sidebar == nil)
+            Button("Previous Unread Channel") { session?.selectAdjacentChannel(-1, unreadOnly: true) }
+                .keyboardShortcut(.upArrow, modifiers: [.option, .shift])
+                .disabled(session?.sidebar == nil)
+            Button("Next Unread Channel") { session?.selectAdjacentChannel(1, unreadOnly: true) }
+                .keyboardShortcut(.downArrow, modifiers: [.option, .shift])
+                .disabled(session?.sidebar == nil)
+            if let teams = session?.sidebar?.teams, teams.count > 1 {
+                Divider()
+                ForEach(Array(teams.prefix(9).enumerated()), id: \.element.id) { index, team in
+                    Button(team.displayName.isEmpty ? team.name : team.displayName) { session?.selectTeam(at: index) }
+                        .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+                }
+            }
         }
     }
 }

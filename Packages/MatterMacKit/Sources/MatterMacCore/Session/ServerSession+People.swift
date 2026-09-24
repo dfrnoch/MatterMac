@@ -124,6 +124,11 @@ extension ServerSession {
         }
         guard isActiveSessionAlive else { throw .cancelled }
         directory.apply(preference, deleted: !favorite)
+        // The server moves the channel between categories; re-read them now rather
+        // than waiting for the `sidebar_category_updated` event.
+        if let team = directory.channels[id]?.teamID ?? selectedTeam, directory.categories[team] != nil {
+            scheduleCategoryLoad(team: team, delay: .zero)
+        }
         markDirty(.sidebar)
     }
 

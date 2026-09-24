@@ -116,14 +116,41 @@ struct FrameDecodingTests {
         }
     }
 
-    @Test func unknownEventsAreBoundedAndSanitized() throws {
-        let (sidebar, seq) = try event(F.sidebarCategoryUpdated(seq: 12))
+    @Test func sidebarCategoryEventsCarryTheTeam() throws {
+        let (dataless, seq) = try event(F.sidebarCategoryUpdated(seq: 12))
         #expect(seq == 12)
-        guard case .unhandled(let name) = sidebar else {
+        guard case .sidebarCategoriesChanged(let none) = dataless else {
+            Issue.record("expected sidebar categories event")
+            return
+        }
+        #expect(none == nil)
+        for name in ["sidebar_category_created", "sidebar_category_updated", "sidebar_category_deleted",
+                     "sidebar_category_order_updated"] {
+            let (decoded, _) = try event(F.sidebarCategoryEvent(name, seq: 13))
+            guard case .sidebarCategoriesChanged(let team) = decoded else {
+                Issue.record("expected sidebar categories event for \(name)")
+                continue
+            }
+            #expect(team?.rawValue == F.teamID)
+        }
+        // A malformed team id is malformed identity, not an ignorable event.
+        let bad = F.envelope(event: "sidebar_category_deleted", data: "{\"team_id\":\"../x\"}",
+                             broadcast: F.Broadcast(userID: F.aliceID), seq: 14)
+        guard case .malformedEvent(_, let durable) = decoder.decode(.text(bad)) else {
+            Issue.record("expected malformed")
+            return
+        }
+        #expect(durable)
+    }
+
+    @Test func unknownEventsAreBoundedAndSanitized() throws {
+        let (draft, seq) = try event(F.unknown("draft_created", seq: 12))
+        #expect(seq == 12)
+        guard case .unhandled(let name) = draft else {
             Issue.record("expected unhandled")
             return
         }
-        #expect(name == "sidebar_category_updated")
+        #expect(name == "draft_created")
 
         let long = "custom_" + String(repeating: "é", count: 80) + "<script>"
         let (unknown, _) = try event(F.unknown(long, seq: 13))

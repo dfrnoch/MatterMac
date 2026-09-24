@@ -9,61 +9,23 @@ extension ServerSession {
     func publishSidebar() {
         sidebarGeneration &+= 1
         let crt = collapsedThreadsActive
-        let teams = directory.sortedTeams.map { team -> TeamSummary in
-            var unread = false
-            var mentions = 0
-            if directory.loadedTeams.contains(team.id) {
-                for channel in directory.channels.values where channel.teamID == team.id {
-                    let state = directory.unread(for: channel.id, collapsedThreads: crt)
-                    unread = unread || state.isUnread
-                    mentions += Int(state.mentions)
-                }
-            }
-            return TeamSummary(id: team.id, displayName: team.displayName, name: team.name, hasUnread: unread,
-                               mentionCount: mentions)
-        }
-        var favorites: [SidebarChannelRow] = []
-        var channels: [SidebarChannelRow] = []
-        var directs: [SidebarChannelRow] = []
-        for channel in directory.channels.values {
-            let isDirect = channel.type.isDirectOrGroup
-            guard isDirect || channel.teamID == selectedTeam else { continue }
-            let row = sidebarRow(for: channel, collapsedThreads: crt)
-            if directory.favorites.contains(channel.id) {
-                favorites.append(row)
-            } else if isDirect {
-                if let partner = channel.directPartner(of: me.id), directory.hiddenDirectPartners.contains(partner),
-                   !row.isUnread, channel.id != activeChannel { continue }
-                if channel.type == .group, directory.hiddenGroups.contains(channel.id), !row.isUnread,
-                   channel.id != activeChannel { continue }
-                directs.append(row)
-            } else {
-                channels.append(row)
-            }
-        }
-        let byName: (SidebarChannelRow, SidebarChannelRow) -> Bool = {
-            $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
-        }
-        favorites.sort(by: byName)
-        channels.sort(by: byName)
-        directs.sort { $0.lastPostAt > $1.lastPostAt }
-        if directs.count > Self.visibleDirectMessages {
-            let keep = directs.prefix(Self.visibleDirectMessages)
-            let extraUnread = directs.dropFirst(Self.visibleDirectMessages).filter { $0.isUnread || $0.channelID == activeChannel }
-            directs = Array(keep) + extraUnread
-        }
-        var sections: [SidebarSection] = []
-        if !favorites.isEmpty { sections.append(SidebarSection(kind: .favorites, rows: favorites)) }
-        sections.append(SidebarSection(kind: .channels, rows: channels))
-        sections.append(SidebarSection(kind: .directMessages, rows: directs))
-        sidebarContinuation.yield(SidebarSnapshot(scope: scope, generation: sidebarGeneration, teams: teams,
-                                                  selectedTeam: selectedTeam, sections: sections,
+        loadCategoriesIfNeeded()
+        updateStickyUnread(collapsedThreads: crt)
+        let usesCategories = selectedTeam.map { directory.categories[$0]?.isEmpty == false } ?? false
+        sidebarContinuation.yield(SidebarSnapshot(scope: scope, generation: sidebarGeneration,
+                                                  teams: teamSummaries(collapsedThreads: crt),
+                                                  selectedTeam: selectedTeam,
+                                                  sections: sidebarSections(collapsedThreads: crt),
                                                   isTruncated: directory.channelsTruncated,
                                                   myStatus: directory.status(of: me.id),
-                                                  myCustomStatus: directory.peekUser(me.id)?.customStatus))
+                                                  myCustomStatus: directory.peekUser(me.id)?.customStatus,
+                                                  usesServerCategories: usesCategories,
+                                                  groupsUnreads: directory.groupsUnreads,
+                                                  directMessageMentions: directMessageMentions(collapsedThreads: crt),
+                                                  canBrowseArchivedChannels: directory.viewArchivedChannels))
     }
 
-    func sidebarRow(for channel: Channel, collapsedThreads: Bool) -> SidebarChannelRow {
+    func sidebarRow(for channel: Channel, collapsedThreads: Bool, isFavorite: Bool = false) -> SidebarChannelRow {
         let unread = directory.unread(for: channel.id, collapsedThreads: collapsedThreads)
         let partner = channel.directPartner(of: me.id)
         return SidebarChannelRow(
@@ -75,7 +37,8 @@ extension ServerSession {
             lastPostAt: channel.lastPostAt,
             partnerID: channel.type == .direct ? partner : nil,
             partnerAvatarRevision: partner.flatMap { directory.peekUser($0)?.lastPictureUpdate.milliseconds } ?? 0,
-            partnerUsername: partner.flatMap { directory.peekUser($0)?.username })
+            partnerUsername: partner.flatMap { directory.peekUser($0)?.username },
+            isFavorite: isFavorite)
     }
 
     /// Human-readable channel name. DMs use the partner's display name; GMs drop the

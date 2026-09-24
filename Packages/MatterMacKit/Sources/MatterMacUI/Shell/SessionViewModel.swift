@@ -30,12 +30,15 @@ public final class SessionViewModel {
     public var isUnsentRecoveryVisible = false
     public var isSearchVisible = false
     public var isQuickSwitcherVisible = false
+    /// Browse/create channels, new direct or group message, add members.
+    public var directorySheet: DirectorySheet?
     /// The channel details inspector (members, favorite/mute, leave).
     public var isChannelInfoVisible = false {
         didSet { if isChannelInfoVisible, !oldValue, thread != nil || replyTarget != nil { closeThread() } }
     }
     /// Bumped after an explicit channel setting change so the inspector reloads.
     public private(set) var channelInfoRevision: UInt64 = 0
+    func bumpChannelInfoRevision() { channelInfoRevision &+= 1 }
     public var isThreadVisible: Bool { thread != nil }
     public var inlineError: String?
     /// The latest ephemeral slash-command reply, shown until dismissed.
@@ -156,7 +159,7 @@ public final class SessionViewModel {
             threadDraftProvider?.discardEditingState()
             sidebar = nil; timeline = nil; thread = nil; header = nil; search = nil
             selectedChannel = nil; replyTarget = nil; editing = nil
-            isSearchVisible = false; isQuickSwitcherVisible = false
+            isSearchVisible = false; isQuickSwitcherVisible = false; directorySheet = nil
             _ = await app?.forgetSavedAccount(self)
         } else if requiresAuthentication { return } // Keep the required recovery action visible.
         switch notice {

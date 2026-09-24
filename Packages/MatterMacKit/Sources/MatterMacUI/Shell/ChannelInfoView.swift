@@ -105,6 +105,9 @@ struct ChannelInfoView: View {
                         NSPasteboard.general.setString(link.absoluteString, forType: .string)
                     }
                 }
+                if (details.type == .open || details.type == .private) && !details.isArchived {
+                    Button("Add Members…") { session.directorySheet = .addMembers(channel) }
+                }
                 if details.canLeave {
                     Button("Leave Channel…", role: .destructive) {
                         session.leaveChannel(channel, displayName: details.displayName)
