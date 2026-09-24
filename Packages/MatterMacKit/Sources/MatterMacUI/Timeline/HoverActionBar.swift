@@ -94,7 +94,7 @@ final class HoverActionBar: NSView {
         }
         if post.actions.canReply { kinds.append(.reply) }
         kinds.append(.more)
-        if postID != id || buttons.map(\.kind) != kinds {
+        if buttons.map(\.kind) != kinds {
             rebuild(kinds, emojiText: emojiText)
         }
         postID = id
