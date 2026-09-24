@@ -23,8 +23,13 @@ public final class AppEnvironment {
     /// servers for local testing. Off unless the app was built for development and
     /// the user enabled it for this run.
     public var allowsInsecureLoopback: Bool
+    /// Local presentation and attention settings (in memory only; Settings window).
+    public let settings = LocalSettings()
     /// In-session send behavior (not persisted).
-    public var sendBehavior: SendBehaviorSetting = .returnSends
+    public var sendBehavior: SendBehaviorSetting {
+        get { settings.sendBehavior }
+        set { settings.sendBehavior = newValue }
+    }
     /// The window's model, created by `MatterMacRootView` (weak: the view owns it).
     public internal(set) weak var appModel: AppModel?
 

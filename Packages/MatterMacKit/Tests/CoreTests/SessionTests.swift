@@ -25,11 +25,13 @@ struct SessionHarness {
     let wallClock: FixedWallClock
     let channel: Channel
 
-    init(budget: ResourceBudget = .standard, posts: Int = 5, unread: Bool = false) async {
+    init(budget: ResourceBudget = .standard, posts: Int = 5, unread: Bool = false,
+         collapsedThreads: String = "disabled") async {
         let me = CoreFixtures.me
         let service = FakeMattermostService(endpoint: CoreFixtures.endpoint, me: me)
         let channel = CoreFixtures.channel(1, total: Int64(posts))
         service.withState { state in
+            state.collapsedThreadsConfig = collapsedThreads
             state.teams = [CoreFixtures.team]
             state.channels[channel.id] = channel
             state.memberships[channel.id] = ChannelMembership(

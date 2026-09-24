@@ -232,15 +232,20 @@ struct DirtyFlags: OptionSet {
     static let thread = DirtyFlags(rawValue: 1 << 2)
     static let header = DirtyFlags(rawValue: 1 << 3)
     static let search = DirtyFlags(rawValue: 1 << 4)
-    static let all: DirtyFlags = [.sidebar, .timeline, .thread, .header, .search]
+    static let settings = DirtyFlags(rawValue: 1 << 5)
+    static let all: DirtyFlags = [.sidebar, .timeline, .thread, .header, .search, .settings]
 }
 
-/// A mention or direct message from someone else, for in-app badges and opt-in
-/// notifications. Carries no message text (SPEC §19 "avoid rich content").
+/// A post from someone else that the user's server notification preferences say
+/// should notify, for in-app sounds/attention and opt-in notifications. Carries no
+/// message text unless the user explicitly enabled previews (SPEC §19 "avoid rich
+/// content"); see `ServerSession.setAlertPreviews(_:)`.
 public struct IncomingMessageAlert: Hashable, Sendable {
     public enum Kind: Hashable, Sendable {
         case mention
         case directMessage
+        /// A channel post notified because the channel (or account) level is "all".
+        case channelMessage
     }
     public let scope: AccountScope
     public let channelID: ChannelID
@@ -248,14 +253,90 @@ public struct IncomingMessageAlert: Hashable, Sendable {
     public let kind: Kind
     public let channelName: String
     public let senderName: String
+    /// At most `IncomingMessageAlert.previewCharacters` of plain text; `nil` unless
+    /// previews were explicitly enabled.
+    public let preview: String?
+    /// The account's server-side `desktop_sound` setting.
+    public let soundEnabled: Bool
+
+    public static let previewCharacters = 100
 
     public init(scope: AccountScope, channelID: ChannelID, rootID: PostID?, kind: Kind, channelName: String,
-                senderName: String) {
+                senderName: String, preview: String? = nil, soundEnabled: Bool = true) {
         self.scope = scope
         self.channelID = channelID
         self.rootID = rootID
         self.kind = kind
         self.channelName = channelName
         self.senderName = senderName
+        self.preview = preview
+        self.soundEnabled = soundEnabled
+    }
+}
+
+/// Server-side display and notification settings of the signed-in account, as the
+/// official client applies them. Every field describes server state; local
+/// presentation settings live in the UI layer.
+public struct AccountSettingsSnapshot: Hashable, Sendable {
+    public struct Display: Hashable, Sendable {
+        /// `display_settings/use_military_time`; `nil` when never set (the system
+        /// clock format is used then).
+        public var militaryTime: Bool?
+        /// The effective teammate name format.
+        public var nameFormat: NameFormat
+        /// `display_settings/name_format`; `nil` means the server default.
+        public var preferredNameFormat: NameFormat?
+        public var serverNameFormat: NameFormat
+        public var isNameFormatLocked: Bool
+        public var collapsedThreadsMode: CollapsedThreadsMode
+        public var collapsedThreadsActive: Bool
+
+        /// Only `default_on`/`default_off` let the user choose.
+        public var canChangeCollapsedThreads: Bool {
+            collapsedThreadsMode == .defaultOn || collapsedThreadsMode == .defaultOff
+        }
+    }
+
+    public var scope: AccountScope
+    public var username: String
+    public var firstName: String
+    public var display: Display
+    /// `nil` until `/users/me` returned the notification properties.
+    public var notifications: UserNotifyProps?
+
+    /// Editable only when the complete map is known (it is written back whole).
+    public var canEditNotifications: Bool { notifications?.isComplete == true }
+}
+
+/// One channel's notification preferences as shown in "Notification Preferences…".
+public struct ChannelNotificationPreferences: Hashable, Sendable {
+    public var channelID: ChannelID
+    public var channelName: String
+    public var channelType: ChannelType
+    public var desktop: ChannelDesktopLevel
+    public var isMuted: Bool
+    public var ignoreChannelMentions: IgnoreChannelMentions
+    /// The account level that `default` resolves to.
+    public var accountDesktop: DesktopNotificationLevel
+    /// Whether channel-wide mentions notify by default (account `channel` setting).
+    public var accountChannelWideMentions: Bool
+
+    public init(channelID: ChannelID, channelName: String, channelType: ChannelType, desktop: ChannelDesktopLevel,
+                isMuted: Bool, ignoreChannelMentions: IgnoreChannelMentions, accountDesktop: DesktopNotificationLevel,
+                accountChannelWideMentions: Bool) {
+        self.channelID = channelID
+        self.channelName = channelName
+        self.channelType = channelType
+        self.desktop = desktop
+        self.isMuted = isMuted
+        self.ignoreChannelMentions = ignoreChannelMentions
+        self.accountDesktop = accountDesktop
+        self.accountChannelWideMentions = accountChannelWideMentions
+    }
+
+    /// Whether @channel, @here and @all are ignored here: explicitly, or because the
+    /// account turned channel-wide mentions off (which a channel cannot override).
+    public var ignoresChannelWideMentions: Bool {
+        ignoreChannelMentions == .on || !accountChannelWideMentions
     }
 }

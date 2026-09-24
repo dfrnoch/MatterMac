@@ -26,6 +26,8 @@ public final class SessionViewModel {
     public private(set) var pendingNotice: SessionNotice?
     public private(set) var requiresAuthentication = false
     public private(set) var isCopyingUnsentText = false
+    /// Server-side display and notification settings (Settings window, timeline clock).
+    public internal(set) var accountSettings: AccountSettingsSnapshot?
     @ObservationIgnored private var recoveryTask: Task<Void, Never>?
     public var isUnsentRecoveryVisible = false
     public var isSearchVisible = false
@@ -35,7 +37,7 @@ public final class SessionViewModel {
         didSet { if isChannelInfoVisible, !oldValue, thread != nil || replyTarget != nil { closeThread() } }
     }
     /// Bumped after an explicit channel setting change so the inspector reloads.
-    public private(set) var channelInfoRevision: UInt64 = 0
+    public internal(set) var channelInfoRevision: UInt64 = 0
     public var isThreadVisible: Bool { thread != nil }
     public var inlineError: String?
     /// The latest ephemeral slash-command reply, shown until dismissed.
@@ -134,6 +136,12 @@ public final class SessionViewModel {
             for await alert in session.alerts {
                 guard let self, !self.isDetached, !self.requiresAuthentication, alert.scope == scope else { continue }
                 self.app?.deliver(alert)
+            }
+        })
+        subscriptions.append(Task { [weak self] in
+            for await settings in session.accountSettingsUpdates {
+                guard let self, !self.isDetached, !self.requiresAuthentication, settings.scope == scope else { continue }
+                self.accountSettings = settings
             }
         })
         subscriptions.append(Task { [weak self] in
