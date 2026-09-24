@@ -414,6 +414,9 @@ public protocol MattermostService: Sendable {
     /// reply first. `before` pages older; `totalsOnly` returns only the unread totals.
     func userThreads(team: TeamID, me: UserID, before: PostID?, perPage: Int, unreadOnly: Bool, totalsOnly: Bool)
         async throws(APIError) -> UserThreadList
+    /// `GET /users/{id}/teams/{team}/threads/{thread}`: `nil` (the server's 404) when the
+    /// user has no membership in the thread, i.e. does not follow it.
+    func userThread(_ thread: PostID, team: TeamID, me: UserID) async throws(APIError) -> UserThread?
     /// `PUT` / `DELETE /users/{id}/teams/{team}/threads/{thread}/following`.
     func setThreadFollowing(_ thread: PostID, following: Bool, team: TeamID, me: UserID) async throws(APIError)
     /// `PUT /users/{id}/teams/{team}/threads/{thread}/read/{timestamp}`; `thread == nil` marks all read.

@@ -50,7 +50,9 @@ struct ThreadsTests {
 
         try await h.session.markThreadRead(nil)
         #expect(h.service.withState { $0.threads.allSatisfy { $0.unreadReplies == 0 } })
+        #expect(await h.session.isFollowingThread(newest.rootID) == true)
         try await h.session.setThreadFollowing(newest.rootID, false)
+        #expect(await h.session.isFollowingThread(newest.rootID) == false)
         #expect(h.service.withState { $0.threads.count } == 29)
         #expect(await eventually { await h.session.threadActivityRevision > revision })
     }

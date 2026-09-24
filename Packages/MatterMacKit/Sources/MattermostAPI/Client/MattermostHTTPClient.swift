@@ -487,6 +487,16 @@ public final class MattermostHTTPClient: MattermostService {
                              query: query, limit: large, priority: .interactive).list
     }
 
+    public func userThread(_ thread: PostID, team: TeamID, me: UserID) async throws(APIError) -> UserThread? {
+        do {
+            return try await get(UserThreadWire.self, ["users", me.rawValue, "teams", team.rawValue, "threads", thread.rawValue],
+                                 limit: small, priority: .interactive).thread
+        } catch {
+            if case .notFound = error { return nil }
+            throw error
+        }
+    }
+
     public func setThreadFollowing(_ thread: PostID, following: Bool, team: TeamID, me: UserID) async throws(APIError) {
         _ = try await perform(following ? .put : .delete,
                               ["users", me.rawValue, "teams", team.rawValue, "threads", thread.rawValue, "following"],

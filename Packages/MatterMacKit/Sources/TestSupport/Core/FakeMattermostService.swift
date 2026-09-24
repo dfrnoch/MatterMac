@@ -382,9 +382,20 @@ public final class FakeMattermostService: MattermostService {
         }
     }
 
+    public func userThread(_ thread: PostID, team: TeamID, me: UserID) async throws(APIError) -> UserThread? {
+        record("userThread")
+        return withState { state in state.threads.first { $0.root.id == thread } }
+    }
+
     public func setThreadFollowing(_ thread: PostID, following: Bool, team: TeamID, me: UserID) async throws(APIError) {
         record(following ? "followThread" : "unfollowThread")
-        if !following { withState { $0.threads.removeAll { $0.root.id == thread } } }
+        withState { state in
+            if !following { state.threads.removeAll { $0.root.id == thread } }
+            else if !state.threads.contains(where: { $0.root.id == thread }), let root = state.posts[thread] {
+                state.threads.append(UserThread(root: root, replyCount: root.replyCount, lastReplyAt: root.lastReplyAt,
+                                                lastViewedAt: .zero, unreadReplies: 0, unreadMentions: 0, participants: []))
+            }
+        }
     }
 
     public func markThreadRead(_ thread: PostID?, at timestamp: MattermostTimestamp, team: TeamID, me: UserID)

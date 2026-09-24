@@ -19,7 +19,8 @@ struct MainWindowView: View {
                     .frame(minWidth: 300, idealWidth: 420, maxHeight: .infinity)
                 if let thread = session.thread {
                     TrailingPane(title: "Thread", systemImage: "bubble.left.and.text.bubble.right",
-                                 close: { session.closeThread() }) {
+                                 close: { session.closeThread() },
+                                 accessory: { ThreadFollowButton(session: session, target: thread.target) }) {
                         ConversationView(session: session, target: thread.target, snapshot: thread)
                     }
                     .frame(minWidth: 300, idealWidth: 480)
@@ -36,7 +37,8 @@ struct MainWindowView: View {
                 // The single optional trailing panel (SPEC §4): thread or details.
                 if let thread = session.thread {
                     TrailingPane(title: "Thread", systemImage: "bubble.left.and.text.bubble.right",
-                                 close: { session.closeThread() }) {
+                                 close: { session.closeThread() },
+                                 accessory: { ThreadFollowButton(session: session, target: thread.target) }) {
                         ConversationView(session: session, target: thread.target, snapshot: thread)
                     }
                     .frame(minWidth: 240, idealWidth: 360)
@@ -212,11 +214,22 @@ extension SessionNotice {
 }
 
 /// Header and content of the trailing thread/details pane.
-private struct TrailingPane<Content: View>: View {
+private struct TrailingPane<Content: View, Accessory: View>: View {
     let title: LocalizedStringKey
     let systemImage: String
     let close: () -> Void
+    @ViewBuilder var accessory: () -> Accessory
     @ViewBuilder var content: () -> Content
+
+    init(title: LocalizedStringKey, systemImage: String, close: @escaping () -> Void,
+         @ViewBuilder accessory: @escaping () -> Accessory = { EmptyView() },
+         @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.systemImage = systemImage
+        self.close = close
+        self.accessory = accessory
+        self.content = content
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -225,6 +238,7 @@ private struct TrailingPane<Content: View>: View {
                     .font(.headline)
                     .labelStyle(.titleAndIcon)
                 Spacer()
+                accessory()
                 Button(action: close) {
                     Image(systemName: "xmark")
                         .font(.caption.weight(.bold))
@@ -238,6 +252,36 @@ private struct TrailingPane<Content: View>: View {
             .padding(.vertical, 10)
             Divider()
             content()
+        }
+    }
+}
+
+/// Follow / Following toggle for the open thread (collapsed reply threads only).
+private struct ThreadFollowButton: View {
+    let session: SessionViewModel
+    let target: TimelineTarget
+    @State private var following: Bool?
+
+    private var root: PostID? {
+        if case .thread(let root, _) = target { return root }
+        return nil
+    }
+
+    var body: some View {
+        Group {
+            if let following, let root {
+                Button(following ? "Following" : "Follow") {
+                    session.setThreadFollowing(root, !following)
+                    self.following = !following
+                }
+                .controlSize(.small)
+                .glassButtonStyle(prominent: following)
+                .help(following ? "Stop following this thread" : "Follow this thread to see replies in Threads")
+            }
+        }
+        .task(id: root) {
+            guard let root else { return }
+            following = await session.isFollowingThread(root)
         }
     }
 }

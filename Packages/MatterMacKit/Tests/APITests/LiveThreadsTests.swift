@@ -54,7 +54,9 @@ struct LiveThreadsTests {
                                                     unreadOnly: false, totalsOnly: false)
             #expect(afterRead.threads.first { $0.root.id == root.id }?.unreadReplies == 0)
 
+            #expect(try await a.userThread(root.id, team: team.id, me: alice.user.id)?.root.id == root.id)
             try await a.setThreadFollowing(root.id, following: false, team: team.id, me: alice.user.id)
+            #expect(try await a.userThread(root.id, team: team.id, me: alice.user.id) == nil)
             let afterUnfollow = try await a.userThreads(team: team.id, me: alice.user.id, before: nil, perPage: 25,
                                                         unreadOnly: false, totalsOnly: false)
             #expect(!afterUnfollow.threads.contains { $0.root.id == root.id })

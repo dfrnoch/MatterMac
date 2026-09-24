@@ -83,6 +83,19 @@ extension ServerSession {
                            unreadThreads: list.totalUnreadThreads, unreadMentions: list.totalUnreadMentions)
     }
 
+    /// Whether the user follows the thread; `nil` when unknown or threads are off.
+    public func isFollowingThread(_ root: PostID) async -> Bool? {
+        guard isActiveSessionAlive, collapsedThreadsActive, let team = selectedTeam else { return nil }
+        let epoch = epoch
+        do {
+            let thread = try await service.userThread(root, team: team, me: me.id)
+            guard self.epoch == epoch else { return nil }
+            return thread != nil
+        } catch {
+            return nil
+        }
+    }
+
     public func setThreadFollowing(_ root: PostID, _ following: Bool) async throws(UserFacingError) {
         guard isActiveSessionAlive else { throw .authenticationRequired }
         guard let team = selectedTeam else { throw .notFoundOrInaccessible }

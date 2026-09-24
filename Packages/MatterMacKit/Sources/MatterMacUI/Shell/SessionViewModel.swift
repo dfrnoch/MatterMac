@@ -293,6 +293,11 @@ public final class SessionViewModel {
         return try await session.followedThreads(unreadOnly: unreadOnly, before: before)
     }
 
+    public func isFollowingThread(_ root: PostID) async -> Bool? {
+        guard !isDetached, !requiresAuthentication else { return nil }
+        return await session.isFollowingThread(root)
+    }
+
     public func setThreadFollowing(_ root: PostID, _ following: Bool) {
         perform { try await $0.setThreadFollowing(root, following) }
     }
