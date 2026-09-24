@@ -464,6 +464,16 @@ public final class MattermostHTTPClient: MattermostService {
                        decode: ChannelWire.self, limit: small).channel
     }
 
+    public func markChannelsRead(_ ids: [ChannelID], me: UserID) async throws(APIError) -> [ChannelID: MattermostTimestamp] {
+        var result: [ChannelID: MattermostTimestamp] = [:]
+        for chunk in Self.uniqueChunks(ids.map(\.rawValue)) {
+            let times = try await send(.post, ["channels", "members", me.rawValue, "mark_read"], body: chunk,
+                                       decode: ChannelViewResponseWire.self, limit: small).lastViewedAt
+            result.merge(times) { _, new in new }
+        }
+        return result
+    }
+
     public func flaggedPosts(me: UserID, page: Int, perPage: Int) async throws(APIError) -> PostPage {
         let size = min(max(perPage, 1), Self.pageSizeRange.upperBound)
         return PostPage(wire: try await get(PostListWire.self, ["users", me.rawValue, "posts", "flagged"], query: [

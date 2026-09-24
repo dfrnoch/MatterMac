@@ -267,3 +267,20 @@ struct ChannelEditingTests {
         }
     }
 }
+
+@Suite("Mark as read")
+struct MarkReadTests {
+    @Test func marksOnlyUnreadChannelsWithoutViewing() async throws {
+        let h = await SessionHarness(unread: true)
+        _ = await eventually { await h.session.directory.channels[h.channel.id] != nil }
+        #expect(await h.session.directory.unread(for: h.channel.id, collapsedThreads: false).isUnread)
+        try await h.session.markChannelsRead(nil)
+        #expect(await h.session.directory.unread(for: h.channel.id, collapsedThreads: false).isUnread == false)
+        #expect(h.service.calls.contains("markChannelsRead"))
+        #expect(!h.service.withState { $0.viewedChannels }.contains(h.channel.id))
+        // Nothing unread: no request.
+        let before = h.service.calls.filter { $0 == "markChannelsRead" }.count
+        try await h.session.markChannelsRead([h.channel.id])
+        #expect(h.service.calls.filter { $0 == "markChannelsRead" }.count == before)
+    }
+}

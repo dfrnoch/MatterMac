@@ -355,6 +355,20 @@ public final class FakeMattermostService: MattermostService {
         return updated
     }
 
+    public func markChannelsRead(_ ids: [ChannelID], me: UserID) async throws(APIError) -> [ChannelID: MattermostTimestamp] {
+        record("markChannelsRead")
+        return withState { state in
+            var times: [ChannelID: MattermostTimestamp] = [:]
+            for id in ids {
+                guard let channel = state.channels[id] else { continue }
+                state.memberships[id]?.messageCount = channel.totalMessageCount
+                state.memberships[id]?.mentionCount = 0
+                times[id] = channel.lastPostAt
+            }
+            return times
+        }
+    }
+
     public func flaggedPosts(me: UserID, page: Int, perPage: Int) async throws(APIError) -> PostPage {
         record("flaggedPosts")
         let posts = withState { state in state.flagged.compactMap { state.posts[$0] } }

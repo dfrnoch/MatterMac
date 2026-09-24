@@ -423,6 +423,9 @@ public protocol MattermostService: Sendable {
     func markThreadRead(_ thread: PostID?, at timestamp: MattermostTimestamp, team: TeamID, me: UserID) async throws(APIError)
     /// `PUT /channels/{id}/patch`; `nil` fields are left unchanged.
     func patchChannel(_ id: ChannelID, displayName: String?, header: String?, purpose: String?) async throws(APIError) -> Channel
+    /// `POST /channels/members/{id}/mark_read`: marks channels read without making one
+    /// the server-side active channel. Returns the resulting view times.
+    func markChannelsRead(_ ids: [ChannelID], me: UserID) async throws(APIError) -> [ChannelID: MattermostTimestamp]
     /// `GET /users/{id}/posts/flagged` (saved messages), newest first.
     func flaggedPosts(me: UserID, page: Int, perPage: Int) async throws(APIError) -> PostPage
     /// `GET /channels/{id}/pinned`.

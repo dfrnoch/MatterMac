@@ -33,6 +33,8 @@ struct LivePostListsTests {
             try await api.deletePreferences([flag], me: me)
             #expect(!(try await api.flaggedPosts(me: me, page: 0, perPage: 20).posts.contains { $0.id == post.id }))
             _ = try await api.pinnedPosts(channel: channel.id)
+            let times = try await api.markChannelsRead([channel.id], me: me)
+            #expect(times[channel.id] != nil)
             let patched = try await api.patchChannel(channel.id, displayName: nil, header: nil,
                                                      purpose: "MatterMac purpose check")
             #expect(patched.purpose == "MatterMac purpose check" && patched.displayName == channel.displayName)

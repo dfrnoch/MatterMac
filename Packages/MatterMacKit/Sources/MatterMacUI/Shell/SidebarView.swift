@@ -83,6 +83,10 @@ struct SidebarView: View {
     }
 
     @ViewBuilder private func rowMenu(_ row: SidebarChannelRow) -> some View {
+        if row.isUnread || row.mentionCount > 0 {
+            Button("Mark as Read") { session.markChannelsRead([row.channelID]) }
+            Divider()
+        }
         Button("Channel Info") {
             session.select(channel: row.channelID)
             session.isChannelInfoVisible = true
@@ -128,6 +132,8 @@ struct SidebarHeader: View {
                 Button("Browse Channels…") { session.directorySheet = .browseChannels }
                 Button("New Channel…") { session.directorySheet = .createChannel }
                 Button("New Direct Message…") { session.directorySheet = .newMessage }
+                Divider()
+                Button("Mark All as Read") { session.markChannelsRead(nil) }
                 Divider()
                 Toggle("Group Unread Channels Separately", isOn: Binding(
                     get: { session.sidebar?.groupsUnreads ?? false },

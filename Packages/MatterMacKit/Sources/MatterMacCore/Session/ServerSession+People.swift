@@ -157,6 +157,32 @@ extension ServerSession {
         }
     }
 
+    /// Explicit "Mark as Read" for channels (sidebar menu), without making any of them
+    /// the server's active channel. `nil` marks every unread channel of the selected team
+    /// and the user's direct/group messages.
+    public func markChannelsRead(_ ids: [ChannelID]?) async throws(UserFacingError) {
+        guard isActiveSessionAlive else { throw .authenticationRequired }
+        let crt = collapsedThreadsActive
+        let targets = (ids ?? directory.channels.values.filter { $0.teamID == selectedTeam || $0.type.isDirectOrGroup }.map(\.id))
+            .filter { directory.unread(for: $0, collapsedThreads: crt).isUnread }
+        guard !targets.isEmpty else { return }
+        let epoch = epoch
+        do {
+            let times = try await service.markChannelsRead(targets, me: me.id)
+            guard self.epoch == epoch, isActiveSessionAlive else { throw UserFacingError.cancelled }
+            for id in targets {
+                if manualUnreadHold == id { manualUnreadHold = nil }
+                markViewedLocally(id, at: times[id] ?? now())
+            }
+            markDirty(.sidebar)
+        } catch let error as UserFacingError {
+            throw error
+        } catch {
+            handleAuthenticationFailureIfNeeded(error)
+            throw Self.userFacing(error)
+        }
+    }
+
     /// Muting maps to the channel member's `mark_unread` notify property.
     public func setMuted(_ id: ChannelID, _ muted: Bool) async throws(UserFacingError) {
         guard isActiveSessionAlive else { throw .authenticationRequired }
