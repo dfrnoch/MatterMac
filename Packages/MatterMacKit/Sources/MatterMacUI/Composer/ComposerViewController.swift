@@ -389,7 +389,8 @@ public final class ComposerViewController: NSViewController {
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
         textView.frame = NSRect(x: 0, y: 0, width: scrollView.contentSize.width, height: 24)
 
-        placeholderLabel.textColor = .placeholderTextColor
+        // Secondary label colour: placeholder grey fails contrast on the glass field.
+        placeholderLabel.textColor = .secondaryLabelColor
         placeholderLabel.font = textView.font
         placeholderLabel.lineBreakMode = .byTruncatingTail
         placeholderLabel.maximumNumberOfLines = 1

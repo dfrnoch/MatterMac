@@ -75,8 +75,9 @@ struct ConnectView: View {
                 .accessibilityHidden(true)
             Text("MatterMac")
                 .font(.largeTitle.weight(.semibold))
+            // Primary-weight colours: secondary text fails contrast on the glass card.
             Text("An independent, native client for existing Mattermost servers.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.primary)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Server URL")
@@ -129,7 +130,7 @@ struct ConnectView: View {
                 Messages and drafts stay in memory only; quitting discards them. Your server stores sent messages.
                 """)
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.primary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 460)
                 .accessibilityIdentifier("sessionDisclosure")
@@ -147,7 +148,7 @@ struct ConnectView: View {
         }
         .padding(36)
         .frame(width: 540)
-        .glassSurface(cornerRadius: 28)
+        .glassSurface(cornerRadius: 28, tint: Color(nsColor: .windowBackgroundColor).opacity(0.6))
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { fieldFocused = true }
@@ -217,7 +218,7 @@ struct LoginView: View {
                         .font(.title2.weight(.semibold))
                     Text(login.discovery.endpoint.description)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.primary)
                         .textSelection(.enabled)
                         .accessibilityIdentifier("loginOrigin")
                 }
@@ -251,6 +252,7 @@ struct LoginView: View {
             switch login.method {
             case .password:
                 TextField(login.loginIDPrompt, text: $login.loginID)
+                    .accessibilityLabel(Text(login.loginIDPrompt))
                     .textContentType(.username)
                     .focused($focused, equals: .loginID)
                     .onSubmit { focused = .password }
@@ -319,7 +321,7 @@ struct LoginView: View {
         .textFieldStyle(.roundedBorder)
         .frame(maxWidth: 440)
         .padding(32)
-        .glassSurface(cornerRadius: 28)
+        .glassSurface(cornerRadius: 28, tint: Color(nsColor: .windowBackgroundColor).opacity(0.6))
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { focused = login.method == .password ? .loginID : .token }

@@ -188,6 +188,7 @@ struct MainWindowView: View {
                     session.isSearchVisible = true
                 }
                 .help("Search messages on the server (⌘F); hold for mentions, saved and pinned")
+                .accessibilityLabel("Search")
                 Toggle(isOn: $session.isChannelInfoVisible) {
                     Label("Channel Info", systemImage: "info.circle")
                 }
