@@ -20,3 +20,6 @@ xcuserdata/
 *.app/
 *.xcarchive/
 *.log
+
+# Local agent worktrees
+.claude/worktrees/
