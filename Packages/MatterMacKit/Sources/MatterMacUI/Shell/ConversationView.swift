@@ -107,6 +107,8 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
             stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             stack.topAnchor.constraint(equalTo: view.topAnchor),
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor), height,
+            // `.width` alignment only equalizes arranged views; pin the composer to the pane.
+            composer.view.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
         composer.onPreferredHeightChange = { [weak self] in self?.composerHeight?.constant = max(60, $0) }
     }
@@ -114,12 +116,15 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
     override func viewDidAppear() {
         super.viewDidAppear()
         timeline.reloadDisplayedImages()
-        if root == nil { model?.updateAppState(isActive: NSApp.isActive, isWindowVisible: view.window?.isVisible == true) }
+        // In the Threads view there is no channel pane; the thread pane reports instead.
+        if root == nil || model?.isThreadsViewVisible == true {
+            model?.updateAppState(isActive: NSApp.isActive, isWindowVisible: view.window?.isVisible == true)
+        }
     }
     override func viewDidDisappear() {
         super.viewDidDisappear()
         clearImages()
-        if root == nil { model?.updateAppState(isActive: false, isWindowVisible: false) }
+        if root == nil, model?.isThreadsViewVisible != true { model?.updateAppState(isActive: false, isWindowVisible: false) }
     }
 
     func attachDraftProvider() {

@@ -6,15 +6,91 @@ struct MainWindowView: View {
     let app: AppModel
     @Bindable var session: SessionViewModel
 
-    var body: some View {
-        NavigationSplitView {
-            SidebarView(app: app, session: session)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 340)
-        } detail: {
-            VStack(spacing: 0) {
-                if let notice = session.noticeText {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(notice).fixedSize(horizontal: false, vertical: true)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var bannerIdentity: [String] {
+        [session.noticeText ?? "", session.commandFeedback ?? "", session.inlineError ?? ""]
+    }
+
+    @ViewBuilder private var conversationArea: some View {
+        if session.isThreadsViewVisible {
+            HSplitView {
+                ThreadsListView(session: session)
+                    .frame(minWidth: 300, idealWidth: 420, maxHeight: .infinity)
+                if let thread = session.thread {
+                    TrailingPane(title: "Thread", systemImage: "bubble.left.and.text.bubble.right",
+                                 close: { session.closeThread() }) {
+                        ConversationView(session: session, target: thread.target, snapshot: thread)
+                    }
+                    .frame(minWidth: 300, idealWidth: 480)
+                } else {
+                    ContentUnavailableView("Select a Thread", systemImage: "text.bubble",
+                                           description: Text("Choose a thread to read and reply."))
+                        .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+        } else if let channel = session.selectedChannel {
+            HSplitView {
+                ConversationView(session: session, target: .channel(channel), snapshot: session.timeline)
+                    .frame(minWidth: 300)
+                // The single optional trailing panel (SPEC §4): thread or details.
+                if let thread = session.thread {
+                    TrailingPane(title: "Thread", systemImage: "bubble.left.and.text.bubble.right",
+                                 close: { session.closeThread() }) {
+                        ConversationView(session: session, target: thread.target, snapshot: thread)
+                    }
+                    .frame(minWidth: 240, idealWidth: 360)
+                } else if session.isChannelInfoVisible {
+                    TrailingPane(title: "Channel Info", systemImage: "info.circle",
+                                 close: { session.isChannelInfoVisible = false }) {
+                        ChannelInfoView(session: session, channel: channel).id(channel)
+                    }
+                    .frame(minWidth: 240, idealWidth: 320)
+                }
+            }
+        } else {
+            ContentUnavailableView {
+                Label("No Conversation Selected", systemImage: "bubble.left.and.bubble.right")
+            } description: {
+                Text("Choose a channel or direct message in the sidebar, or press ⌘K to switch.")
+            } actions: {
+                Button("Quick Switcher…") { session.isQuickSwitcherVisible = true }
+                    .glassButtonStyle()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder private var threadsBadge: some View {
+        if let activity = session.threadActivity, activity.isAvailable, activity.unreadThreads > 0 {
+            if activity.unreadMentions > 0 {
+                Text(activity.unreadMentions > 99 ? "99+" : "\(activity.unreadMentions)")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 4)
+                    .background(Capsule().fill(Color.red))
+                    .offset(x: 4, y: -2)
+                    .allowsHitTesting(false)
+            } else {
+                Circle().fill(Color.accentColor).frame(width: 7, height: 7)
+                    .offset(x: 2, y: 0)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    private var threadsAccessibilityValue: String {
+        guard let activity = session.threadActivity, activity.unreadThreads > 0 else { return "" }
+        return String(localized: "\(activity.unreadThreads) unread threads, \(activity.unreadMentions) mentions")
+    }
+
+    @ViewBuilder private var banners: some View {
+        VStack(spacing: 8) {
+            if let notice = session.noticeText {
+                VStack(alignment: .leading, spacing: 8) {
+                    FloatingBanner(tone: session.requiresAuthentication ? .error : .warning,
+                                   systemImage: session.requiresAuthentication ? "person.crop.circle.badge.exclamationmark" : "exclamationmark.triangle",
+                                   message: notice) {
                         HStack {
                             if session.requiresAuthentication || session.pendingNotice?.preservesUnsentWork == true {
                                 Button("Review Unsent Work…") { session.isUnsentRecoveryVisible = true }
@@ -24,92 +100,74 @@ struct MainWindowView: View {
                             if session.requiresAuthentication {
                                 Button("Sign In Again…") { Task { await app.reauthenticate(session.slot.id) } }
                                     .disabled(app.isReauthenticating)
+                                    .glassButtonStyle(prominent: true)
                             } else {
                                 Button("Dismiss") { session.dismissNotice() }
                             }
                         }
-                        if session.pendingNotice?.preservesUnsentWork == true {
-                            Text("Interrupted sends may already have reached the server. Check before resending copied text.")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text("Review unsent work to copy individual messages or export pasted images before signing out or quitting.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-                    .background(Color.secondary.opacity(0.1))
-                    .accessibilityIdentifier("sessionNotice")
-                }
-                if let header = session.header {
-                    if header.canPost == false {
-                        Text("This channel is read-only. Your draft is kept in this session.").font(.callout).padding(8)
-                    } else if header.fileAttachmentsEnabled != true {
-                        Text(header.fileAttachmentsEnabled == false
-                             ? "File attachments are disabled on this server."
-                             : "File attachment availability has not been confirmed by the server.")
-                            .font(.caption).foregroundStyle(.secondary).padding(8)
+                    if session.pendingNotice?.preservesUnsentWork == true {
+                        Text("Interrupted sends may already have reached the server. Check before resending copied text. Review unsent work to copy individual messages or export pasted images before signing out or quitting.")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .padding(.horizontal, 14)
                     }
                 }
-                if let feedback = session.commandFeedback {
-                    HStack(alignment: .firstTextBaseline) {
-                        Image(systemName: "terminal").foregroundStyle(.secondary).accessibilityHidden(true)
-                        Text(verbatim: feedback)
-                            .font(.callout)
-                            .lineLimit(6)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer()
-                        Button("Dismiss") { session.commandFeedback = nil }
-                    }
-                    .padding(8)
-                    .background(Color.secondary.opacity(0.08))
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Command reply: \(feedback)")
+                .accessibilityIdentifier("sessionNotice")
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if let feedback = session.commandFeedback {
+                FloatingBanner(tone: .info, systemImage: "terminal", message: feedback) {
+                    Button("Dismiss") { session.commandFeedback = nil }
                 }
-                if let error = session.inlineError {
-                    HStack {
-                        Text(error).font(.callout).foregroundStyle(.red)
-                        Spacer()
-                        Button("Dismiss") { session.inlineError = nil }
-                    }.padding(8)
+                .accessibilityLabel("Command reply: \(feedback)")
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if let error = session.inlineError {
+                FloatingBanner(tone: .error, systemImage: "exclamationmark.octagon", message: error) {
+                    Button("Dismiss") { session.inlineError = nil }
                 }
-                Divider()
-                if let channel = session.selectedChannel {
-                    HSplitView {
-                        ConversationView(session: session, target: .channel(channel), snapshot: session.timeline)
-                            .frame(minWidth: 300)
-                        if let thread = session.thread {
-                            VStack(spacing: 0) {
-                                HStack {
-                                    Text("Thread").font(.headline)
-                                    Spacer()
-                                    Button("Close") { session.closeThread() }
-                                }.padding(12)
-                                ConversationView(session: session, target: thread.target, snapshot: thread)
-                            }.frame(minWidth: 240, idealWidth: 360)
-                        } else if session.isChannelInfoVisible {
-                            // The single optional trailing panel (SPEC §4): details or thread.
-                            VStack(spacing: 0) {
-                                HStack {
-                                    Text("Channel Info").font(.headline)
-                                    Spacer()
-                                    Button("Close") { session.isChannelInfoVisible = false }
-                                }.padding(12)
-                                ChannelInfoView(session: session, channel: channel).id(channel)
-                            }.frame(minWidth: 240, idealWidth: 320)
-                        }
-                    }
-                } else {
-                    Text("Select a channel").foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if let header = session.header, header.canPost == false || header.fileAttachmentsEnabled == false {
+                Label(header.canPost == false ? "This channel is read-only. Your draft is kept in this session."
+                                              : "File attachments are disabled on this server.",
+                      systemImage: header.canPost == false ? "lock" : "paperclip.badge.ellipsis")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .glassCapsule()
             }
         }
-        .navigationTitle(ChannelHeaderText.title(session.header))
-        .navigationSubtitle(ChannelHeaderText.subtitle(session.header))
+        .frame(maxWidth: 720)
+    }
+
+    var body: some View {
+        NavigationSplitView {
+            SidebarView(app: app, session: session)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 340)
+        } detail: {
+            ZStack(alignment: .top) {
+                conversationArea
+                banners
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+            }
+            .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: bannerIdentity)
+        }
+        .navigationTitle(session.isThreadsViewVisible ? String(localized: "Threads") : ChannelHeaderText.title(session.header))
+        .navigationSubtitle(session.isThreadsViewVisible ? "" : ChannelHeaderText.subtitle(session.header))
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 ChannelHeaderAccessories(header: session.header, session: session)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Toggle(isOn: $session.isThreadsViewVisible) {
+                    Label("Threads", systemImage: "bubble.left.and.text.bubble.right")
+                }
+                .overlay(alignment: .topTrailing) { threadsBadge }
+                .help("Followed threads (⇧⌘T)")
+                .accessibilityValue(threadsAccessibilityValue)
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { session.isQuickSwitcherVisible = true } label: {
@@ -139,6 +197,37 @@ extension SessionNotice {
         switch self {
         case .accessRevoked, .teamRemoved, .signedOutByServer, .identityChanged: true
         case .operationFailed: false
+        }
+    }
+}
+
+/// Header and content of the trailing thread/details pane.
+private struct TrailingPane<Content: View>: View {
+    let title: LocalizedStringKey
+    let systemImage: String
+    let close: () -> Void
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Label(title, systemImage: systemImage)
+                    .font(.headline)
+                    .labelStyle(.titleAndIcon)
+                Spacer()
+                Button(action: close) {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.bold))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.borderless)
+                .help("Close")
+                .accessibilityLabel(Text("Close"))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            Divider()
+            content()
         }
     }
 }

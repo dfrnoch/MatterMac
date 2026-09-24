@@ -31,3 +31,18 @@ struct ComposerLayoutTests {
         }
     }
 }
+
+@MainActor
+@Suite("Composer field width")
+struct ComposerFieldWidthTests {
+    @Test func fieldSpansTheComposerWidth() throws {
+        let h = ComposerHarness(width: 800)
+        defer { h.close() }
+        h.controller.view.layoutSubtreeIfNeeded()
+        let root = h.controller.view
+        let row = try #require(h.controller.attachButton.superview)
+        let rowFrame = row.convert(row.bounds, to: root)
+        let box = try #require(row.subviews.first { $0 is NSBox })
+        #expect(rowFrame.width > 700, "row \(rowFrame) root \(root.frame) box \(box.frame)")
+    }
+}

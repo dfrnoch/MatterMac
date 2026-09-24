@@ -131,6 +131,8 @@ public final class ComposerViewController: NSViewController {
     private static let boxInsets = NSSize(width: 8, height: 3)
     private static let sendButtonSize: CGFloat = 28
     private static let attachButtonWidth: CGFloat = 24
+    private static let fieldInsets = NSEdgeInsets(top: 3, left: 8, bottom: 3, right: 6)
+    private static let fieldCornerRadius: CGFloat = 18
 
     public init(budget: ResourceBudget = .standard, diagnostics: DiagnosticRing? = nil) {
         self.budget = budget
@@ -259,8 +261,9 @@ public final class ComposerViewController: NSViewController {
         inputRow.orientation = .horizontal
         inputRow.alignment = .bottom
         inputRow.spacing = 6
+        let field = Self.makeFieldChrome(containing: inputRow)
 
-        let stack = NSStackView(views: [bannerView, attachmentStrip, inputRow, statusRow])
+        let stack = NSStackView(views: [bannerView, attachmentStrip, field, statusRow])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = Self.stackSpacing
@@ -279,7 +282,7 @@ public final class ComposerViewController: NSViewController {
             top,
             bannerView.widthAnchor.constraint(equalTo: stack.widthAnchor),
             attachmentStrip.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            inputRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            field.widthAnchor.constraint(equalTo: stack.widthAnchor),
             statusRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
         root.frame = NSRect(x: 0, y: 0, width: 480, height: 60)
@@ -314,12 +317,63 @@ public final class ComposerViewController: NSViewController {
 
     // MARK: Layout construction
 
+    /// The rounded field that holds the attach button, text and send button: Liquid
+    /// Glass on macOS 26 and later, a filled rounded box before that.
+    private static func makeFieldChrome(containing row: NSView) -> NSView {
+        let host = NSView()
+        host.translatesAutoresizingMaskIntoConstraints = false
+        row.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(row)
+        let inset = fieldInsets
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: inset.left),
+            row.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -inset.right),
+            row.topAnchor.constraint(equalTo: host.topAnchor, constant: inset.top),
+            row.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -inset.bottom),
+        ])
+        // A plain container whose first subview is the chrome (glass or box) and whose
+        // second is the row, both pinned to its edges. Using the glass view's
+        // `contentView` would let it size the content; siblings keep full width.
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        let background: NSView
+        if #available(macOS 26.0, *) {
+            let glass = NSGlassEffectView()
+            glass.cornerRadius = fieldCornerRadius
+            background = glass
+        } else {
+            let box = NSBox()
+            box.boxType = .custom
+            box.cornerRadius = fieldCornerRadius
+            box.borderWidth = 1
+            box.borderColor = .separatorColor
+            box.fillColor = .textBackgroundColor
+            box.titlePosition = .noTitle
+            background = box
+        }
+        background.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(background)
+        container.addSubview(host)
+        for view in [background, host] {
+            NSLayoutConstraint.activate([
+                view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                view.topAnchor.constraint(equalTo: container.topAnchor),
+                view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            ])
+        }
+        let chrome = container
+        return chrome
+    }
+
     private func configureInputBox() {
+        // The surrounding field chrome draws the border; the text box is transparent.
         inputBox.boxType = .custom
-        inputBox.cornerRadius = 8
+        inputBox.cornerRadius = 0
+        // Keep the 1 pt border (it is part of the box's content geometry) but hide it.
         inputBox.borderWidth = 1
-        inputBox.borderColor = .separatorColor
-        inputBox.fillColor = .textBackgroundColor
+        inputBox.borderColor = .clear
+        inputBox.fillColor = .clear
         inputBox.titlePosition = .noTitle
         inputBox.contentViewMargins = Self.boxInsets
         inputBox.translatesAutoresizingMaskIntoConstraints = false
@@ -595,7 +649,7 @@ public final class ComposerViewController: NSViewController {
             constraint.constant = buttonHeight
         }
         let insets = Self.outerInsets
-        var sections: [CGFloat] = [boxHeight(forInputHeight: inputHeight)]
+        var sections: [CGFloat] = [boxHeight(forInputHeight: inputHeight) + Self.fieldInsets.top + Self.fieldInsets.bottom]
         if !bannerView.isHidden { sections.append(Self.bannerHeight) }
         if !attachmentStrip.isHidden { sections.append(ComposerAttachmentStrip.height) }
         if !statusRow.isHidden { sections.append(Self.statusHeight) }

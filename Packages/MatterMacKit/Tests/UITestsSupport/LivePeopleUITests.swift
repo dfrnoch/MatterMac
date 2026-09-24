@@ -42,6 +42,9 @@ struct LivePeopleUITests {
             model.select(channel: channel)
             let pane = try await pane(model, channel: channel)
 
+            try await settle(window)
+            // The composer spans the conversation pane.
+            #expect(pane.composer.view.frame.width >= pane.view.frame.width - 1)
             // Channel details and paged members through the view model.
             let details = try await model.channelDetails(channel)
             #expect(details.name == "interop")
