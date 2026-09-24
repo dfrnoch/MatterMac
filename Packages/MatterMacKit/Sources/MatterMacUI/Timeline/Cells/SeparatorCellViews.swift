@@ -10,10 +10,18 @@ final class TimelineRowView: NSTableRowView {
         didSet { if oldValue != isFlashing { needsDisplay = true } }
     }
 
+    /// The pointer is over this message (subtle background, like the official client).
+    var isHovered = false {
+        didSet { if oldValue != isHovered { needsDisplay = true } }
+    }
+
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
         if isFlashing {
             TimelinePalette.flashHighlight.setFill()
+            bounds.fill()
+        } else if isHovered, !isSelected {
+            TimelinePalette.hoverHighlight.setFill()
             bounds.fill()
         }
     }
@@ -21,6 +29,7 @@ final class TimelineRowView: NSTableRowView {
     override func prepareForReuse() {
         super.prepareForReuse()
         isFlashing = false
+        isHovered = false
     }
 }
 

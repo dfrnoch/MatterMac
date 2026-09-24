@@ -49,6 +49,12 @@ public final class TimelineViewController: NSViewController {
     let newMessagesButton = NSButton(title: "", target: nil, action: nil)
     let contextMenu = NSMenu()
     private(set) lazy var adapter = TimelineTableAdapter(controller: self)
+    /// Floating actions for the hovered/selected message (see `+Hover`).
+    let hoverBar = HoverActionBar(frame: .zero)
+    /// Pointer location (window coordinates) while it is inside the timeline.
+    var hoverPointerLocation: NSPoint?
+    var hoverHighlightedID: TimelineItemID?
+    var hoverTimestampID: TimelineItemID?
 
     // MARK: Row model (parallel arrays, bounded by the snapshot size)
 
@@ -88,6 +94,8 @@ public final class TimelineViewController: NSViewController {
     var visibilityReportScheduled = false
     var lastVisibilityReportUptime: TimeInterval = -1
     var lastVisibilityReport: VisibilityReport?
+    /// A user scroll happened since the last visibility report (ends a manual-unread hold).
+    var userScrolledSinceReport = false
     /// Tests set this to bypass the window occlusion check.
     var visibilityOverrideForTesting: Bool?
     weak var observedWindow: NSWindow?
@@ -167,6 +175,7 @@ public final class TimelineViewController: NSViewController {
         scrollView.documentView = tableView
         container.addSubview(scrollView)
         tableView.fitColumnToWidth()
+        installHoverBar(in: container)
 
         newMessagesButton.bezelStyle = .push
         newMessagesButton.controlSize = .regular
@@ -281,6 +290,9 @@ public final class TimelineViewController: NSViewController {
         lastAnchor = nil
         lastVisibilityReport = nil
         endFlash()
+        hoverBar.reset()
+        hoverHighlightedID = nil
+        hoverTimestampID = nil
         pendingHeightFixups.removeAll()
         tableView.deselectAll(nil)
         tableView.reloadData()
@@ -517,6 +529,9 @@ public final class TimelineViewController: NSViewController {
             newItemsBelow = 0
             lastAnchor = nil
             endFlash()
+            hoverBar.reset()
+            hoverHighlightedID = nil
+            hoverTimestampID = nil
             tableView.reloadData()
             updateNewMessagesButton()
         }
@@ -532,6 +547,30 @@ public final class TimelineViewController: NSViewController {
 /// Root view: forwards appearance, backing-scale, window, and live-resize changes.
 final class TimelineContainerView: NSView {
     weak var controller: TimelineViewController?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInActiveApp,
+                                                              .inVisibleRect], owner: self))
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        controller?.hoverMouseMoved(event)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        controller?.hoverMouseMoved(event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        controller?.hoverMouseExited()
+    }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()

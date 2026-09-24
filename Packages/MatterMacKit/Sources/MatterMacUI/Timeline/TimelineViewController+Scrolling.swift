@@ -248,6 +248,8 @@ extension TimelineViewController {
                 if let anchor { restore(anchor) }
             }
             if distanceFromBottom() > TimelineMetrics.liveEdgeTolerance { explicitLiveEdgeJump = false }
+            // Outside `performUpdate`, a bounds change is the user scrolling.
+            userScrolledSinceReport = true
             afterScrollPositionSettled()
         }
     }
@@ -266,6 +268,7 @@ extension TimelineViewController {
         checkPagingTriggers()
         scheduleVisibilityReport()
         updateNewMessagesButton()
+        refreshHover()
     }
 
     // MARK: - Paging
@@ -320,12 +323,14 @@ extension TimelineViewController {
         visibilityReportScheduled = false
         guard let snapshot, isWindowVisibleForReporting else { return }
         let report = currentVisibilityReport(snapshot)
-        guard report != lastVisibilityReport else { return }
+        guard report != lastVisibilityReport || userScrolledSinceReport else { return }
         lastVisibilityReport = report
         lastVisibilityReportUptime = ProcessInfo.processInfo.systemUptime
         counters.visibilityReports += 1
+        let scrolled = userScrolledSinceReport
+        userScrolledSinceReport = false
         delegate?.timelineVisibleRangeDidChange(first: report.first, last: report.last,
-                                                isAtLiveEdge: report.isAtLiveEdge)
+                                                isAtLiveEdge: report.isAtLiveEdge, userScrolled: scrolled)
     }
 
     func currentVisibilityReport(_ snapshot: TimelineSnapshot) -> VisibilityReport {

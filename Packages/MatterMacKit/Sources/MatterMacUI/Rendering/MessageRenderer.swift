@@ -14,6 +14,8 @@ extension NSAttributedString.Key {
     /// Channel name (without "~") of a channel mention; clicks report
     /// `TimelineAction.channelMentionTapped`.
     nonisolated public static let matterMacChannelMention = NSAttributedString.Key("MatterMacChannelMention")
+    /// Marks the trailing "(edited)" indicator (not part of the message text).
+    nonisolated public static let matterMacEditedMarker = NSAttributedString.Key("MatterMacEditedMarker")
 }
 
 /// Converts a presentation-neutral `MessageDocument` into attributed text for display
@@ -97,6 +99,27 @@ public final class MessageRenderer {
         return state.finish(ellipsisAttributes: [
             .font: fonts.body, .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: ellipsisStyle,
         ])
+    }
+
+    /// Appends the "(edited)" marker: on the last line after a paragraph, otherwise
+    /// (code block, list, quote, table) on its own line without block styling.
+    public func appendingEditedMarker(to text: NSAttributedString, inlineAfterParagraph: Bool) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: text)
+        let base = baseParagraphStyle(indent: 0, blocks: [], spacingBefore: 0)
+        var paragraph: NSParagraphStyle = base
+        var inline = false
+        if inlineAfterParagraph, result.length > 0,
+           let last = result.attribute(.paragraphStyle, at: result.length - 1, effectiveRange: nil) as? NSParagraphStyle,
+           last.textBlocks.isEmpty {
+            paragraph = last
+            inline = true
+        }
+        let marker = (result.length == 0 ? "" : (inline ? " " : "\n")) + TimelineStrings.edited
+        result.append(NSAttributedString(string: marker, attributes: [
+            .font: fonts.meta, .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: paragraph,
+            .matterMacEditedMarker: true,
+        ]))
+        return result
     }
 
     // MARK: - Blocks

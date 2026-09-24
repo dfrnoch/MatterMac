@@ -393,6 +393,29 @@ struct ConversationIntegrationTests {
         await h.close()
     }
 
+    @Test func permalinksToThisServerOpenTheChannelFocusedOnThePost() async throws {
+        let h = try await Harness()
+        let target = CoreFixtures.post(40, channel: h.second.id)
+        h.service.withState { $0.posts[target.id] = target }
+        let permalink = try #require(SafeLink(CoreFixtures.endpoint.url(path: ["qa", "pl", target.id.rawValue]).absoluteString))
+        h.controller.timeline(perform: .openLink(permalink))
+        #expect(await waitUntil { h.model.selectedChannel == h.second.id })
+        #expect(await waitUntil { h.model.timeline?.items.contains { $0.id == TimelineItemID(.post(target.id)) } == true })
+        // A channel link by name.
+        let channelLink = try #require(SafeLink(CoreFixtures.endpoint.url(path: ["qa", "channels", h.first.name]).absoluteString))
+        h.controller.timeline(perform: .openLink(channelLink))
+        #expect(await waitUntil { h.model.selectedChannel == h.first.id })
+        // A post in a channel the user is not a member of is reported, not opened.
+        let foreign = CoreFixtures.post(41, channel: CoreFixtures.channel(9).id)
+        h.service.withState { $0.posts[foreign.id] = foreign }
+        let foreignLink = try #require(SafeLink(CoreFixtures.endpoint.url(path: ["qa", "pl", foreign.id.rawValue]).absoluteString))
+        h.model.inlineError = nil
+        h.controller.timeline(perform: .openLink(foreignLink))
+        #expect(await waitUntil { h.model.inlineError != nil })
+        #expect(h.model.selectedChannel == h.first.id)
+        await h.close()
+    }
+
     private func waitUntil(_ condition: () -> Bool) async -> Bool {
         let deadline = ContinuousClock.now + .seconds(3)
         while !condition(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }

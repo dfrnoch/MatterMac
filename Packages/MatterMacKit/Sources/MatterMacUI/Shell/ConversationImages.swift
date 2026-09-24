@@ -16,6 +16,9 @@ extension ConversationController {
         case .avatar(let user, let revision): resource = .profileImage(user, revision: revision); points = TimelineMetrics.avatarSize
         case .thumbnail(let file): resource = .fileThumbnail(file); points = TimelineMetrics.maximumThumbnailSize.width
         case .preview(let file): resource = .filePreview(file); points = TimelineMetrics.maximumThumbnailSize.width
+        case .linkPreview(let url):
+            // Only rows built with `linkPreviewImages` (server proxy on) ask for these.
+            resource = .proxiedImage(url: url); points = TimelineMetrics.maximumThumbnailSize.width
         }
         let pixels = Int((points * (view.window?.backingScaleFactor ?? 2)).rounded(.up))
         let generation = imageGeneration, channel = target.channelID, session = model.session

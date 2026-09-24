@@ -46,6 +46,12 @@ nonisolated enum TimelinePalette {
     static let quoteBar = dynamic { _, highContrast in
         highContrast ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor
     }
+    static let hoverHighlight = dynamic { isDark, highContrast in
+        NSColor.labelColor.withAlphaComponent(highContrast ? 0.08 : (isDark ? 0.05 : 0.035))
+    }
+    static let linkPreviewAccent = dynamic { _, highContrast in
+        highContrast ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor
+    }
     static let flashHighlight = dynamic { _, highContrast in
         NSColor.controlAccentColor.withAlphaComponent(highContrast ? 0.35 : 0.18)
     }

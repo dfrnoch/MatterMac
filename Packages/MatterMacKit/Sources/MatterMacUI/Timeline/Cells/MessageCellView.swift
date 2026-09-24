@@ -36,6 +36,11 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
     private var attachmentOverflowLabel: TimelineLabel?
     private var reactionViews: [ReactionChipView] = []
     private var reactionOverflowLabel: TimelineLabel?
+    private var linkPreviewView: LinkPreviewCardView?
+    private var linkPreviewRequest: TimelineImageRequest?
+    /// Time shown in the avatar gutter of a continuation row while hovered/selected.
+    private var hoverTimeLabel: TimelineLabel?
+    private(set) var isHoverHighlighted = false
     private var pendingSpinner: NSProgressIndicator?
     private var pendingLabel: TimelineLabel?
     private var retryButton: TimelineTextButton?
@@ -99,6 +104,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
                 .font: fonts.authorName, .foregroundColor: NSColor.labelColor,
             ])
             metaLabel.attributedText = headerMeta(post: post, fonts: fonts)
+            metaLabel.toolTip = Self.timeToolTip(post)
         }
 
         if let frame = layout.threadContext {
@@ -126,6 +132,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
             }
         }
 
+        configureLinkPreview(post: post, host: host)
         configureAttachments(post: post, fonts: fonts)
         configureReactions(post: post, fonts: fonts)
 
@@ -141,7 +148,63 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
 
         configurePending(post: post, fonts: fonts)
         setAccessibilityLabel(TimelineStrings.accessibilityLabel(for: post))
+        setAccessibilityCustomActions(TimelinePostActions.accessibilityEntries(for: post).map { entry in
+            NSAccessibilityCustomAction(name: entry.title) { [weak self] in
+                guard let host = self?.host else { return false }
+                host.performPrepared(entry.action)
+                return true
+            }
+        })
         needsLayout = true
+    }
+
+    static func timeToolTip(_ post: PostPresentation) -> String {
+        var text = TimelineStrings.longDateTime(post.createdAt)
+        if let edited = post.editedAt { text += "\n" + TimelineStrings.editedAt(edited) }
+        return text
+    }
+
+    /// Hover/selection state: continuation rows show their time in the avatar gutter.
+    func setHovered(_ hovered: Bool) {
+        guard hovered != isHoverHighlighted else { return }
+        isHoverHighlighted = hovered
+        guard let post, post.postID != nil, rowLayout.header == nil, let host else {
+            hoverTimeLabel?.isHidden = true
+            return
+        }
+        let label = hoverTimeLabel ?? makeLabel(\.hoverTimeLabel)
+        label.isHidden = !hovered
+        guard hovered else { return }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .right
+        let font = NSFont.systemFont(ofSize: max(9, host.rowMetrics.fonts.meta.pointSize - 2))
+        label.attributedText = NSAttributedString(string: TimelineStrings.time(post.createdAt), attributes: [
+            .font: font, .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: paragraph,
+        ])
+        label.toolTip = Self.timeToolTip(post)
+        needsLayout = true
+    }
+
+    private func configureLinkPreview(post: PostPresentation, host: any TimelineCellHost) {
+        guard let preview = post.linkPreview, let layout = rowLayout.linkPreview else { return }
+        let view = linkPreviewView ?? {
+            let view = LinkPreviewCardView(frame: .zero)
+            addSubview(view)
+            linkPreviewView = view
+            return view
+        }()
+        var image: NSImage?
+        if let url = preview.image?.url {
+            let request = TimelineImageRequest.linkPreview(url: url)
+            linkPreviewRequest = request
+            image = resolveImage(request)
+        }
+        view.configure(preview, layout: layout, metrics: host.rowMetrics, image: image)
+        view.host = host
+        view.frame = layout.frame
+        view.isHidden = false
+        let link = preview.link
+        view.onPress = { [weak self] in self?.host?.perform(.openLink(link)) }
     }
 
     private func headerMeta(post: PostPresentation, fonts: TimelineFonts) -> NSAttributedString {
@@ -155,8 +218,9 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
             text.append(NSAttributedString(string: "  ", attributes: meta))
         }
         text.append(NSAttributedString(string: TimelineStrings.time(post.createdAt), attributes: meta))
-        if post.isEdited { text.append(NSAttributedString(string: "  " + TimelineStrings.edited, attributes: meta)) }
+        // "(edited)" follows the message text (so continuation rows show it too).
         if post.isPinned { text.append(NSAttributedString(string: "  📌 " + TimelineStrings.pinned, attributes: meta)) }
+        if post.isSaved { text.append(NSAttributedString(string: "  🔖 " + TimelineStrings.saved, attributes: meta)) }
         return text
     }
 
@@ -223,10 +287,12 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
                            fonts: fonts)
             view.frame = rowLayout.reactions[index]
             view.isHidden = false
-            view.toolTip = ":" + reaction.emojiName + ":"
+            let reactors = TimelineStrings.reactors(reaction)
+            view.toolTip = reactors
             view.setAccessibilityLabel(TimelineStrings.reactionAccessibility(
                 emoji: emoji, name: reaction.emojiName, count: reaction.count,
                 includesYou: reaction.includesCurrentUser))
+            view.setAccessibilityHelp(reactors)
             if let postID = post.postID, post.actions.canReact {
                 let name = reaction.emojiName
                 view.onPress = { [weak self] in self?.host?.perform(.toggleReaction(postID, emojiName: name)) }
@@ -309,6 +375,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
     func imageDidBecomeAvailable(_ request: TimelineImageRequest) {
         guard outstandingRequests.contains(request), let host, let image = host.image(for: request) else { return }
         if request == avatarRequest { avatarView.image = image }
+        if request == linkPreviewRequest { linkPreviewView?.setImage(image) }
         if let index = thumbnailRequests[request], index < thumbnailViews.count {
             thumbnailViews[index].setImage(image)
         }
@@ -318,6 +385,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
     func refreshImages() {
         guard host != nil else { return }
         if let request = avatarRequest { avatarView.image = resolveImage(request) }
+        if let request = linkPreviewRequest { linkPreviewView?.setImage(resolveImage(request)) }
         for (request, index) in thumbnailRequests where index < thumbnailViews.count {
             thumbnailViews[index].setImage(resolveImage(request))
         }
@@ -335,6 +403,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
     func releaseImageDemand() {
         avatarView.image = nil
         for view in thumbnailViews { view.setImage(nil) }
+        linkPreviewView?.setImage(nil)
         if let host {
             for request in outstandingRequests { host.unregisterImageDemand(request) }
         }
@@ -353,7 +422,15 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
         itemID = nil
         post = nil
         avatarRequest = nil
+        linkPreviewRequest = nil
         thumbnailRequests.removeAll()
+        linkPreviewView?.reset()
+        linkPreviewView?.isHidden = true
+        hoverTimeLabel?.isHidden = true
+        hoverTimeLabel?.attributedText = NSAttributedString()
+        isHoverHighlighted = false
+        metaLabel.toolTip = nil
+        setAccessibilityCustomActions(nil)
         rowLayout = MessageRowLayout()
         avatarView.image = nil
         avatarView.initials = ""
@@ -405,6 +482,13 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
         }
         if let frame = layout.threadContext { threadContextLabel?.frame = frame }
         bodyTextView.frame = layout.body
+        if let label = hoverTimeLabel, !label.isHidden, let fonts = host?.rowMetrics.fonts {
+            let height = ceil(fonts.metaLineHeight)
+            let baseline = max(0, floor((fonts.bodyLineHeight - height) / 2))
+            label.frame = CGRect(x: 2, y: layout.body.minY + baseline + 1,
+                                 width: TimelineRowMetrics.contentLeading - 8, height: height)
+        }
+        if let frame = layout.linkPreview?.frame { linkPreviewView?.frame = frame }
         if let frame = layout.showMore, let button = showMoreButton {
             button.frame = CGRect(x: frame.minX, y: frame.minY, width: min(frame.width, button.fittingWidth + 4),
                                   height: frame.height)

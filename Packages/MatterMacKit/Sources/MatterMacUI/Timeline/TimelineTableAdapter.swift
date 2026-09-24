@@ -25,6 +25,7 @@ final class TimelineTableAdapter: NSObject, NSTableViewDataSource, NSTableViewDe
                 ?? MessageCellView(frame: .zero)
             cell.configure(item: item, post: post, layout: layout,
                            body: c.layouter.bodyText(for: item, post: post), host: c)
+            cell.setHovered(c.hoverTimestampID == item.id)
             return cell
         case (.dateSeparator(let date), .separator(let layout)):
             let cell = tableView.makeView(withIdentifier: DateSeparatorCellView.reuseIdentifier, owner: nil) as? DateSeparatorCellView
@@ -51,8 +52,14 @@ final class TimelineTableAdapter: NSObject, NSTableViewDataSource, NSTableViewDe
     }
 
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
-        tableView.makeView(withIdentifier: TimelineRowView.reuseIdentifier, owner: nil) as? TimelineRowView
+        let rowView = tableView.makeView(withIdentifier: TimelineRowView.reuseIdentifier, owner: nil) as? TimelineRowView
             ?? TimelineRowView(frame: .zero)
+        if let c = controller, c.items.indices.contains(row) { rowView.isHovered = c.hoverHighlightedID == c.items[row].id }
+        return rowView
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        controller?.refreshHover()
     }
 
     func tableView(_ tableView: NSTableView, didRemove rowView: NSTableRowView, forRow row: Int) {
@@ -122,6 +129,7 @@ extension TimelineViewController: TimelineCellHost {
         perform(.reply(id))
         return true
     }
+    func presentActionsMenu() -> Bool { presentActionsMenuForSelection() }
     func handleEscapeKey() -> Bool {
         guard tableView.selectedRow >= 0 else { return false }
         tableView.deselectAll(nil)
@@ -131,8 +139,17 @@ extension TimelineViewController: TimelineCellHost {
     func contextMenu(for textView: NSTextView, event: NSEvent, link: URL?) -> NSMenu? {
         let menu = NSMenu()
         populate(menu, row: tableView.row(for: textView))
-        if let link, SafeLink(link.absoluteString) != nil {
-            addMenuItem("Copy Link", action: .copyLink(link), to: menu)
+        if let link, let safe = SafeLink(link.absoluteString) {
+            if !menu.items.isEmpty { menu.insertItem(.separator(), at: 0) }
+            let open = NSMenuItem(title: TimelineStrings.menuOpenLink, action: #selector(menuAction(_:)), keyEquivalent: "")
+            open.target = self
+            open.representedObject = TimelineAction.openLink(safe)
+            let copy = NSMenuItem(title: TimelineStrings.menuCopyLinkAddress, action: #selector(menuAction(_:)),
+                                  keyEquivalent: "")
+            copy.target = self
+            copy.representedObject = TimelineAction.copyLink(safe.url)
+            menu.insertItem(copy, at: 0)
+            menu.insertItem(open, at: 0)
         }
         return menu.items.isEmpty ? nil : menu
     }
@@ -156,31 +173,31 @@ extension TimelineViewController: TimelineCellHost {
     func populate(_ menu: NSMenu, row: Int) {
         menu.removeAllItems()
         guard items.indices.contains(row), let post = items[row].post else { return }
-        if let id = post.postID {
-            addMenuItem("Copy Text", action: .copyText(id), to: menu)
-            if post.actions.canReply { addMenuItem("Reply in Thread", action: .reply(post.rootID ?? id), to: menu) }
-            if post.actions.canReact { addMenuItem("Add Reaction", action: .addReaction(id), to: menu) }
-            if post.actions.canEdit { addMenuItem("Edit Message", action: .edit(id), to: menu) }
-            if post.actions.canDelete { addMenuItem("Delete Message…", action: .delete(id), to: menu) }
-        }
-        if post.postID != nil {
-            menu.addItem(.separator())
-            addMenuItem("View Profile of \(post.author.displayName)", action: .showProfile(post.author.userID), to: menu)
-        }
-        if post.actions.canCopyLink, let url = post.permalink { addMenuItem("Copy Link", action: .copyLink(url), to: menu) }
+        populate(menu, post: post)
     }
-    private func addMenuItem(_ title: String, action: TimelineAction, to menu: NSMenu) {
+    func populate(_ menu: NSMenu, post: PostPresentation) {
+        for entry in TimelinePostActions.entries(for: post) {
+            guard let entry else {
+                menu.addItem(.separator())
+                continue
+            }
+            addMenuItem(entry.title, action: entry.action, symbol: entry.symbol, to: menu)
+        }
+    }
+    private func addMenuItem(_ title: String, action: TimelineAction, symbol: String? = nil, to menu: NSMenu) {
         let item = NSMenuItem(title: title, action: #selector(menuAction(_:)), keyEquivalent: "")
         item.target = self
         item.representedObject = action
+        if let symbol { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
         menu.addItem(item)
     }
     @objc private func menuAction(_ sender: NSMenuItem) {
         guard let action = sender.representedObject as? TimelineAction else { return }
-        if case .copyLink(let url) = action {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(url.absoluteString, forType: .string)
-        }
+        performPrepared(action)
+    }
+    /// Performs a user-chosen action after writing any pasteboard content it implies.
+    func performPrepared(_ action: TimelineAction) {
+        TimelinePostActions.prepare(action)
         perform(action)
     }
 }

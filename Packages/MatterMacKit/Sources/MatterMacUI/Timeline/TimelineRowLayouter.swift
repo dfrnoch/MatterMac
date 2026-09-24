@@ -42,7 +42,7 @@ final class TimelineRowLayouter {
     func bodyText(for item: TimelineItem, post: PostPresentation) -> NSAttributedString {
         guard let context else {
             counters.renders += 1
-            return renderer.render(post.body, budget: budget)
+            return rendered(post)
         }
         let key = RenderCacheKey(context: context, item: item.id, revision: item.revision, appearance: appearance,
                                  fontScaleKey: fontScaleKey)
@@ -51,9 +51,20 @@ final class TimelineRowLayouter {
             return cached
         }
         counters.renders += 1
-        let text = renderer.render(post.body, budget: budget)
+        let text = rendered(post)
         caches.storeRenderedText(text, for: key)
         return text
+    }
+
+    /// Body text plus the trailing "(edited)" marker for edited messages, so it is shown
+    /// on continuation rows too and measured with the text it follows.
+    private func rendered(_ post: PostPresentation) -> NSAttributedString {
+        let text = renderer.render(post.body, budget: budget)
+        guard post.isEdited, case .document(let document, _) = post.body else { return text }
+        return renderer.appendingEditedMarker(to: text, inlineAfterParagraph: document.blocks.last.map {
+            if case .paragraph = $0 { return true }
+            return false
+        } ?? true)
     }
 
     // MARK: - Layout
@@ -112,7 +123,8 @@ final class TimelineRowLayouter {
             counters.estimates += 1
             let contentWidth = TimelineRowMetrics.contentWidth(forLayoutWidth: width)
             let bodyHeight = metrics.estimatedBodyHeight(post.body, contentWidth: contentWidth, budget: budget)
-            return metrics.messageLayout(for: post, width: width, bodyHeight: bodyHeight, renderer: renderer).height
+            return metrics.messageLayout(for: post, width: width, bodyHeight: bodyHeight, renderer: renderer,
+                                         exact: false).height
         default:
             return separatorLayout(for: item, width: width).height
         }

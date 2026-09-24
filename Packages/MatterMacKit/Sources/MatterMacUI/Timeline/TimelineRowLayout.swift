@@ -20,7 +20,8 @@ enum RowLayout {
         switch self {
         case .message(let layout):
             TimelineLayoutCaches.rowLayoutBaseCost
-                + (layout.attachments.count + layout.reactions.count + 8) * TimelineLayoutCaches.rowLayoutFrameCost
+                + (layout.attachments.count + layout.reactions.count + (layout.linkPreview == nil ? 8 : 13))
+                * TimelineLayoutCaches.rowLayoutFrameCost
         case .separator:
             TimelineLayoutCaches.rowLayoutBaseCost
         }
@@ -41,6 +42,8 @@ struct MessageRowLayout: Equatable {
     var header: CGRect?
     var body: CGRect = .zero
     var showMore: CGRect?
+    /// Server-provided link preview card (below the text, above attachments).
+    var linkPreview: LinkPreviewLayout?
     /// One frame per displayed file (at most `maximumDisplayedFiles`).
     var attachments: [CGRect] = []
     var attachmentOverflow: CGRect?
@@ -149,7 +152,7 @@ struct TimelineRowMetrics {
     /// Header, avatar, attachments, reactions, and accessories around a body of the
     /// given height. Deterministic: same inputs produce identical frames.
     func messageLayout(for post: PostPresentation, width: CGFloat, bodyHeight: CGFloat,
-                       renderer: MessageRenderer) -> MessageRowLayout {
+                       renderer: MessageRenderer, exact: Bool = true) -> MessageRowLayout {
         var layout = MessageRowLayout()
         let isSystem: Bool
         if case .system = post.body { isSystem = true } else { isSystem = false }
@@ -174,6 +177,13 @@ struct TimelineRowMetrics {
             y += Self.componentSpacing
             layout.showMore = CGRect(x: contentX, y: y, width: contentWidth, height: Self.buttonHeight)
             y += Self.buttonHeight
+        }
+
+        if let preview = post.linkPreview {
+            y += Self.componentSpacing
+            let card = linkPreviewLayout(preview, origin: CGPoint(x: contentX, y: y), contentWidth: contentWidth, exact: exact)
+            layout.linkPreview = card
+            y += card.frame.height
         }
 
         let files = post.files.prefix(Self.maximumDisplayedFiles)

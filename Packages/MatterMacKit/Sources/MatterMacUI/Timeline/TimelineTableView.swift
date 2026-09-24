@@ -76,7 +76,12 @@ final class TimelineTableView: NSTableView {
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 36, 76:
-            if host?.handleReturnKey() == true { return }
+            // Control-Return: the selected message's actions menu; Return: reply.
+            if event.modifierFlags.intersection([.command, .option, .shift, .control]) == .control {
+                if host?.presentActionsMenu() == true { return }
+            } else if host?.handleReturnKey() == true {
+                return
+            }
         case 53:
             if host?.handleEscapeKey() == true { return }
         case 49 where event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty:
