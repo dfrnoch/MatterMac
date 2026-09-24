@@ -9,6 +9,10 @@ import MattermostRealtime
 enum AppComposition {
     /// Development-only launch argument: `-MatterMacAllowInsecureLoopback YES`.
     static let allowInsecureLoopbackArgument = "-MatterMacAllowInsecureLoopback"
+    /// Development-only launch argument for UI tests: `-MatterMacUITesting YES`.
+    /// Saved sign-ins are neither read nor written, so a test never restores (or
+    /// connects with) the developer's real accounts that share this bundle ID.
+    static let uiTestingArgument = "-MatterMacUITesting"
 
     static func makeEnvironment(
         arguments: [String] = ProcessInfo.processInfo.arguments
@@ -17,7 +21,7 @@ enum AppComposition {
         return AppEnvironment(
             budget: budget,
             allowsInsecureLoopback: allowsInsecureLoopback(arguments: arguments),
-            accounts: KeychainAccounts(
+            accounts: debugFlag(uiTestingArgument, arguments: arguments) ? nil : KeychainAccounts(
                 service: allowsInsecureLoopback(arguments: arguments) ? "org.mattermac.MatterMac.development-accounts" : "org.mattermac.MatterMac.accounts",
                 budget: budget, allowsInsecureLoopback: allowsInsecureLoopback(arguments: arguments)),
             serviceFactory: DefaultMattermostServiceFactory(budget: budget),
@@ -34,10 +38,13 @@ enum AppComposition {
     /// arguments, not `UserDefaults`, so a persisted `defaults write` has no effect,
     /// and it is never saved. Release builds always return `false`.
     static func allowsInsecureLoopback(arguments: [String]) -> Bool {
+        debugFlag(allowInsecureLoopbackArgument, arguments: arguments)
+    }
+
+    /// `<flag> YES` in the launch arguments of a DEBUG build; always `false` in Release.
+    static func debugFlag(_ name: String, arguments: [String]) -> Bool {
         #if DEBUG
-        guard let flag = arguments.firstIndex(of: allowInsecureLoopbackArgument),
-              arguments.indices.contains(flag + 1)
-        else { return false }
+        guard let flag = arguments.firstIndex(of: name), arguments.indices.contains(flag + 1) else { return false }
         return arguments[flag + 1] == "YES"
         #else
         return false

@@ -12,7 +12,9 @@ final class FirstLaunchUITests: XCTestCase {
     private func launchApp(extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         // Argument domain only (in memory): never reopen saved window state.
-        app.launchArguments += ["-ApplePersistenceIgnoreState", "YES"] + extraArguments
+        // UI-testing mode: no Keychain sign-ins are restored, so the connect screen
+        // always appears and the developer's real accounts are never used.
+        app.launchArguments += ["-ApplePersistenceIgnoreState", "YES", "-MatterMacUITesting", "YES"] + extraArguments
         app.launch()
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 20), "main window did not appear")
         return app
@@ -53,7 +55,7 @@ final class FirstLaunchUITests: XCTestCase {
         XCTAssertTrue(disclosure.waitForExistence(timeout: 10), "session-only disclosure missing")
         let disclosureText = (disclosure.value as? String).flatMap { $0.isEmpty ? nil : $0 } ?? disclosure.label
         XCTAssertTrue(
-            disclosureText.contains("only while it is running"),
+            disclosureText.contains("Messages and drafts stay in memory only"),
             "unexpected disclosure text: \(disclosureText)")
 
         XCTAssertFalse(app.buttons["Continue"].isEnabled, "Continue must be disabled while the field is empty")
