@@ -86,7 +86,10 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
     deinit { commandTask?.cancel(); sendTask?.cancel(); visibilityTask?.cancel(); typingTask?.cancel(); selectionTask?.cancel(); downloadTask?.cancel(); for task in imageTasks.values { task.cancel() } }
 
     override func loadView() {
-        view = NSView()
+        let drop = ConversationDropView()
+        drop.canAcceptFiles = { [weak self] in self?.composer.isAttachmentSelectionAllowed == true }
+        drop.onFiles = { [weak self] urls in self?.composerDidReceiveFiles(urls) }
+        view = drop
         addChild(timeline)
         addChild(composer)
         let cancel = NSButton(title: "Cancel Download", target: self, action: #selector(cancelDownload(_:)))
