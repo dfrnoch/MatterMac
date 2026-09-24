@@ -65,10 +65,14 @@ public struct ChannelMemberWire: Decodable, Sendable {
     }
     struct NotifyProps: Decodable {
         let markUnread: String?
-        enum Keys: String, CodingKey { case mark_unread }
+        let desktop: String?
+        let ignoreChannelMentions: String?
+        enum Keys: String, CodingKey { case mark_unread, desktop, ignore_channel_mentions }
         init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
             markUnread = c.lenientString(.mark_unread, maxBytes: 16)
+            desktop = c.lenientString(.desktop, maxBytes: 16)
+            ignoreChannelMentions = c.lenientString(.ignore_channel_mentions, maxBytes: 16)
         }
     }
     public init(from decoder: any Decoder) throws {
@@ -85,7 +89,9 @@ public struct ChannelMemberWire: Decodable, Sendable {
             mentionCountRoot: c.lenientInt64(.mention_count_root) ?? 0,
             urgentMentionCount: c.lenientInt64(.urgent_mention_count) ?? 0,
             lastUpdateAt: c.timestamp(.last_update_at),
-            markUnread: notify?.markUnread == "mention" ? .mention : .all)
+            markUnread: notify?.markUnread == "mention" ? .mention : .all,
+            desktop: ChannelDesktopLevel(wire: notify?.desktop),
+            ignoreChannelMentions: IgnoreChannelMentions(wire: notify?.ignoreChannelMentions))
     }
 }
 
@@ -93,7 +99,7 @@ public struct UserWire: Decodable, Sendable {
     public let user: User
     enum Keys: String, CodingKey {
         case id, username, first_name, last_name, nickname, position, is_bot, delete_at, last_picture_update
-        case locale, roles, email, timezone, props
+        case locale, roles, email, timezone, props, notify_props
     }
     enum TimeZoneKeys: String, CodingKey { case useAutomaticTimezone, automaticTimezone, manualTimezone }
     enum PropKeys: String, CodingKey { case customStatus }
@@ -117,7 +123,26 @@ public struct UserWire: Decodable, Sendable {
             roles: (c.lenientString(.roles, maxBytes: 1_024) ?? "").split(separator: " ").prefix(32).map(String.init),
             email: String((c.lenientString(.email, maxBytes: 320) ?? "").prefix(320)),
             timeZoneIdentifier: Self.timeZone(c),
-            customStatus: Self.customStatus(c))
+            customStatus: Self.customStatus(c),
+            notifyProps: Self.notifyProps(c))
+    }
+
+    /// Sanitized profiles (other users, some broadcasts) carry an empty map: `nil`.
+    private static func notifyProps(_ c: KeyedDecodingContainer<Keys>) -> UserNotifyProps? {
+        guard let props = try? c.nestedContainer(keyedBy: DynamicKey.self, forKey: .notify_props) else { return nil }
+        var raw: [String: String] = [:]
+        var complete = true
+        for key in props.allKeys.prefix(UserNotifyProps.maximumKeys + 1) {
+            guard let value = props.lenientString(key, maxBytes: UserNotifyProps.maximumValueBytes + 1) else {
+                complete = false
+                continue
+            }
+            raw[key.stringValue] = value
+        }
+        if props.allKeys.count > UserNotifyProps.maximumKeys + 1 { complete = false }
+        guard !raw.isEmpty else { return nil }
+        let bounded = UserNotifyProps.bounded(raw)
+        return complete ? bounded : UserNotifyProps(values: bounded.values, isComplete: false)
     }
 
     private static func timeZone(_ c: KeyedDecodingContainer<Keys>) -> String? {

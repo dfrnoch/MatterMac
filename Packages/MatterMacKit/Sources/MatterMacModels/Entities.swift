@@ -123,12 +123,17 @@ public struct ChannelMembership: Hashable, Sendable {
     public var urgentMentionCount: Int64
     public var lastUpdateAt: MattermostTimestamp
     public var markUnread: MarkUnreadLevel
+    /// `notify_props.desktop` for this channel.
+    public var desktop: ChannelDesktopLevel
+    /// `notify_props.ignore_channel_mentions`.
+    public var ignoreChannelMentions: IgnoreChannelMentions
 
     public init(channelID: ChannelID, userID: UserID, roles: [String] = [],
                 lastViewedAt: MattermostTimestamp = .zero, messageCount: Int64 = 0,
                 messageCountRoot: Int64 = 0, mentionCount: Int64 = 0, mentionCountRoot: Int64 = 0,
                 urgentMentionCount: Int64 = 0, lastUpdateAt: MattermostTimestamp = .zero,
-                markUnread: MarkUnreadLevel = .all) {
+                markUnread: MarkUnreadLevel = .all, desktop: ChannelDesktopLevel = .default,
+                ignoreChannelMentions: IgnoreChannelMentions = .default) {
         self.channelID = channelID
         self.userID = userID
         self.roles = roles
@@ -140,6 +145,8 @@ public struct ChannelMembership: Hashable, Sendable {
         self.urgentMentionCount = urgentMentionCount
         self.lastUpdateAt = lastUpdateAt
         self.markUnread = markUnread
+        self.desktop = desktop
+        self.ignoreChannelMentions = ignoreChannelMentions
     }
 
     public var isChannelAdmin: Bool { roles.contains("channel_admin") }
@@ -162,12 +169,14 @@ public struct User: Hashable, Sendable, Identifiable {
     /// Effective IANA time zone (automatic or manual per the user's setting).
     public var timeZoneIdentifier: String?
     public var customStatus: CustomStatus?
+    /// Only present for the signed-in user (the server sanitizes it for others).
+    public var notifyProps: UserNotifyProps?
 
     public init(id: UserID, username: String, firstName: String = "", lastName: String = "",
                 nickname: String = "", position: String = "", isBot: Bool = false,
                 deleteAt: MattermostTimestamp = .zero, lastPictureUpdate: MattermostTimestamp = .zero,
                 locale: String = "", roles: [String] = [], email: String = "", timeZoneIdentifier: String? = nil,
-                customStatus: CustomStatus? = nil) {
+                customStatus: CustomStatus? = nil, notifyProps: UserNotifyProps? = nil) {
         self.id = id
         self.username = username
         self.firstName = firstName
@@ -182,6 +191,7 @@ public struct User: Hashable, Sendable, Identifiable {
         self.email = email
         self.timeZoneIdentifier = timeZoneIdentifier
         self.customStatus = customStatus
+        self.notifyProps = notifyProps
     }
 
     public var fullName: String {

@@ -172,6 +172,17 @@ public final class MattermostHTTPClient: MattermostService {
             .elements.map(\.channel).filter(Self.isMessageChannel)
     }
 
+    public func updateChannelNotifyProps(_ id: ChannelID, _ change: ChannelNotifyPropsChange, me: UserID)
+        async throws(APIError) {
+        guard !change.isEmpty else { return }
+        var props = ["channel_id": id.rawValue, "user_id": me.rawValue]
+        if let desktop = change.desktop { props["desktop"] = desktop.rawValue }
+        if let markUnread = change.markUnread { props["mark_unread"] = markUnread == .mention ? "mention" : "all" }
+        if let ignore = change.ignoreChannelMentions { props["ignore_channel_mentions"] = ignore.rawValue }
+        _ = try await perform(.put, ["channels", id.rawValue, "members", me.rawValue, "notify_props"],
+                              body: try RequestBodyEncoding.encode(props), limit: small, priority: .interactive)
+    }
+
     /// v11 adds non-message channel types (`S`, `BO`, `BP`); they are not shown.
     static func isMessageChannel(_ channel: Channel) -> Bool {
         if case .unknown = channel.type { return false }
@@ -390,6 +401,13 @@ public final class MattermostHTTPClient: MattermostService {
             users.append(user)
         }
         return users
+    }
+
+    public func patchNotifyProps(_ props: UserNotifyProps, me: UserID) async throws(APIError) -> User {
+        // Writing back a truncated map would delete the dropped properties on the server.
+        guard props.isComplete, !props.values.isEmpty else { throw .malformedResponse }
+        return try await send(.put, ["users", me.rawValue, "patch"], body: UserNotifyPatchBody(notify_props: props.values),
+                              decode: UserWire.self, limit: small).user
     }
 
     // MARK: Files and media

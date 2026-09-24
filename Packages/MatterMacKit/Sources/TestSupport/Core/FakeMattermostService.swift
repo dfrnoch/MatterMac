@@ -34,6 +34,11 @@ public final class FakeMattermostService: MattermostService {
         public var postsHandler: (@Sendable (ChannelID, PostPageQuery) async throws -> PostPage)?
         public var unreadHandler: (@Sendable (ChannelID) async throws -> PostPage)?
         public var postsByIDsHandler: (@Sendable ([PostID]) async throws -> [Post])?
+        /// Returned by `preferences()`; saves and deletes update it.
+        public var preferences: [Preference] = []
+        public var channelNotifyChanges: [(ChannelID, ChannelNotifyPropsChange)] = []
+        public var patchedNotifyProps: [UserNotifyProps] = []
+        public var collapsedThreadsConfig = "disabled"
         public var nextID: Int = 1
 
         init(me: User) { self.me = me }
@@ -72,7 +77,8 @@ public final class FakeMattermostService: MattermostService {
 
     public func fullConfiguration() async throws(APIError) -> ClientConfigWire {
         record("fullConfiguration")
-        var values = ["Version": "11.11.1", "CollapsedThreads": "disabled", "MaxPostSize": "16383", "EnableUserTypingMessages": "true"]
+        var values = ["Version": "11.11.1", "CollapsedThreads": withState { $0.collapsedThreadsConfig }, "MaxPostSize": "16383",
+                      "EnableUserTypingMessages": "true"]
         if let enabled = withState({ $0.attachmentsEnabled }) { values["EnableFileAttachments"] = String(enabled) }
         let data: Data
         do { data = try JSONEncoder().encode(values) } catch { throw .malformedResponse }
@@ -80,14 +86,28 @@ public final class FakeMattermostService: MattermostService {
     }
 
     public func logout() async throws(APIError) { record("logout") }
-    public func preferences() async throws(APIError) -> [Preference] { record("preferences"); return [] }
+    public func preferences() async throws(APIError) -> [Preference] {
+        record("preferences")
+        return withState { $0.preferences }
+    }
     public func savePreferences(_ preferences: [Preference], me: UserID) async throws(APIError) {
         record("savePreferences")
-        withState { $0.savedPreferences.append(contentsOf: preferences) }
+        withState { state in
+            state.savedPreferences.append(contentsOf: preferences)
+            for preference in preferences {
+                state.preferences.removeAll { $0.category == preference.category && $0.name == preference.name }
+                state.preferences.append(preference)
+            }
+        }
     }
     public func deletePreferences(_ preferences: [Preference], me: UserID) async throws(APIError) {
         record("deletePreferences")
-        withState { $0.deletedPreferences.append(contentsOf: preferences) }
+        withState { state in
+            state.deletedPreferences.append(contentsOf: preferences)
+            for preference in preferences {
+                state.preferences.removeAll { $0.category == preference.category && $0.name == preference.name }
+            }
+        }
     }
     public func teams() async throws(APIError) -> [Team] { record("teams"); return withState { $0.teams } }
     public func teamMemberships() async throws(APIError) -> [TeamMemberWire] { [] }
@@ -154,6 +174,17 @@ public final class FakeMattermostService: MattermostService {
     }
 
     public func searchChannels(team: TeamID, term: String) async throws(APIError) -> [Channel] { [] }
+
+    public func updateChannelNotifyProps(_ id: ChannelID, _ change: ChannelNotifyPropsChange, me: UserID)
+        async throws(APIError) {
+        record("updateChannelNotifyProps")
+        withState { state in
+            state.channelNotifyChanges.append((id, change))
+            if let desktop = change.desktop { state.memberships[id]?.desktop = desktop }
+            if let markUnread = change.markUnread { state.memberships[id]?.markUnread = markUnread }
+            if let ignore = change.ignoreChannelMentions { state.memberships[id]?.ignoreChannelMentions = ignore }
+        }
+    }
 
     public func posts(channel: ChannelID, query: PostPageQuery, collapsedThreads: Bool, priority: RequestPriority)
         async throws(APIError) -> PostPage
@@ -302,6 +333,17 @@ public final class FakeMattermostService: MattermostService {
     public func autocompleteUsers(team: TeamID, channel: ChannelID?, name: String, limit: Int)
         async throws(APIError) -> [User] {
         withState { state in Array(state.users.values.filter { $0.username.hasPrefix(name) }.prefix(limit)) }
+    }
+
+    public func patchNotifyProps(_ props: UserNotifyProps, me: UserID) async throws(APIError) -> User {
+        record("patchNotifyProps")
+        guard props.isComplete else { throw .malformedResponse }
+        return withState { state in
+            state.patchedNotifyProps.append(props)
+            state.me.notifyProps = props
+            state.users[me]?.notifyProps = props
+            return state.me
+        }
     }
 
     public func fileInfo(_ id: FileID) async throws(APIError) -> FileInfo {
