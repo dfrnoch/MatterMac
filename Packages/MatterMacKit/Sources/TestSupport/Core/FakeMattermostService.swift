@@ -9,6 +9,8 @@ public import MattermostAPI
 public final class FakeMattermostService: MattermostService {
     public let endpoint: ServerEndpoint
     private let lock: OSAllocatedUnfairLock<State>
+    /// Sidebar categories, browsing and membership fakes (FakeMattermostService+Directory.swift).
+    let directory = OSAllocatedUnfairLock(initialState: DirectoryState())
 
     public struct State: Sendable {
         public var me: User
@@ -84,10 +86,30 @@ public final class FakeMattermostService: MattermostService {
     public func savePreferences(_ preferences: [Preference], me: UserID) async throws(APIError) {
         record("savePreferences")
         withState { $0.savedPreferences.append(contentsOf: preferences) }
+        syncFavorites(preferences, deleted: false)
     }
     public func deletePreferences(_ preferences: [Preference], me: UserID) async throws(APIError) {
         record("deletePreferences")
         withState { $0.deletedPreferences.append(contentsOf: preferences) }
+        syncFavorites(preferences, deleted: true)
+    }
+
+    /// The server keeps the Favorites category in sync with `favorite_channel`.
+    private func syncFavorites(_ preferences: [Preference], deleted: Bool) {
+        directory.withLock { state in
+            for preference in preferences where preference.category == "favorite_channel" {
+                guard let id = ChannelID(rawValue: preference.name) else { continue }
+                if !deleted && preference.value == "true" { state.favorites.insert(id) } else { state.favorites.remove(id) }
+                for (team, list) in state.categories {
+                    state.categories[team] = list.map { category in
+                        var category = category
+                        category.channelIDs.removeAll { $0 == id }
+                        if category.kind == .favorites, state.favorites.contains(id) { category.channelIDs.insert(id, at: 0) }
+                        return category
+                    }
+                }
+            }
+        }
     }
     public func teams() async throws(APIError) -> [Team] { record("teams"); return withState { $0.teams } }
     public func teamMemberships() async throws(APIError) -> [TeamMemberWire] { [] }
@@ -153,7 +175,10 @@ public final class FakeMattermostService: MattermostService {
         return [id: MattermostTimestamp(milliseconds: 1)]
     }
 
-    public func searchChannels(team: TeamID, term: String) async throws(APIError) -> [Channel] { [] }
+    public func searchChannels(team: TeamID, term: String) async throws(APIError) -> [Channel] {
+        record("searchChannels")
+        return searchPublicChannels(team: team, term: term)
+    }
 
     public func posts(channel: ChannelID, query: PostPageQuery, collapsedThreads: Bool, priority: RequestPriority)
         async throws(APIError) -> PostPage
