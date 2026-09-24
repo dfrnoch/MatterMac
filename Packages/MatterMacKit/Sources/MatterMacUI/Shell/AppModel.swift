@@ -146,7 +146,13 @@ public final class AppModel {
             let directs = sidebar.directMessageMentions
             return sum + teams + directs
         }
-        let label = total > 0 ? (total > 99 ? "99+" : String(total)) : nil
+        // Like the official app: the mention count, or a dot for unread messages only.
+        let hasUnread = sessionModels.values.contains { model in
+            guard let sidebar = model.sidebar else { return false }
+            return sidebar.teams.contains(where: \.hasUnread)
+                || sidebar.sections.contains { $0.rows.contains(where: \.isUnread) }
+        }
+        let label = total > 0 ? (total > 99 ? "99+" : String(total)) : (hasUnread ? "•" : nil)
         if NSApplication.shared.dockTile.badgeLabel != label { NSApplication.shared.dockTile.badgeLabel = label }
     }
 
