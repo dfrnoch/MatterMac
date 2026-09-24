@@ -38,6 +38,12 @@ nonisolated public enum TimelineAction: Hashable, Sendable {
     case channelMentionTapped(String)
     /// Retry after a failed history page load.
     case retryGap(GapPresentation.Direction)
+    /// Mark the channel unread from this post (`set_unread`).
+    case markUnread(PostID)
+    /// Pin (`true`) or unpin the post in its channel.
+    case setPinned(PostID, Bool)
+    /// Save (`true`) or remove the post from the user's saved messages.
+    case setSaved(PostID, Bool)
 }
 
 /// An image the timeline wants to display. The delegate's image pipeline downsamples to
@@ -49,6 +55,8 @@ nonisolated public enum TimelineImageRequest: Hashable, Sendable {
     case thumbnail(FileID)
     /// The server's preview rendition, downsampled to the thumbnail box.
     case preview(FileID)
+    /// A link-preview image, fetched only through the server's image proxy.
+    case linkPreview(url: String)
 
     /// The rendition for an image attachment's timeline thumbnail: the server preview
     /// when one exists (the ~120 px thumbnail is blurry at 360 pt on Retina).
@@ -63,6 +71,8 @@ nonisolated public enum TimelineMetrics {
     public static let avatarSize: CGFloat = 32
     /// Largest thumbnail box in points; images are scaled to fit preserving aspect ratio.
     public static let maximumThumbnailSize = CGSize(width: 360, height: 240)
+    /// Edge of the square thumbnail in a website link preview card.
+    public static let linkPreviewThumbnailSize: CGFloat = 64
     /// Distance from the bottom (points) within which the user counts as "at the live edge".
     public static let liveEdgeTolerance: CGFloat = 8
     /// Row-height cache width bucket (points).
@@ -86,6 +96,10 @@ public protocol TimelineViewControllerDelegate: AnyObject {
     /// visible). The delegate applies the read-state policy (app active, conversation
     /// visible) and decides whether to mark anything read.
     func timelineVisibleRangeDidChange(first: PostID?, last: PostID?, isAtLiveEdge: Bool)
+    /// Same as above; `userScrolled` is `true` when the user scrolled the timeline since
+    /// the previous report (not a programmatic or snapshot-driven scroll). The default
+    /// implementation forwards to the three-argument form.
+    func timelineVisibleRangeDidChange(first: PostID?, last: PostID?, isAtLiveEdge: Bool, userScrolled: Bool)
     func timeline(perform action: TimelineAction)
     /// Synchronous in-memory cache lookup; must not block or decode on the main actor.
     func timelineImage(for request: TimelineImageRequest) -> NSImage?
@@ -99,4 +113,7 @@ public protocol TimelineViewControllerDelegate: AnyObject {
 
 extension TimelineViewControllerDelegate {
     public func timelineNoLongerNeedsImage(_ request: TimelineImageRequest) {}
+    public func timelineVisibleRangeDidChange(first: PostID?, last: PostID?, isAtLiveEdge: Bool, userScrolled: Bool) {
+        timelineVisibleRangeDidChange(first: first, last: last, isAtLiveEdge: isAtLiveEdge)
+    }
 }

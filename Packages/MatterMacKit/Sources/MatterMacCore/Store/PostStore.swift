@@ -78,11 +78,14 @@ public struct PostStore: Sendable {
             if merged.files.isEmpty && !incoming.files.isEmpty { merged.files = incoming.files }
             if merged.replyCount == 0 && incoming.replyCount > 0 { merged.replyCount = incoming.replyCount }
             if merged.lastReplyAt < incoming.lastReplyAt { merged.lastReplyAt = incoming.lastReplyAt }
+            if merged.linkPreview == nil, let preview = incoming.linkPreview { merged.linkPreview = preview }
             if merged == stored { return .unchanged }
         } else {
             merged = incoming
             // The dedup-return path and list endpoints may omit metadata.
             if merged.files.isEmpty && !merged.fileIDs.isEmpty && !stored.files.isEmpty { merged.files = stored.files }
+            // Posts in `since`/thread lists may lack metadata; keep a preview for the same text.
+            if merged.linkPreview == nil, merged.message == stored.message { merged.linkPreview = stored.linkPreview }
         }
         if merged.pendingPostID == nil { merged.pendingPostID = stored.pendingPostID }
         let reparse = merged.message != stored.message || merged.isDeleted != stored.isDeleted
@@ -140,6 +143,17 @@ public struct PostStore: Sendable {
     /// IDs of retained replies to `root`.
     public func replies(to root: PostID) -> [PostID] {
         entries.values.lazy.filter { $0.post.rootID == root }.map(\.post.id)
+    }
+
+    /// Applies a confirmed local change (e.g. pin state after `POST /posts/{id}/pin`)
+    /// that the server's copy will also carry once it arrives with a newer `updateAt`.
+    @discardableResult
+    public mutating func setPinned(_ id: PostID, _ pinned: Bool) -> Bool {
+        guard var entry = entries[id], !entry.post.isDeleted, entry.post.isPinned != pinned else { return false }
+        entry.post.isPinned = pinned
+        entry.revision = nextRevision()
+        entries[id] = entry
+        return true
     }
 
     public mutating func bumpRevision(_ id: PostID) {
@@ -204,6 +218,7 @@ public struct PostStore: Sendable {
             for field in attachment.fields { cost += 64 + field.title.utf8.count + field.value.utf8.count }
         }
         for (key, value) in post.props.systemContext { cost += 64 + key.utf8.count + value.utf8.count }
+        cost += post.linkPreview?.estimatedCost ?? 0
         return cost
     }
 
@@ -227,6 +242,7 @@ public struct PostStore: Sendable {
         dead.reactions = []
         dead.hasReactions = false
         dead.props = .empty
+        dead.linkPreview = nil
         return dead
     }
 }

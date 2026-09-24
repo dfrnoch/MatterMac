@@ -322,6 +322,16 @@ public final class MattermostHTTPClient: MattermostService {
                               decode: PostListWire.self, limit: large).page
     }
 
+    public func setPinned(_ id: PostID, pinned: Bool) async throws(APIError) {
+        _ = try await perform(.post, ["posts", id.rawValue, pinned ? "pin" : "unpin"], limit: small, priority: .interactive)
+    }
+
+    public func markUnread(from post: PostID, me: UserID) async throws(APIError) -> ChannelUnreadState {
+        // MatterMac has a thread view, so the server may apply CRT semantics.
+        try await send(.post, ["users", me.rawValue, "posts", post.rawValue, "set_unread"],
+                       body: ["collapsed_threads_supported": true], decode: ChannelUnreadWire.self, limit: small).state
+    }
+
     // MARK: Users
 
     public func users(ids: [UserID]) async throws(APIError) -> [User] {
@@ -466,8 +476,12 @@ public final class MattermostHTTPClient: MattermostService {
     public func imageData(_ resource: ImageResource, maximumBytes: Int) async throws(APIError) -> Data {
         let (segments, query) = try Self.imagePath(resource)
         let limit = min(max(0, maximumBytes), budget.apiResponseBytes)
+        var isProxied = false
+        if case .proxiedImage = resource { isProxied = true }
+        // Without a server proxy `/image` answers with a redirect to the third-party
+        // site; it is never followed, so nothing leaves the server's origin.
         let request = HTTPRequest(method: .get, url: apiURL(segments, query), headers: ["Accept": "image/*"],
-                                  credential: credential)
+                                  credential: credential, allowsRedirects: !isProxied)
         let response = try await pipeline.execute(request, priority: .background,
                                                   limits: ResponseLimits(maximumBodyBytes: limit))
         guard let type = response.mediaType, type.hasPrefix("image/") else { throw .malformedResponse }
@@ -486,6 +500,11 @@ public final class MattermostHTTPClient: MattermostService {
         case .customEmoji(let id):
             guard IdentifierValidation.isValid(id) else { throw .badRequest(clientError("mattermac.client.invalid_emoji_id")) }
             return (["emoji", id, "image"], [])
+        case .proxiedImage(let url):
+            guard let link = SafeLink(url), link.kind == .web else {
+                throw .badRequest(clientError("mattermac.client.invalid_image_url"))
+            }
+            return (["image"], [URLQueryItem(name: "url", value: link.url.absoluteString)])
         }
     }
 

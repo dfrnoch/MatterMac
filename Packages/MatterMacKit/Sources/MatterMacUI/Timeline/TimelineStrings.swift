@@ -22,6 +22,59 @@ enum TimelineStrings {
     static let sending = String(localized: "Sending…")
     static let queued = String(localized: "Waiting to send…")
     static let pinned = String(localized: "Pinned")
+    static let saved = String(localized: "Saved")
+
+    // Message actions (context menu, hover bar "More", accessibility custom actions)
+    static let actionReplyInThread = String(localized: "Reply in Thread")
+    static let actionReply = String(localized: "Reply")
+    static let actionAddReaction = String(localized: "Add Reaction…")
+    static let actionMarkUnread = String(localized: "Mark as Unread")
+    static let actionSave = String(localized: "Save Message")
+    static let actionUnsave = String(localized: "Remove from Saved")
+    static let actionPin = String(localized: "Pin to Channel")
+    static let actionUnpin = String(localized: "Unpin from Channel")
+    static let actionCopyLink = String(localized: "Copy Link")
+    static let actionCopyText = String(localized: "Copy Text")
+    static let actionEdit = String(localized: "Edit Message")
+    static let actionDelete = String(localized: "Delete Message…")
+    static let actionMore = String(localized: "More Actions")
+    static let actionOpenLink = String(localized: "Open Link")
+    static let messageActions = String(localized: "Message actions")
+    static let reactedByYou = String(localized: "You reacted")
+
+    static func actionViewProfile(_ name: String) -> String { String(localized: "View Profile of \(name)") }
+
+    static func quickReaction(_ name: String) -> String { String(localized: "React with :\(name):") }
+
+    /// "alice, bob and 3 others reacted with :+1:" (at most the names the builder resolved).
+    static func reactors(_ reaction: ReactionGroup) -> String {
+        let emoji = ":" + reaction.emojiName + ":"
+        var names = reaction.reactorNames
+        if names.isEmpty, reaction.includesCurrentUser { names = [String(localized: "You")] }
+        guard !names.isEmpty else {
+            return reaction.count == 1 ? String(localized: "1 person reacted with \(emoji)")
+                                       : String(localized: "\(reaction.count) people reacted with \(emoji)")
+        }
+        let others = max(0, reaction.count - names.count)
+        if others == 0 {
+            if names.count == 1 { return String(localized: "\(names[0]) reacted with \(emoji)") }
+            let head = names.dropLast().joined(separator: ", ")
+            return String(localized: "\(head) and \(names[names.count - 1]) reacted with \(emoji)")
+        }
+        let head = names.joined(separator: ", ")
+        return others == 1 ? String(localized: "\(head) and 1 other reacted with \(emoji)")
+                           : String(localized: "\(head) and \(others) others reacted with \(emoji)")
+    }
+
+    static func linkPreviewAccessibility(_ preview: LinkPreview) -> String {
+        let site = preview.siteName.isEmpty ? preview.host : preview.siteName
+        let title = preview.title.isEmpty ? preview.link.url.absoluteString : preview.title
+        return String(localized: "Link preview: \(title), \(site)")
+    }
+
+    static func editedAt(_ timestamp: MattermostTimestamp) -> String {
+        String(localized: "Edited \(fullDateTime(timestamp))")
+    }
 
     // Menu titles
     static let menuReply = String(localized: "Reply")
@@ -181,6 +234,16 @@ enum TimelineStrings {
         let formatter = clockOverride.map { $0 ? twentyFourHourFormatter : twelveHourFormatter } ?? timeFormatter
         return formatter.string(from: timestamp.date)
     }
+
+    private static let longFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .full
+        formatter.timeStyle = .medium
+        return formatter
+    }()
+
+    /// Full date and time with seconds, for the timestamp tooltip.
+    static func longDateTime(_ timestamp: MattermostTimestamp) -> String { longFormatter.string(from: timestamp.date) }
     static func fullDateTime(_ timestamp: MattermostTimestamp) -> String { fullFormatter.string(from: timestamp.date) }
     static func date(_ date: Date) -> String { dateFormatter.string(from: date) }
 
@@ -209,6 +272,9 @@ enum TimelineStrings {
         if text.count > accessibilityTextLimit { text = String(text.prefix(accessibilityTextLimit)) + "…" }
         parts.append(text)
         if post.isEdited { parts.append(edited) }
+        if post.isPinned { parts.append(pinned) }
+        if post.isSaved { parts.append(saved) }
+        if let preview = post.linkPreview { parts.append(linkPreviewAccessibility(preview)) }
         if !post.files.isEmpty {
             parts.append(post.files.count == 1 ? String(localized: "1 attachment")
                                                : String(localized: "\(post.files.count) attachments"))

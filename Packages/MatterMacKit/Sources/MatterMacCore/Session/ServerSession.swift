@@ -89,6 +89,9 @@ public actor ServerSession {
     var windowIsVisible = true
     var visibility: [TimelineTarget: VisibleRange] = [:]
     var lastViewedChannel: ChannelID?
+    /// Set by "Mark as Unread": automatic read marking is suspended for this channel
+    /// until the user scrolls its timeline, sends in it, or opens another channel.
+    var manualUnreadHold: ChannelID?
 
     // Publishing
     var dirty: DirtyFlags = []

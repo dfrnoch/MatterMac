@@ -161,6 +161,29 @@ public struct ChannelStats: Sendable, Hashable {
     }
 }
 
+/// `ChannelUnreadAt`: the member's read state after `set_unread`. `messageCount` is the
+/// member's *read* message count (the channel total minus the now-unread posts).
+public struct ChannelUnreadState: Sendable, Hashable {
+    public let channelID: ChannelID
+    public let lastViewedAt: MattermostTimestamp
+    public let messageCount: Int64
+    public let messageCountRoot: Int64
+    public let mentionCount: Int64
+    public let mentionCountRoot: Int64
+    public let urgentMentionCount: Int64
+
+    public init(channelID: ChannelID, lastViewedAt: MattermostTimestamp, messageCount: Int64, messageCountRoot: Int64,
+                mentionCount: Int64, mentionCountRoot: Int64, urgentMentionCount: Int64) {
+        self.channelID = channelID
+        self.lastViewedAt = lastViewedAt
+        self.messageCount = messageCount
+        self.messageCountRoot = messageCountRoot
+        self.mentionCount = mentionCount
+        self.mentionCountRoot = mentionCountRoot
+        self.urgentMentionCount = urgentMentionCount
+    }
+}
+
 public struct SearchQuery: Sendable, Hashable {
     public var team: TeamID
     public var terms: String
@@ -202,6 +225,10 @@ public enum ImageResource: Sendable, Hashable {
     case fileThumbnail(FileID)
     case filePreview(FileID)
     case customEmoji(id: String)
+    /// An external image (link preview) fetched through the server's image proxy,
+    /// `GET /api/v4/image?url=`. Only requested when the server reports `HasImageProxy`;
+    /// redirects (the server's answer when the proxy is off) are never followed.
+    case proxiedImage(url: String)
 }
 
 /// A user-selected local file to upload, read through a scoped handle with bounded
@@ -375,6 +402,11 @@ public protocol MattermostService: Sendable {
     /// `POST /commands/execute`. Not idempotent: a lost response is `.outcomeUnknown`.
     func executeCommand(_ command: String, channel: ChannelID, team: TeamID?, rootID: PostID?)
         async throws(APIError) -> CommandResult
+    /// `POST /posts/{id}/pin` (or `/unpin`). Needs read access; the edit time limit
+    /// applies unless the call is a no-op.
+    func setPinned(_ id: PostID, pinned: Bool) async throws(APIError)
+    /// `POST /users/{me}/posts/{post}/set_unread` with `collapsed_threads_supported`.
+    func markUnread(from post: PostID, me: UserID) async throws(APIError) -> ChannelUnreadState
 
     // Users
     func users(ids: [UserID]) async throws(APIError) -> [User]

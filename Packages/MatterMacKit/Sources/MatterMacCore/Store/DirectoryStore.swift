@@ -54,6 +54,13 @@ public struct DirectoryStore: Sendable {
     public var militaryTime = false
     /// `use_military_time` when set; `nil` when the user never chose.
     public var militaryTimePreference: Bool?
+    /// Saved posts (`flagged_post` preferences, name = post id), capped at
+    /// `ResourceBudget.savedPostIDs`; `savedPostsTruncated` records that the cap was hit.
+    public private(set) var savedPosts: Set<PostID> = []
+    public private(set) var savedPostsTruncated = false
+    /// `display_settings/link_previews` ("false" hides website previews; default on).
+    public var showsLinkPreviews = true
+    private let savedPostLimit: Int
     private let channelLimit: Int
     /// Users that must not be evicted (current user, visible DM partners).
     public var pinnedUsers: [UserID: User] = [:]
@@ -63,6 +70,7 @@ public struct DirectoryStore: Sendable {
         self.statuses = CostLRU(countLimit: max(64, budget.directoryDetails.count / 2),
                                 costLimit: max(64, budget.directoryDetails.count / 2) * 64)
         self.channelLimit = budget.sidebarChannelsPerSession
+        self.savedPostLimit = max(0, budget.savedPostIDs)
     }
 
     // MARK: Teams
@@ -212,6 +220,9 @@ public struct DirectoryStore: Sendable {
             favorites.removeAll()
             hiddenDirectPartners.removeAll()
             hiddenGroups.removeAll()
+            savedPosts.removeAll()
+            savedPostsTruncated = false
+            showsLinkPreviews = true
         }
         for preference in preferences { apply(preference, deleted: false) }
     }
@@ -227,12 +238,23 @@ public struct DirectoryStore: Sendable {
             case "use_military_time":
                 militaryTime = !deleted && preference.value == "true"
                 militaryTimePreference = deleted ? nil : preference.value == "true"
+            case "link_previews":
+                showsLinkPreviews = deleted || preference.value != "false"
             default:
                 break
             }
         case "favorite_channel":
             if let id = ChannelID(rawValue: preference.name) {
                 if !deleted && preference.value == "true" { favorites.insert(id) } else { favorites.remove(id) }
+            }
+        case "flagged_post":
+            if let id = PostID(rawValue: preference.name) {
+                if !deleted && preference.value == "true" {
+                    if savedPosts.count < savedPostLimit || savedPosts.contains(id) { savedPosts.insert(id) }
+                    else { savedPostsTruncated = true }
+                } else {
+                    savedPosts.remove(id)
+                }
             }
         case "direct_channel_show":
             if let id = UserID(rawValue: preference.name) {
@@ -256,5 +278,7 @@ public struct DirectoryStore: Sendable {
         statuses.removeAll()
         pinnedUsers.removeAll()
         favorites.removeAll()
+        savedPosts.removeAll()
+        savedPostsTruncated = false
     }
 }

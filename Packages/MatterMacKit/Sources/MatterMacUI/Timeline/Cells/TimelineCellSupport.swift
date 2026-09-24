@@ -8,6 +8,9 @@ import MatterMacCore
 /// weakly by cells (a cell never outlives its table, but it must not pin the controller).
 protocol TimelineCellHost: AnyObject {
     func perform(_ action: TimelineAction)
+    /// Performs a user-chosen action, first writing pasteboard content it implies
+    /// (Copy Link). Used by menus, the hover bar and accessibility actions.
+    func performPrepared(_ action: TimelineAction)
     func image(for request: TimelineImageRequest) -> NSImage?
     func registerImageDemand(_ request: TimelineImageRequest)
     func unregisterImageDemand(_ request: TimelineImageRequest)
@@ -19,6 +22,8 @@ protocol TimelineCellHost: AnyObject {
     func copySelectedMessages() -> Bool
     func canCopySelectedMessages() -> Bool
     func handleReturnKey() -> Bool
+    /// Control-Return: the selected row's actions menu. Returns `false` if none.
+    func presentActionsMenu() -> Bool
     func handleEscapeKey() -> Bool
     func forwardKeyToTable(_ event: NSEvent)
     func contextMenu(for textView: NSTextView, event: NSEvent, link: URL?) -> NSMenu?

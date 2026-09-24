@@ -52,6 +52,7 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
     let downloadBar = NSStackView()
     private var composerHeight: NSLayoutConstraint?
     private var reactionPicker: NSPopover?
+    private var pendingUserScroll = false
 
     let scope: AccountScope
 
@@ -309,17 +310,31 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
     func timelineRequestsOlder() { run { [target] in await $0.loadOlder(target) } }
     func timelineRequestsNewer() { run { [target] in await $0.loadNewer(target) } }
     func timelineVisibleRangeDidChange(first: PostID?, last: PostID?, isAtLiveEdge: Bool) {
+        timelineVisibleRangeDidChange(first: first, last: last, isAtLiveEdge: isAtLiveEdge, userScrolled: false)
+    }
+    func timelineVisibleRangeDidChange(first: PostID?, last: PostID?, isAtLiveEdge: Bool, userScrolled: Bool) {
+        // A cancelled report must not lose the "user scrolled" signal.
+        let scrolled = userScrolled || pendingUserScroll
+        pendingUserScroll = scrolled
         visibilityTask?.cancel()
         guard let session = model?.session else { return }
-        visibilityTask = Task { [target] in
+        visibilityTask = Task { [weak self, target] in
             guard !Task.isCancelled else { return }
-            await session.updateVisibility(target: target, first: first, last: last, atLiveEdge: isAtLiveEdge)
+            await session.updateVisibility(target: target, first: first, last: last, atLiveEdge: isAtLiveEdge,
+                                           userScrolled: scrolled)
+            if !Task.isCancelled { self?.pendingUserScroll = false }
         }
     }
     func timeline(perform action: TimelineAction) {
         switch action {
         case .reply(let id), .openThread(let id): model?.openThread(root: id)
-        case .openLink(let link): ExternalLinks.open(link)
+        case .openLink(let link):
+            // Links into this server open inside MatterMac; everything else in the browser.
+            if let model, let serverLink = MattermostLink(url: link.url, endpoint: model.session.endpoint) {
+                model.open(serverLink)
+            } else {
+                ExternalLinks.open(link)
+            }
         case .copyLink(let url): Pasteboard.copy(url)
         case .copyText(let id): run { session in if let post = await session.post(id) { Pasteboard.copy(post.message) } }
         case .expand(let id): run { [target] in await $0.expand(id, in: target) }
@@ -350,6 +365,9 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
             // Special mentions (@here, @channel, @all) have no profile.
             if !["here", "channel", "all"].contains(name.lowercased()) { showProfile(.username(name)) }
         case .channelMentionTapped(let name): model?.openChannel(named: name)
+        case .markUnread(let id): run { try await $0.markUnread(from: id) }
+        case .setPinned(let id, let pinned): run { try await $0.setPinned(id, pinned) }
+        case .setSaved(let id, let saved): run { try await $0.setSaved(id, saved) }
         }
     }
     private func showProfile(_ lookup: ProfileLookup) {

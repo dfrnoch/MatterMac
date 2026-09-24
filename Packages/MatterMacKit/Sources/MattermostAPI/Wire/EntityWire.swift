@@ -330,6 +330,7 @@ public struct ClientConfigWire: Decodable, Sendable {
         case UniqueEmojiReactionLimitPerPost, ExperimentalTownSquareIsReadOnly
         case TimeBetweenUserTypingUpdatesMilliseconds, EnableUserTypingMessages, WebsocketURL
         case TeammateNameDisplay, LockTeammateNameDisplay
+        case HasImageProxy, EnableLinkPreviews
     }
 
     public init(from decoder: any Decoder) throws {
@@ -354,7 +355,7 @@ public struct ClientConfigWire: Decodable, Sendable {
             openID: bool(.EnableSignUpWithOpenId) ?? false,
             saml: bool(.EnableSaml) ?? false,
             passwordMinimumLength: int(.PasswordMinimumLength), ssoProviderLabels: providerLabels)
-        capabilities = ServerCapabilities(
+        var capabilities = ServerCapabilities(
             version: c.lenientString(.Version, maxBytes: 64).flatMap(ServerVersion.init(parsing:)),
             buildNumber: String((c.lenientString(.BuildNumber) ?? "").prefix(64)),
             siteName: String((c.lenientString(.SiteName) ?? "").prefix(128)),
@@ -368,6 +369,9 @@ public struct ClientConfigWire: Decodable, Sendable {
             postEditTimeLimitSeconds: int(.PostEditTimeLimit),
             uniqueReactionLimitPerPost: int(.UniqueEmojiReactionLimitPerPost),
             experimentalTownSquareReadOnly: bool(.ExperimentalTownSquareIsReadOnly))
+        capabilities.hasImageProxy = bool(.HasImageProxy)
+        capabilities.linkPreviewsEnabled = bool(.EnableLinkPreviews)
+        self.capabilities = capabilities
         typingIntervalMilliseconds = int(.TimeBetweenUserTypingUpdatesMilliseconds)
         enableUserTypingMessages = bool(.EnableUserTypingMessages)
         websocketURL = c.lenientString(.WebsocketURL, maxBytes: 2_048).flatMap { $0.isEmpty ? nil : $0 }

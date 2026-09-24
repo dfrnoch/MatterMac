@@ -17,11 +17,15 @@ public struct TimelineBuildContext {
     public var collapsedMessageCharacters: Int
     public var timeZone: TimeZone
     public var lastViewedAtOnOpen: MattermostTimestamp?
+    /// Link previews may show a thumbnail: the server proxies external images
+    /// (`HasImageProxy`). Without a proxy, previews are text-only and nothing is fetched
+    /// from third-party sites.
+    public var linkPreviewImages: Bool
 
     public init(scope: AccountScope, me: UserID, channel: Channel?, teamName: String?, endpoint: ServerEndpoint,
                 collapsedThreads: Bool, editTimeLimitSeconds: Int?, canDeleteOthers: Bool, now: MattermostTimestamp,
                 collapsedMessageCharacters: Int, timeZone: TimeZone = .current,
-                lastViewedAtOnOpen: MattermostTimestamp? = nil) {
+                lastViewedAtOnOpen: MattermostTimestamp? = nil, linkPreviewImages: Bool = false) {
         self.scope = scope
         self.me = me
         self.channel = channel
@@ -34,6 +38,7 @@ public struct TimelineBuildContext {
         self.collapsedMessageCharacters = collapsedMessageCharacters
         self.timeZone = timeZone
         self.lastViewedAtOnOpen = lastViewedAtOnOpen
+        self.linkPreviewImages = linkPreviewImages
     }
 }
 
@@ -95,16 +100,12 @@ public enum TimelineBuilder {
                                             missing: &missing)
             let showsThreadContext = !isThread && !context.collapsedThreads && post.rootID != nil
             let isContinuation = !separated && previous.map { prev in
-                prev.userID == post.userID && !prev.type.isSystem && !post.type.isSystem
-                    && post.createAt.milliseconds - prev.createAt.milliseconds < groupingIntervalMilliseconds
-                    && (prev.rootID == post.rootID || isThread)
-                    && !showsThreadContext
-                    && prev.props.overrideUsername == post.props.overrideUsername
+                continues(prev, with: post, isThread: isThread, showsThreadContext: showsThreadContext)
             } ?? false
             let presentation = postPresentation(
                 post: post, document: stored.document, author: author, isContinuation: isContinuation,
                 showsThreadContext: showsThreadContext, expanded: window.expanded.contains(post.id),
-                context: context, isThread: isThread)
+                context: context, isThread: isThread, directory: directory, missing: &missing)
             var hasher = Hasher()
             hasher.combine(stored.revision)
             hasher.combine(isContinuation)
@@ -112,6 +113,10 @@ public enum TimelineBuilder {
             hasher.combine(presentation.actions)
             hasher.combine(window.expanded.contains(post.id))
             hasher.combine(showsThreadContext)
+            // Directory-derived state (reactor names, saved flag, preview visibility).
+            hasher.combine(presentation.reactions)
+            hasher.combine(presentation.isSaved)
+            hasher.combine(presentation.linkPreview)
             items.append(TimelineItem(id: TimelineItemID(.post(post.id)), revision: UInt64(bitPattern: Int64(hasher.finalize())),
                                       content: .post(presentation)))
             previous = post
@@ -122,8 +127,21 @@ public enum TimelineBuilder {
                 id: TimelineItemID(.newerGap), revision: revision(of: window.newerState),
                 content: .gap(GapPresentation(direction: .newer, state: gapState(window.newerState)))))
         } else {
-            // Pending sends appear only at the live edge, after confirmed history.
+            // Pending sends appear only at the live edge, after confirmed history. Like the
+            // official client, a pending send continues the user's own recent group.
+            var groupStart: MattermostTimestamp? = previous.flatMap { prev in
+                prev.userID == context.me && !prev.type.isSystem && !prev.isDeleted && prev.props.overrideUsername == nil
+                    ? prev.createAt : nil
+            }
+            var groupRoot = previous?.rootID
             for send in pending {
+                let sameDay = previousDay == nil || previousDay == dayNumber(send.createdAt, timeZone: context.timeZone)
+                let continuesGroup = sameDay && (groupRoot == send.rootID || isThread) && groupStart.map {
+                    send.createdAt.milliseconds - $0.milliseconds < groupingIntervalMilliseconds
+                        && send.createdAt >= $0
+                } == true
+                groupStart = send.createdAt
+                groupRoot = send.rootID
                 let author = authorPresentation(context.me, post: nil, directory: directory, me: context.me,
                                                 missing: &missing)
                 var blocks: [MarkupBlock] = [.paragraph([.text(send.message)])]
@@ -133,13 +151,14 @@ public enum TimelineBuilder {
                 let document = MessageDocument(blocks: blocks)
                 let presentation = PostPresentation(
                     postID: nil, pendingID: send.pendingID, channelID: send.channelID, rootID: send.rootID,
-                    author: author, createdAt: send.createdAt, isContinuation: false,
+                    author: author, createdAt: send.createdAt, isContinuation: continuesGroup,
                     body: .document(document, isCollapsed: send.message.count > context.collapsedMessageCharacters),
                     isEdited: false, isPinned: false, files: [], reactions: [], replyCount: 0,
                     showsThreadContext: false, sendState: send.presentationState, actions: .none, permalink: nil)
                 var hasher = Hasher()
                 hasher.combine(send.presentationState)
                 hasher.combine(send.attachments.count)
+                hasher.combine(continuesGroup)
                 items.append(TimelineItem(id: TimelineItemID(.pending(send.pendingID)),
                                           revision: UInt64(bitPattern: Int64(hasher.finalize())),
                                           content: .post(presentation)))
@@ -149,6 +168,18 @@ public enum TimelineBuilder {
     }
 
     // MARK: - Pieces
+
+    /// Same author within `groupingIntervalMilliseconds`, neither a system post, same
+    /// thread (channel timelines), no reply context shown, same webhook override name.
+    static func continues(_ prev: Post, with post: Post, isThread: Bool, showsThreadContext: Bool) -> Bool {
+        prev.userID == post.userID && !prev.type.isSystem && !post.type.isSystem
+            && post.createAt.milliseconds - prev.createAt.milliseconds < groupingIntervalMilliseconds
+            && post.createAt >= prev.createAt
+            && (prev.rootID == post.rootID || isThread)
+            && !showsThreadContext
+            && prev.props.overrideUsername == post.props.overrideUsername
+            && prev.props.fromWebhook == post.props.fromWebhook
+    }
 
     static func authorPresentation(_ userID: UserID, post: Post?, directory: DirectoryStore, me: UserID,
                                    missing: inout Set<UserID>) -> AuthorPresentation {
@@ -167,7 +198,8 @@ public enum TimelineBuilder {
 
     static func postPresentation(post: Post, document: MessageDocument, author: AuthorPresentation, isContinuation: Bool,
                                  showsThreadContext: Bool, expanded: Bool, context: TimelineBuildContext,
-                                 isThread: Bool) -> PostPresentation {
+                                 isThread: Bool, directory: DirectoryStore,
+                                 missing: inout Set<UserID>) -> PostPresentation {
         let body: MessageBody
         if post.isDeleted {
             body = .deleted
@@ -190,14 +222,31 @@ public enum TimelineBuilder {
         let permalink = context.teamName.map { team in
             context.endpoint.url(path: [team, "pl", post.id.rawValue])
         }
+        let isPlugin = post.type.isCustomPlugin
         let actions = PostActionHints(canReply: interactive, canReact: interactive,
-                                      canEdit: canEdit, canDelete: canDelete, canCopyLink: permalink != nil)
+                                      canEdit: canEdit, canDelete: canDelete, canCopyLink: permalink != nil,
+                                      canPin: interactive && !isPlugin, canSave: !post.isDeleted && !post.type.isSystem,
+                                      canMarkUnread: !isThread && !post.isDeleted)
         return PostPresentation(
             postID: post.id, pendingID: nil, channelID: post.channelID, rootID: post.rootID, author: author,
             createdAt: post.createAt, isContinuation: isContinuation, body: body, isEdited: post.isEdited,
-            isPinned: post.isPinned, files: post.files, reactions: reactionGroups(post.reactions, me: context.me),
+            isPinned: post.isPinned, files: post.files,
+            reactions: reactionGroups(post.reactions, me: context.me, directory: directory, missing: &missing),
             replyCount: post.rootID == nil ? post.replyCount : 0, showsThreadContext: showsThreadContext,
-            sendState: nil, actions: actions, permalink: permalink)
+            sendState: nil, actions: actions, permalink: permalink,
+            isSaved: directory.savedPosts.contains(post.id), editedAt: post.isEdited ? post.editAt : nil,
+            linkPreview: visiblePreview(post, directory: directory, context: context))
+    }
+
+    /// The link preview to show, honoring `display_settings/link_previews` for website
+    /// previews and dropping thumbnails that cannot go through the server's image proxy.
+    static func visiblePreview(_ post: Post, directory: DirectoryStore, context: TimelineBuildContext) -> LinkPreview? {
+        guard var preview = post.linkPreview, !post.isDeleted, !post.type.isSystem, !post.type.isCustomPlugin else {
+            return nil
+        }
+        if preview.kind == .website, !directory.showsLinkPreviews { return nil }
+        if !context.linkPreviewImages { preview.image = nil }
+        return preview
     }
 
     static func unsupportedSummary(for type: PostType) -> String {
@@ -209,14 +258,48 @@ public enum TimelineBuilder {
 
     /// Groups reactions by emoji in first-appearance order.
     public static func reactionGroups(_ reactions: [Reaction], me: UserID) -> [ReactionGroup] {
-        var order: [String] = []
-        var counts: [String: (count: Int, mine: Bool)] = [:]
-        for reaction in reactions {
-            if counts[reaction.emojiName] == nil { order.append(reaction.emojiName) }
-            let current = counts[reaction.emojiName] ?? (0, false)
-            counts[reaction.emojiName] = (current.count + 1, current.mine || reaction.userID == me)
+        var missing = Set<UserID>()
+        return reactionGroups(reactions, me: me, directory: nil, missing: &missing)
+    }
+
+    /// Groups reactions by emoji and resolves up to `ReactionGroup.maximumReactorNames`
+    /// reactor names per emoji from the directory ("You" first). Unknown reactors among
+    /// those are reported in `missing` so the session fetches their profiles.
+    public static func reactionGroups(_ reactions: [Reaction], me: UserID, directory: DirectoryStore?,
+                                      missing: inout Set<UserID>) -> [ReactionGroup] {
+        struct Group {
+            var count = 0
+            var mine = false
+            var reactors: [UserID] = []
         }
-        return order.map { ReactionGroup(emojiName: $0, count: counts[$0]!.count, includesCurrentUser: counts[$0]!.mine) }
+        var order: [String] = []
+        var groups: [String: Group] = [:]
+        for reaction in reactions {
+            if groups[reaction.emojiName] == nil { order.append(reaction.emojiName) }
+            var group = groups[reaction.emojiName] ?? Group()
+            group.count += 1
+            if reaction.userID == me {
+                group.mine = true
+            } else if group.reactors.count < ReactionGroup.maximumReactorNames {
+                group.reactors.append(reaction.userID)
+            }
+            groups[reaction.emojiName] = group
+        }
+        return order.map { name in
+            let group = groups[name] ?? Group()
+            var names: [String] = []
+            if let directory {
+                if group.mine { names.append(String(localized: "You")) }
+                for id in group.reactors where names.count < ReactionGroup.maximumReactorNames {
+                    if let user = directory.peekUser(id) {
+                        names.append(directory.nameFormat.displayName(for: user))
+                    } else {
+                        missing.insert(id)
+                    }
+                }
+            }
+            return ReactionGroup(emojiName: name, count: group.count, includesCurrentUser: group.mine, reactorNames: names)
+        }
     }
 
     static func gapState(_ state: HistoryWindow.EdgeState) -> GapPresentation.State {

@@ -68,7 +68,8 @@ extension ServerSession {
         let partner = channel.directPartner(of: me.id)
         return SidebarChannelRow(
             channelID: channel.id, displayName: displayName(of: channel), type: channel.type,
-            isUnread: unread.isUnread && channel.id != activeChannel || (unread.mentions > 0),
+            isUnread: unread.isUnread && (channel.id != activeChannel || manualUnreadHold == channel.id)
+                || (unread.mentions > 0),
             mentionCount: Int(unread.mentions), isArchived: channel.isArchived,
             isMuted: directory.memberships[channel.id]?.markUnread == .mention,
             partnerStatus: partner.flatMap { directory.status(of: $0) },
@@ -110,7 +111,8 @@ extension ServerSession {
             scope: scope, me: me.id, channel: channel, teamName: teamName(for: channel), endpoint: endpoint,
             collapsedThreads: collapsedThreadsActive, editTimeLimitSeconds: capabilities.postEditTimeLimitSeconds,
             canDeleteOthers: isAdmin, now: now(), collapsedMessageCharacters: budget.collapsedMessageCharacters,
-            timeZone: deps.timeZone(), lastViewedAtOnOpen: lastViewedOnOpen[target.channelID])
+            timeZone: deps.timeZone(), lastViewedAtOnOpen: lastViewedOnOpen[target.channelID],
+            linkPreviewImages: capabilities.hasImageProxy == true)
         let output = TimelineBuilder.build(window: window, store: store, directory: directory,
                                            pending: pending.items(for: target), context: context)
         missingUsers.formUnion(output.missingUsers)
