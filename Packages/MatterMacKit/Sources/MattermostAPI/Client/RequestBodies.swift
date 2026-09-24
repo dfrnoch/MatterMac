@@ -122,3 +122,8 @@ struct ChannelPatchBody: Encodable {
         try c.encodeIfPresent(purpose, forKey: .purpose)
     }
 }
+
+/// `PUT /users/{id}/patch` restricted to `notify_props` (the complete map).
+struct UserNotifyPatchBody: Encodable {
+    let notify_props: [String: String]
+}

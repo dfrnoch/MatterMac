@@ -27,11 +27,14 @@ public actor ServerSession {
     public nonisolated let connectionUpdates: AsyncStream<ConnectionStatus>
     public nonisolated let searchUpdates: AsyncStream<SearchSnapshot>
     public nonisolated let notices: AsyncStream<SessionNotice>
-    /// Content-free alerts for mentions and direct messages from others (who and where,
-    /// never message text). The UI decides whether to show a notification.
+    /// Alerts for posts from others that the account's server notification
+    /// preferences say should notify (who and where; text only after an explicit
+    /// preview opt-in). The UI decides how to present them.
     public nonisolated let alerts: AsyncStream<IncomingMessageAlert>
     /// Unread totals of followed threads (collapsed reply threads) for the Threads view.
     public nonisolated let threadActivity: AsyncStream<ThreadActivity>
+    /// Server-side display and notification settings (latest value).
+    public nonisolated let accountSettingsUpdates: AsyncStream<AccountSettingsSnapshot>
 
     let sidebarContinuation: AsyncStream<SidebarSnapshot>.Continuation
     let timelineContinuation: AsyncStream<TimelineSnapshot>.Continuation
@@ -47,6 +50,7 @@ public actor ServerSession {
     var searchKind: SearchKind = .terms
     /// The newest reply time already reported read for the open thread (CRT).
     var threadReadMark: (root: PostID, at: MattermostTimestamp)?
+    let accountSettingsContinuation: AsyncStream<AccountSettingsSnapshot>.Continuation
 
     let service: any MattermostService
     let realtime: any RealtimeConnection
@@ -77,6 +81,8 @@ public actor ServerSession {
     var pendingScroll: [TimelineTarget: TimelineScrollRequest] = [:]
     var lastViewedOnOpen: [ChannelID: MattermostTimestamp] = [:]
     var searchState = SearchModel()
+    /// Explicit user opt-in (in memory): alerts carry a short plain-text preview.
+    var alertPreviewsEnabled = false
 
     // Visibility / read policy
     var appIsActive = true
@@ -147,6 +153,7 @@ public actor ServerSession {
         (notices, noticeContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(8))
         (alerts, alertContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(8))
         (threadActivity, threadActivityContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
+        (accountSettingsUpdates, accountSettingsContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
         directory.pin(me)
     }
 
@@ -173,6 +180,7 @@ public actor ServerSession {
         if let preferences = try? await preferences, self.epoch == epoch {
             directory.applyPreferences(preferences, replacing: true)
         }
+        markDirty(.settings)
         do {
             let list = try await teams
             guard self.epoch == epoch else { return }
@@ -229,6 +237,7 @@ public actor ServerSession {
         noticeContinuation.finish()
         alertContinuation.finish()
         threadActivityContinuation.finish()
+        accountSettingsContinuation.finish()
         deps.diagnostics.record(.lifecycle, .info, "session shut down")
         return outcome
     }
@@ -294,6 +303,7 @@ public actor ServerSession {
         }
         if flags.contains(.header) { publishHeader() }
         if flags.contains(.search) { publishSearch() }
+        if flags.contains(.settings) { publishAccountSettings() }
         if !missingUsers.isEmpty { scheduleUserFetch() }
     }
 

@@ -180,6 +180,22 @@ public struct SearchQuery: Sendable, Hashable {
     }
 }
 
+/// Channel member notification properties to change; `nil` fields are not sent.
+public struct ChannelNotifyPropsChange: Sendable, Hashable {
+    public var desktop: ChannelDesktopLevel?
+    public var markUnread: MarkUnreadLevel?
+    public var ignoreChannelMentions: IgnoreChannelMentions?
+
+    public init(desktop: ChannelDesktopLevel? = nil, markUnread: MarkUnreadLevel? = nil,
+                ignoreChannelMentions: IgnoreChannelMentions? = nil) {
+        self.desktop = desktop
+        self.markUnread = markUnread
+        self.ignoreChannelMentions = ignoreChannelMentions
+    }
+
+    public var isEmpty: Bool { desktop == nil && markUnread == nil && ignoreChannelMentions == nil }
+}
+
 /// Image-like resources fetched into memory (bounded) for display.
 public enum ImageResource: Sendable, Hashable {
     case profileImage(UserID, revision: Int64)
@@ -321,6 +337,9 @@ public protocol MattermostService: Sendable {
     func viewChannel(_ id: ChannelID?, previous: ChannelID?, collapsedThreadsSupported: Bool)
         async throws(APIError) -> [ChannelID: MattermostTimestamp]
     func searchChannels(team: TeamID, term: String) async throws(APIError) -> [Channel]
+    /// `PUT /channels/{id}/members/{user}/notify_props` with only the changed keys;
+    /// the server merges them into the member's existing properties.
+    func updateChannelNotifyProps(_ id: ChannelID, _ change: ChannelNotifyPropsChange, me: UserID) async throws(APIError)
 
     // Posts
     func posts(channel: ChannelID, query: PostPageQuery, collapsedThreads: Bool, priority: RequestPriority)
@@ -368,6 +387,9 @@ public protocol MattermostService: Sendable {
     func users(usernames: [String]) async throws(APIError) -> [User]
     func autocompleteUsers(team: TeamID, channel: ChannelID?, name: String, limit: Int)
         async throws(APIError) -> [User]
+    /// `PUT /users/{id}/patch` with `notify_props` only. The server replaces the whole
+    /// map, so `props` must be the complete, unmodified-except-for-the-change map.
+    func patchNotifyProps(_ props: UserNotifyProps, me: UserID) async throws(APIError) -> User
 
     // Files and media
     func fileInfo(_ id: FileID) async throws(APIError) -> FileInfo

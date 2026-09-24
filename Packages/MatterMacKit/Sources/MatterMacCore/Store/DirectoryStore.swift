@@ -52,6 +52,8 @@ public struct DirectoryStore: Sendable {
     public var hiddenGroups: Set<ChannelID> = []
     public var collapsedThreadsPreference: Bool?
     public var militaryTime = false
+    /// `use_military_time` when set; `nil` when the user never chose.
+    public var militaryTimePreference: Bool?
     private let channelLimit: Int
     /// Users that must not be evicted (current user, visible DM partners).
     public var pinnedUsers: [UserID: User] = [:]
@@ -204,6 +206,9 @@ public struct DirectoryStore: Sendable {
     public mutating func applyPreferences(_ preferences: [Preference], replacing: Bool) {
         if replacing {
             preferredNameFormat = nil
+            collapsedThreadsPreference = nil
+            militaryTime = false
+            militaryTimePreference = nil
             favorites.removeAll()
             hiddenDirectPartners.removeAll()
             hiddenGroups.removeAll()
@@ -221,6 +226,7 @@ public struct DirectoryStore: Sendable {
                 collapsedThreadsPreference = deleted ? nil : (preference.value == "on")
             case "use_military_time":
                 militaryTime = !deleted && preference.value == "true"
+                militaryTimePreference = deleted ? nil : preference.value == "true"
             default:
                 break
             }

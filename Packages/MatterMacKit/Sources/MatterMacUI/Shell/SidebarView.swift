@@ -63,6 +63,7 @@ struct SidebarView: View {
         }
         if !row.isArchived {
             Button(row.isMuted ? "Unmute" : "Mute") { session.setMuted(row.channelID, !row.isMuted) }
+            Button("Notification Preferences…") { session.showNotificationPreferences(row.channelID) }
         }
         if row.type == .open || row.type == .private {
             Divider()
@@ -124,7 +125,6 @@ struct AccountBar: View {
                     Toggle("Show Notifications", isOn: Binding(get: { app.notificationsEnabled },
                                                                set: { value in Task { await app.setNotificationsEnabled(value) } }))
                     Toggle("Play Sound", isOn: Binding(get: { app.notificationSounds }, set: { app.notificationSounds = $0 }))
-                        .disabled(!app.notificationsEnabled)
                 }
                 Divider()
                 Button("Review Unsent Work…") { session.isUnsentRecoveryVisible = true }

@@ -5,8 +5,9 @@ import UserNotifications
 
 /// Opt-in Notification Center delivery (SPEC §19). Authorization is requested only
 /// after the user explicitly enables notifications; nothing is requested at launch.
-/// Notifications carry a sender and conversation name but never message text, and
-/// only the conversation identity is attached so a click can open it. Delivery
+/// Notifications carry a sender and conversation name, and message text only when the
+/// user separately opted in to previews; only the conversation identity is attached
+/// so a click can open it. Delivery
 /// stops (and delivered notifications are removed) when the user turns it off or
 /// the process ends; there is no push service after quitting.
 @MainActor
@@ -54,10 +55,11 @@ public final class SystemNotifications: NSObject {
         }
     }
 
-    public func post(title: String, body: String, target: Target, sound: Bool) {
+    public func post(title: String, subtitle: String? = nil, body: String, target: Target, sound: Bool) {
         guard let center else { return }
         let content = UNMutableNotificationContent()
         content.title = String(title.prefix(128))
+        if let subtitle { content.subtitle = String(subtitle.prefix(128)) }
         content.body = String(body.prefix(256))
         content.threadIdentifier = target.channel.rawValue
         if sound { content.sound = .default }

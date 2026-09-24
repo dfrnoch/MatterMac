@@ -26,7 +26,7 @@ struct ThreadsTests {
     @Test func pagesSummariesAndTotalsWithoutLooping() async throws {
         let channelID = CoreFixtures.channel(1).id
         let h = await SessionHarness(configure: { state in
-            state.collapsedThreads = "always_on"
+            state.collapsedThreadsConfig = "always_on"
             state.threads = (0..<30).map { ThreadsTests.thread($0, channel: channelID, unread: $0 < 4 ? 1 : 0, mentions: $0 == 0 ? 2 : 0) }
         })
         _ = await eventually { await h.session.directory.channels[h.channel.id] != nil }
@@ -56,7 +56,7 @@ struct ThreadsTests {
     }
 
     @Test func visibleThreadAtLiveEdgeIsMarkedReadOnce() async throws {
-        let h = await SessionHarness(configure: { state in state.collapsedThreads = "always_on" })
+        let h = await SessionHarness(configure: { state in state.collapsedThreadsConfig = "always_on" })
         await h.openChannel()
         let root = CoreFixtures.post(1, channel: h.channel.id)
         let reply = CoreFixtures.post(50, channel: h.channel.id, rootID: root.id)

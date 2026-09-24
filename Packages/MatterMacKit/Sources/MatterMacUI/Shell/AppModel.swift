@@ -38,8 +38,14 @@ public final class AppModel {
     /// Opt-in Notification Center alerts for mentions and direct messages. Kept in
     /// memory only (SPEC §19); quitting turns them off again.
     public private(set) var notificationsEnabled = false
-    public var notificationSounds = true
+    /// In-app alert sound (see `LocalSettings.playSound`).
+    public var notificationSounds: Bool {
+        get { environment.settings.playSound }
+        set { environment.settings.playSound = newValue }
+    }
     @ObservationIgnored let notifications = SystemNotifications()
+    /// Sounds and Dock bounces; replaceable in tests.
+    @ObservationIgnored var attention: any AttentionRequesting = SystemAttention()
 
     public init(environment: AppEnvironment) {
         self.environment = environment
@@ -56,6 +62,7 @@ public final class AppModel {
 
     /// Enabling asks macOS for permission the first time; nothing is requested at launch.
     public func setNotificationsEnabled(_ enabled: Bool) async {
+        defer { syncAlertPreviews() }
         guard enabled else {
             notificationsEnabled = false
             notifications.removeDelivered()
@@ -72,26 +79,52 @@ public final class AppModel {
         }
     }
 
-    /// Posts a content-free alert: who and where, never the message text.
+    /// Explicit opt-in to message text in Notification Center (in memory only).
+    public func setShowMessagePreview(_ enabled: Bool) {
+        environment.settings.showMessagePreview = enabled
+        syncAlertPreviews()
+    }
+
+    /// Core computes preview text only while previews are on and notifications can
+    /// show them; otherwise alerts stay content-free.
+    func syncAlertPreviews() {
+        let enabled = notificationsEnabled && environment.settings.showMessagePreview
+        for model in sessionModels.values { model.setAlertPreviews(enabled) }
+    }
+
+    /// Notification Center (after opt-in), the selected in-app sound, and a Dock
+    /// bounce for mentions and direct messages while the app is inactive.
     func deliver(_ alert: IncomingMessageAlert) {
-        guard notificationsEnabled, !isShuttingDown, sessionModels.values.contains(where: { $0.scope == alert.scope }) else {
-            return
+        guard !isShuttingDown, sessionModels.values.contains(where: { $0.scope == alert.scope }) else { return }
+        let settings = environment.settings
+        if notificationsEnabled {
+            let content = Self.notificationContent(for: alert, includePreview: settings.showMessagePreview)
+            // The in-app sound below replaces Notification Center's so it plays once.
+            notifications.post(title: content.title, subtitle: content.subtitle, body: content.body,
+                               target: .init(scope: alert.scope, channel: alert.channelID, root: alert.rootID),
+                               sound: false)
         }
-        let title: String
-        let body: String
+        if settings.playSound, alert.soundEnabled { attention.playSound(named: settings.soundName) }
+        if settings.bounceDockIcon, alert.kind != .channelMessage { attention.requestAttention() }
+    }
+
+    /// Who and where; the message text only with an explicit preview opt-in.
+    static func notificationContent(for alert: IncomingMessageAlert, includePreview: Bool)
+        -> (title: String, subtitle: String?, body: String) {
+        let preview = includePreview ? alert.preview : nil
         switch alert.kind {
         case .mention:
-            title = String(localized: "\(alert.senderName) mentioned you")
-            body = String(localized: "in \(alert.channelName)")
+            let place = String(localized: "in \(alert.channelName)")
+            return (String(localized: "\(alert.senderName) mentioned you"), preview == nil ? nil : place, preview ?? place)
         case .directMessage:
-            title = alert.senderName
-            body = alert.channelName == alert.senderName
-                ? String(localized: "New direct message")
-                : String(localized: "New message in \(alert.channelName)")
+            let isDirect = alert.channelName == alert.senderName
+            let fallback = isDirect ? String(localized: "New direct message")
+                                    : String(localized: "New message in \(alert.channelName)")
+            return (alert.senderName, preview == nil || isDirect ? nil : alert.channelName, preview ?? fallback)
+        case .channelMessage:
+            return (alert.channelName, preview == nil ? nil : alert.senderName,
+                    preview ?? String(localized: "New message from \(alert.senderName)"))
         }
-        notifications.post(title: title, body: body,
-                           target: .init(scope: alert.scope, channel: alert.channelID, root: alert.rootID),
-                           sound: notificationSounds)
     }
 
     private func open(_ target: SystemNotifications.Target) {
@@ -156,6 +189,7 @@ public final class AppModel {
         let slot = try registry.add(endpoint: discovery.endpoint, login: result, capabilities: discovery.capabilities)
         let model = SessionViewModel(slot: slot, app: self)
         sessionModels[slot.id] = model
+        model.setAlertPreviews(notificationsEnabled && environment.settings.showMessagePreview)
         activeSession = model
         isAddingServer = false
         if remember, let accounts = environment.accounts {
