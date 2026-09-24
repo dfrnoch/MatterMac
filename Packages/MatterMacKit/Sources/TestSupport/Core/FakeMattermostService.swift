@@ -283,6 +283,21 @@ public final class FakeMattermostService: MattermostService {
         withState { state in Dictionary(ids.map { ($0, state.statuses[$0] ?? .online) }, uniquingKeysWith: { first, _ in first }) }
     }
 
+    public func patchChannel(_ id: ChannelID, displayName: String?, header: String?, purpose: String?)
+        async throws(APIError) -> Channel {
+        record("patchChannel")
+        let updated = withState { state -> Channel? in
+            guard var channel = state.channels[id] else { return nil }
+            if let displayName { channel.displayName = displayName }
+            if let header { channel.header = header }
+            if let purpose { channel.purpose = purpose }
+            state.channels[id] = channel
+            return channel
+        }
+        guard let updated else { throw .notFound(ServerErrorInfo(id: "", statusCode: 404, requestID: nil)) }
+        return updated
+    }
+
     public func flaggedPosts(me: UserID, page: Int, perPage: Int) async throws(APIError) -> PostPage {
         record("flaggedPosts")
         let posts = withState { state in state.flagged.compactMap { state.posts[$0] } }

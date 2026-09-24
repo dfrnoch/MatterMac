@@ -107,3 +107,18 @@ struct CustomStatusBody: Encodable {
     let duration: String
     let expires_at: String?
 }
+
+/// `PUT /channels/{id}/patch`; absent keys are not changed.
+struct ChannelPatchBody: Encodable {
+    let display_name: String?
+    let header: String?
+    let purpose: String?
+
+    func encode(to encoder: any Encoder) throws {
+        enum Keys: String, CodingKey { case display_name, header, purpose }
+        var c = encoder.container(keyedBy: Keys.self)
+        try c.encodeIfPresent(display_name, forKey: .display_name)
+        try c.encodeIfPresent(header, forKey: .header)
+        try c.encodeIfPresent(purpose, forKey: .purpose)
+    }
+}

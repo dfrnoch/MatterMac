@@ -249,3 +249,21 @@ struct CustomStatusTests {
         #expect(h.service.calls.filter { $0 == "setCustomStatus" }.count == 2)
     }
 }
+
+@Suite("Channel editing")
+struct ChannelEditingTests {
+    @Test func patchesOnlyChangedFieldsAndEnforcesLimits() async throws {
+        let h = await SessionHarness()
+        _ = await eventually { await h.session.directory.channels[h.channel.id] != nil }
+        try await h.session.updateChannel(h.channel.id, displayName: "Renamed", header: h.channel.header, purpose: "New purpose")
+        #expect(await h.session.directory.channels[h.channel.id]?.displayName == "Renamed")
+        #expect(await h.session.directory.channels[h.channel.id]?.purpose == "New purpose")
+        await #expect(throws: UserFacingError.messageTooLong(limitCharacters: 250)) {
+            try await h.session.updateChannel(h.channel.id, displayName: nil, header: nil,
+                                              purpose: String(repeating: "x", count: 251))
+        }
+        await #expect(throws: UserFacingError.self) {
+            try await h.session.updateChannel(h.channel.id, displayName: "  ", header: nil, purpose: nil)
+        }
+    }
+}

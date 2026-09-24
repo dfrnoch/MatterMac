@@ -347,6 +347,8 @@ public protocol MattermostService: Sendable {
     func setThreadFollowing(_ thread: PostID, following: Bool, team: TeamID, me: UserID) async throws(APIError)
     /// `PUT /users/{id}/teams/{team}/threads/{thread}/read/{timestamp}`; `thread == nil` marks all read.
     func markThreadRead(_ thread: PostID?, at timestamp: MattermostTimestamp, team: TeamID, me: UserID) async throws(APIError)
+    /// `PUT /channels/{id}/patch`; `nil` fields are left unchanged.
+    func patchChannel(_ id: ChannelID, displayName: String?, header: String?, purpose: String?) async throws(APIError) -> Channel
     /// `GET /users/{id}/posts/flagged` (saved messages), newest first.
     func flaggedPosts(me: UserID, page: Int, perPage: Int) async throws(APIError) -> PostPage
     /// `GET /channels/{id}/pinned`.

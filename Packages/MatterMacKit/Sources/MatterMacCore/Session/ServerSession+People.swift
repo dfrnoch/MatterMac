@@ -127,6 +127,31 @@ extension ServerSession {
         markDirty(.sidebar)
     }
 
+    /// Renames the channel or changes its header/purpose (server permissions apply).
+    public func updateChannel(_ id: ChannelID, displayName: String?, header: String?, purpose: String?)
+        async throws(UserFacingError) {
+        guard isActiveSessionAlive else { throw .authenticationRequired }
+        guard let channel = directory.channels[id] else { throw .notFoundOrInaccessible }
+        if let displayName, displayName.trimmingCharacters(in: .whitespaces).isEmpty { throw .unsupportedCapability(String(localized: "an empty channel name")) }
+        // Server limits (model/channel.go): display name 64, header 1024, purpose 250 runes.
+        if let displayName, displayName.unicodeScalars.count > 64 { throw .messageTooLong(limitCharacters: 64) }
+        if let header, header.unicodeScalars.count > 1024 { throw .messageTooLong(limitCharacters: 1024) }
+        if let purpose, purpose.unicodeScalars.count > 250 { throw .messageTooLong(limitCharacters: 250) }
+        do {
+            let updated = try await service.patchChannel(id, displayName: displayName == channel.displayName ? nil : displayName,
+                                                         header: header == channel.header ? nil : header,
+                                                         purpose: purpose == channel.purpose ? nil : purpose)
+            guard isActiveSessionAlive else { throw UserFacingError.cancelled }
+            directory.upsertChannel(updated)
+            markDirty([.sidebar, .header])
+        } catch let error as UserFacingError {
+            throw error
+        } catch {
+            handleAuthenticationFailureIfNeeded(error)
+            throw Self.userFacing(error)
+        }
+    }
+
     /// Muting maps to the channel member's `mark_unread` notify property.
     public func setMuted(_ id: ChannelID, _ muted: Bool) async throws(UserFacingError) {
         guard isActiveSessionAlive else { throw .authenticationRequired }

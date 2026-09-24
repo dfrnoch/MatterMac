@@ -19,6 +19,7 @@ struct ChannelInfoView: View {
     @State private var membersError: UserFacingError?
     @State private var memberFilter = ""
     @State private var profile: ProfileTarget?
+    @State private var isEditing = false
 
     static let maximumMembers = 600
 
@@ -98,6 +99,10 @@ struct ChannelInfoView: View {
                         .popover(isPresented: profileBinding(partner), arrowEdge: .leading) {
                             UserProfileCard(session: session, lookup: .id(partner)) { profile = nil }
                         }
+                }
+                if !details.type.isDirectOrGroup, !details.isArchived {
+                    Button("Edit Channel…") { isEditing = true }
+                        .sheet(isPresented: $isEditing) { EditChannelSheet(session: session, details: details) }
                 }
                 Button {
                     session.showPinnedPosts()
@@ -251,5 +256,58 @@ private struct MemberRow: View {
         if member.isBot { parts.append(String(localized: "bot")) }
         if member.isGuest { parts.append(String(localized: "guest")) }
         return parts.joined(separator: ", ")
+    }
+}
+
+/// Rename a channel or change its purpose and header (explicit server change;
+/// the server decides whether the user may).
+private struct EditChannelSheet: View {
+    let session: SessionViewModel
+    let details: ChannelDetailsPresentation
+    @State private var name = ""
+    @State private var purpose = ""
+    @State private var header = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Edit Channel").font(.title3.weight(.semibold))
+            LabeledContent("Name") {
+                TextField("Channel name", text: $name).textFieldStyle(.roundedBorder)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Purpose").font(.callout.weight(.medium))
+                TextEditor(text: $purpose).frame(height: 60).font(.body)
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.3)))
+                Text("\(purpose.count)/250").font(.caption).foregroundStyle(purpose.count > 250 ? .red : .secondary)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Header").font(.callout.weight(.medium))
+                TextEditor(text: $header).frame(height: 80).font(.body)
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.3)))
+                Text("Shown under the channel name. Markdown is supported. \(header.count)/1024")
+                    .font(.caption).foregroundStyle(header.count > 1024 ? .red : .secondary)
+            }
+            Text("Changes are saved on the server and visible to everyone in the channel.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    session.updateChannel(details.channelID, displayName: name, header: header, purpose: purpose)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || name.count > 64
+                          || purpose.count > 250 || header.count > 1024)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+        .onAppear {
+            name = details.displayName
+            purpose = details.purpose
+            header = details.header
+        }
     }
 }

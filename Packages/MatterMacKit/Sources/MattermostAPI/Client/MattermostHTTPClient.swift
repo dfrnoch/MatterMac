@@ -335,6 +335,13 @@ public final class MattermostHTTPClient: MattermostService {
         return result
     }
 
+    public func patchChannel(_ id: ChannelID, displayName: String?, header: String?, purpose: String?)
+        async throws(APIError) -> Channel {
+        try await send(.put, ["channels", id.rawValue, "patch"],
+                       body: ChannelPatchBody(display_name: displayName, header: header, purpose: purpose),
+                       decode: ChannelWire.self, limit: small).channel
+    }
+
     public func flaggedPosts(me: UserID, page: Int, perPage: Int) async throws(APIError) -> PostPage {
         let size = min(max(perPage, 1), Self.pageSizeRange.upperBound)
         return PostPage(wire: try await get(PostListWire.self, ["users", me.rawValue, "posts", "flagged"], query: [

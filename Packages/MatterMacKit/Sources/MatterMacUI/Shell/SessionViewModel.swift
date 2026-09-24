@@ -413,6 +413,10 @@ public final class SessionViewModel {
         perform { try await $0.setFavorite(channel, favorite) }
     }
 
+    public func updateChannel(_ channel: ChannelID, displayName: String?, header: String?, purpose: String?) {
+        perform { try await $0.updateChannel(channel, displayName: displayName, header: header, purpose: purpose) }
+    }
+
     public func setMuted(_ channel: ChannelID, _ muted: Bool) {
         perform { try await $0.setMuted(channel, muted) }
     }
