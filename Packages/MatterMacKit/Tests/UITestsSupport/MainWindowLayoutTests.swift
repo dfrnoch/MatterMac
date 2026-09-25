@@ -16,17 +16,25 @@ struct MainWindowLayoutTests {
         h.service.withState { [post] in $0.posts[post.id] = post }
         h.model.select(channel: h.channel.id)
         let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: width, height: 640),
-                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+                              styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.isRestorable = false
         defer { window.close() }
         let host = NSHostingController(rootView: MainWindowView(app: h.app, session: h.model).frame(minWidth: 760, minHeight: 500))
+        host.sizingOptions = [.minSize]
         window.contentViewController = host
         window.setContentSize(NSSize(width: width, height: 640))
         for _ in 0..<60 {
             host.view.layoutSubtreeIfNeeded()
             if h.model.draftProvider != nil { break }
             try await Task.sleep(for: .milliseconds(10))
+        }
+        if let navigation = descendants(host.view).compactMap({ $0 as? NSSplitView }).first {
+            navigation.setPosition(276, ofDividerAt: 0)
+            for _ in 0..<20 {
+                host.view.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(10))
+            }
         }
         let composer = try #require(h.model.draftProvider as? ConversationController)
         let draft = Draft(text: "Unsent while searching", selectedRange: NSRange(location: 2, length: 4))

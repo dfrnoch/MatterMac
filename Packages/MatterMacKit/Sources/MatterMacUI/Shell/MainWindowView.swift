@@ -15,14 +15,19 @@ struct MainWindowView: View {
     @ViewBuilder private func conversationArea(width: CGFloat) -> some View {
         // Keep both panes readable; at narrow widths the selected trailing pane
         // replaces the conversation until its existing Close action is used.
+        // A nested native HSplitView adds the sidebar safe-area inset to its
+        // minimum widths (1100pt window + 276pt sidebar overflowed by 16.5pt).
+        // HStack keeps responsive panes inside the proposal; only the outer
+        // sidebar divider is draggable.
         let showsBothPanes = width >= 800
         if session.isThreadsViewVisible {
-            HSplitView {
+            HStack(spacing: 0) {
                 if showsBothPanes || session.thread == nil {
                     ThreadsListView(session: session)
                         .frame(minWidth: 300, idealWidth: 420, maxHeight: .infinity)
                 }
                 if let thread = session.thread {
+                    if showsBothPanes { Divider() }
                     TrailingPane(title: "Thread", systemImage: "bubble.left.and.text.bubble.right",
                                  close: { session.closeThread() },
                                  accessory: { ThreadFollowButton(session: session, target: thread.target) }) {
@@ -30,19 +35,21 @@ struct MainWindowView: View {
                     }
                     .frame(minWidth: 300, idealWidth: 480)
                 } else if showsBothPanes {
+                    Divider()
                     ContentUnavailableView("Select a Thread", systemImage: "text.bubble",
                                            description: Text("Choose a thread to read and reply."))
                         .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         } else if let channel = session.selectedChannel {
-            HSplitView {
+            HStack(spacing: 0) {
                 if showsBothPanes || (session.thread == nil && !session.isSearchVisible && !session.isChannelInfoVisible) {
                     ConversationView(session: session, target: .channel(channel), snapshot: session.timeline)
                         .frame(minWidth: 300)
                 }
                 // The single optional trailing panel (SPEC §4): thread or details.
                 if let thread = session.thread {
+                    if showsBothPanes { Divider() }
                     TrailingPane(title: "Thread", systemImage: "bubble.left.and.text.bubble.right",
                                  close: { session.closeThread() },
                                  accessory: { ThreadFollowButton(session: session, target: thread.target) }) {
@@ -50,6 +57,7 @@ struct MainWindowView: View {
                     }
                     .frame(minWidth: 240, idealWidth: 360)
                 } else if session.isSearchVisible {
+                    if showsBothPanes { Divider() }
                     GeometryReader { geometry in
                         SearchPane(session: session) {
                             if !showsBothPanes { session.isSearchVisible = false }
@@ -58,6 +66,7 @@ struct MainWindowView: View {
                     }
                     .frame(minWidth: 280, idealWidth: 380)
                 } else if session.isChannelInfoVisible {
+                    if showsBothPanes { Divider() }
                     TrailingPane(title: "Channel Info", systemImage: "info.circle",
                                  close: { session.isChannelInfoVisible = false }) {
                         ChannelInfoView(session: session, channel: channel).id(channel)
