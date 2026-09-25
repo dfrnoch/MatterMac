@@ -1743,3 +1743,123 @@ This intermittent test was not altered by the packaging task.
 
 Next: clean-account drag-and-drop installation and first launch on macOS 14.
 Do not distribute the earlier local packaging-check DMGs as notarized artifacts.
+
+## 2026-09-25 — saved local settings, notifications on by default (user request)
+
+The user asked for notifications and message previews to be on automatically and
+reported that the notification switch was off again after reopening the app (the
+"On This Mac" settings were memory-only). Decision 0032:
+
+- `LocalSettings` saves notifications, previews, sound and sound name, Dock bounce,
+  send behavior, text size and appearance through an injected
+  `LocalSettingsStorage` (`UserDefaults.standard` from `AppComposition`, keys
+  `MatterMac.*`). Loads are typed and validated; invalid values fall back to the
+  defaults and loading writes nothing. Package tests and `-MatterMacUITesting`
+  pass no storage; UI testing also starts with notifications off in memory.
+- Defaults: notifications on, previews on; sound and Dock bounce stay on.
+- `AppModel.refreshNotificationAuthorization()` runs after each sign-in (new or
+  restored) and on app activation: it reads the macOS status and shows the
+  permission request only while `.notDetermined`, at most once per launch, never
+  without an account. Toggles show the saved choice; Settings says when macOS
+  blocks notifications. Quit keeps the saved choice.
+- Updated Settings header/privacy note, first-launch disclosure, About panel,
+  README, compatibility table, SPEC §2/§7/§19 and AGENTS.md; the XCUITest string
+  for the local-settings header was updated but XCUITests were not run.
+
+Commands and results:
+- `swift build --package-path Packages/MatterMacKit` (and `--build-tests`):
+  succeeded, zero warnings.
+- `swift test --package-path Packages/MatterMacKit`: exit 0; the five Swift
+  Testing runs reported 177, 29, 18, 166 and 61 tests passed. New tests:
+  `LocalSettingsPersistenceTests` (defaults, save/restore via a new environment,
+  invalid values, memory-only mode), automatic-authorization tests in
+  `SettingsAndAttentionTests`, and saved-choice/no-account checks in
+  `NotificationLifecycleTests`. All use an in-memory storage and fake
+  notification center; no real defaults domain or Notification Center was used.
+- `xcodebuild -workspace MatterMac.xcworkspace -scheme MatterMac -configuration Debug -derivedDataPath build build`:
+  **BUILD SUCCEEDED**, only the existing AppIntents metadata warning.
+
+Not run: the app itself, XCUITests, and a real macOS permission prompt.
+Next: in the running app, confirm the one-time permission request after sign-in,
+and that the switch and a changed text size survive quit and relaunch.
+
+## 2026-09-25 — UI polish batch (hover, title bar, sidebar, paging, Channel Info)
+
+User-reported issues, each fixed and covered:
+
+- **Scrolling to the top loaded page after page.** `captureAnchor()` anchored on
+  the older-history gap row, which stays first after a prepend, so the viewport
+  stayed at the top and re-triggered paging. It now anchors on the row after the
+  gap. New `prependedOlderPageKeepsThePositionAndDoesNotRequestAgain` failed
+  before the fix and passes after it.
+- **Hover highlighted messages under the composer, the pill and toasts.** A new
+  `isPointerOccluded` check hit-tests the window: only a pointer over the table
+  itself hovers a row. New test: `overlaysAboveTheTimelineBlockTheHover`. The
+  jump-to-latest pill's button now fills the whole capsule.
+- **Square hover boxes inside rounded bars.** New `CapsuleHoverButton` (capsule
+  hover and press highlight) for the message action bar and the media viewer.
+  Snapshot inspected.
+- **The profile pill covered the last sidebar row.** A spacer row at the end of
+  the list replaces `contentMargins`. `captureFloatingChrome` now scrolls the list
+  to the end; inspected.
+- **Conversation title at the start of the top bar; controls no longer move.** On
+  macOS 26, the title is a `.navigation` item in the detail column with a
+  secondary line: presence or member count, archived, and the header as plain
+  text rendered by the markup parser. An empty principal item keeps the controls
+  trailing. `.primaryAction`/`.automatic` items and `ToolbarSpacer(.flexible)`
+  alone packed the controls after the title. The accessory item that appeared and
+  disappeared per channel is gone on macOS 26. Verified in full-size-content
+  fixture windows. In a window without `.fullSizeContentView`, `.navigation` items
+  sit next to the traffic lights; the real app uses full-size content.
+- **Channel Info redesign** (subagent): see the entry above for details. Adds
+  `InfoPaneComponents.swift` and `ChannelHeaderMarkup.swift`, and fixes an
+  existing crash when a bot member row appeared.
+- **Notifications on by default and local settings saved** (subagent): see the
+  entry above and decision 0032.
+
+Other improvements found while checking:
+
+- **Composer placeholder.** It was never set; it now reads "Message #channel",
+  "Message Name", "Reply in thread" or "This channel is read-only".
+- **Recent reactions.** The quick reactions and the picker's "Frequently Used"
+  row follow the account's recent reactions (`DirectoryStore.recentReactions`,
+  kept in the content cache; custom emoji are skipped in the bar).
+- **Activity reports are chained** so they reach the server in order. This was
+  found as a flaky `UserActivityTests` run under load.
+
+Full `swift test --package-path Packages/MatterMacKit` passed (UI-support 182;
+`/tmp/mattermac-batch-tests.log`). The Debug build passed with only the
+AppIntents warning (`/tmp/mattermac-batch-build.log`). Not verified in the
+packaged app. An uncommitted `DEVELOPMENT_TEAM` edit in `project.pbxproj` comes
+from Xcode, not this work.
+
+## 2026-09-25 — release pipeline (nightly and production)
+
+Added `.github/workflows/release.yml` (decision 0033, `docs/releasing.md`):
+
+- nightly runs daily at 02:17 UTC and are skipped when `main` has not changed;
+- manual runs choose nightly or production;
+- nightly label `1.0.0-nightly.<yyyymmdd>.<run>`, published as a GitHub
+  pre-release; the newest 14 are kept;
+- production releases `v<MARKETING_VERSION>` as latest, then commits the next
+  version to `main`.
+
+Signing, notarization and the DMG moved into the reusable `build-dmg.yml`, which
+now also checks the injected Info.plist versions. `sign.yml` calls it for
+`-dev.<run>` artifacts. `Tools/ReleaseVersion.swift` computes and bumps versions.
+`MARKETING_VERSION` went from 0.1.0 to 1.0.0. Help ▸ About shows
+`MatterMacVersionLabel`.
+
+Checked locally:
+
+- `ReleaseVersion.swift` commands, including invalid input;
+- the `prepare` step's shell under simulated schedule, production and override
+  events, including the skip when a nightly tag points at `HEAD` (temporary tag
+  removed afterwards);
+- `actionlint` 1.7.12 on all workflows: clean (shellcheck not installed);
+- a Debug build with injected versions, checked with `plutil` (1.0.0 / 45 /
+  1.0.0-nightly.20260923.45) — the default local build shows `1.0.0-dev`;
+- `swift test` passed (`/tmp/mattermac-release-tests.log`).
+
+Not run: the workflows on GitHub. The first nightly or production run is the real
+check of runner `swift`, `gh release` permissions and pushing to `main`.
