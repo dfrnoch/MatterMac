@@ -22,7 +22,7 @@ struct LiveEmojiCommandTests {
         var created: CustomEmoji?
         do {
             let team = try #require(try await api.teams().first)
-            let channel = try await api.createDirectChannel(with: login.user.id, me: login.user.id)
+            let channel = try #require(try await api.channels(team: team.id).first)
             let suggestions = try await api.commandSuggestions(userInput: "/a", team: team.id, channel: channel.id, rootID: nil)
             #expect(suggestions.contains { $0.complete == "away" })
             #expect(!(try await api.autocompleteCommands(team: team.id)).isEmpty)
@@ -30,6 +30,7 @@ struct LiveEmojiCommandTests {
             let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=")!
             let emoji = try await api.createCustomEmoji(name: name, png: png, creator: login.user.id)
             created = emoji
+            #expect(!(try await api.imageData(.customEmoji(id: emoji.id), maximumBytes: 64 * 1_024)).isEmpty)
             #expect(try await api.customEmoji(named: name)?.id == emoji.id)
             #expect(try await api.customEmoji(names: [name, "mm_missing_emoji"]).map(\.id) == [emoji.id])
             #expect(try await api.autocompleteCustomEmoji(name: name).contains { $0.id == emoji.id })

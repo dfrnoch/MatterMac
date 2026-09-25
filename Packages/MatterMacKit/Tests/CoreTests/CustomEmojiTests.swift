@@ -38,6 +38,24 @@ struct CustomEmojiTests {
         #expect(store.knownCount == 0 && store.missCount == 0 && store.wanted.isEmpty)
     }
 
+    @Test func metadataResolvesWithoutLookupAcrossRichMarkup() throws {
+        let document = MarkupParser.parse("- :party_parrot:\n\n| emoji |\n| --- |\n| :custom_table: |")
+        #expect(document.customEmojiCandidates() == ["party_parrot", "custom_table"])
+        var post = CoreFixtures.post(1, channel: CoreFixtures.channel(1).id)
+        post.customEmojis = [Self.emoji]
+        let output = TimelineBuilderInteractionTests().build([post])
+        var presentation = try #require(output.items.compactMap(\.post).first)
+        presentation.reactions = [ReactionGroup(emojiName: "party_parrot", count: 1, includesCurrentUser: false)]
+        var missing: [String] = []
+        var seen = Set<String>()
+        TimelineBuilder.resolveCustomEmoji(in: &presentation, post: post, candidates: ["party_parrot", "custom_table"],
+                                          store: CustomEmojiStore(budget: .standard), now: Date(),
+                                          missing: &missing, missingSet: &seen)
+        #expect(presentation.customEmoji["party_parrot"] == Self.emoji.id)
+        #expect(presentation.reactions.first?.customEmojiID == Self.emoji.id)
+        #expect(missing == ["custom_table"])
+    }
+
     @Test func capabilityGatedCompletionAndLookup() async {
         let h = await SessionHarness()
         h.service.withEmojiCommands { $0.emoji = [Self.emoji] }

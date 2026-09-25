@@ -58,7 +58,13 @@ extension MessageDocument {
                 switch block {
                 case .paragraph(let inlines), .heading(_, let inlines): visit(inlines, depth: 0)
                 case .blockQuote(let children): visit(children, depth: depth + 1)
-                case .list(_, _, let items): for item in items { visit(item, depth: depth + 1) }
+                case .list(let list): for item in list.items { visit(item.blocks, depth: depth + 1) }
+                case .table(let table):
+                    for cell in table.header { visit(cell, depth: 0) }
+                    for row in table.rows { for cell in row { visit(cell, depth: 0) } }
+                case .attachment(let attachment):
+                    visit(attachment.text, depth: depth + 1)
+                    for field in attachment.fields { visit(field.value, depth: depth + 1) }
                 default: continue
                 }
             }
