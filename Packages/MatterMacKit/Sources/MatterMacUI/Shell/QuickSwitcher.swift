@@ -344,7 +344,7 @@ struct QuickSwitcherRow: View {
             .background {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.2))
+                        .fill(.tint.opacity(0.2))
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -367,9 +367,9 @@ struct QuickSwitcherRow: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
                     .frame(minWidth: 20, minHeight: 18)
-                    .background(Capsule().fill(Color.accentColor))
+                    .background(Capsule().fill(.tint))
             } else if item.isUnread {
-                Circle().fill(Color.accentColor).frame(width: 8, height: 8)
+                Circle().fill(.tint).frame(width: 8, height: 8)
             }
             if isSelected {
                 Image(systemName: "return")

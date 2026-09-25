@@ -242,10 +242,10 @@ struct MainWindowView: View {
         // conversation panes draw no background of their own while it is active),
         // and its accent for badges and controls. Applies live from Settings.
         .themedBackground()
+        .overlay { QuickSwitcherOverlay(session: session) }
         .themeAccentTint()
         .environment(\.matterMacTheme, app.environment.settings.theme)
         .focusedSceneValue(\.matterMacSession, session)
-        .overlay { QuickSwitcherOverlay(session: session) }
         .sheet(isPresented: $session.isUnsentRecoveryVisible) { UnsentRecoveryView(session: session) }
     }
 }
