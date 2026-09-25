@@ -1463,3 +1463,187 @@ Universal Release build passed (`/tmp/mm-floating-profile-release.log`), with on
 the existing skipped-AppIntents metadata warning. Refreshed
 `build/Distribution/MatterMac.app` and verified its signature. Updated ZIP SHA-256:
 `c656b8d9441c3ca0bec9cdcd0f2f13813b22066672e0db67cb0aadfc1aff1157`.
+
+## 2026-09-25 — jump-to-latest pill and team name in the title bar
+
+Replaced the timeline's plain push button with `JumpToLatestPill`: a 30 pt
+Liquid Glass capsule (`NSGlassEffectView`; menu-material capsule before macOS 26)
+with a soft shadow, a semibold title and a leading arrow. New messages lead with
+a white arrow on an accent disc instead of tinting the surface: with the
+Graphite accent a tinted glass surface put white text on light gray in light
+mode. The content is still a borderless `NSButton` for VoiceOver and keyboard
+access.
+
+The team name (with the server name beneath it when several servers are signed
+in) moved from a row above the channel list into the title bar, beside the
+traffic lights, as a menu with a chevron. The menu holds the former `+` menu
+items. In the full-size-content window a `.navigation` item landed in the detail
+column, so it is an `.automatic` item declared by the sidebar, sized to the
+column width minus 154 pt (decision 0030). Long names truncate and the sidebar
+toggle stays in the column. This was checked with a temporary "GeekBoy -
+Technology Community Server" fixture name. A hit test at the title found the
+toolbar item's hosting view, not the title bar.
+
+New `jumpToLatestPillFollowsTheLiveEdge` (dark and light) checks title,
+prominence, centering, the button action, and hiding at the live edge;
+`MM_SNAPSHOT_DIR` captures only its own window. Calling `performClick` on the
+pill's button in that test made the parallel UI-test process exit early with
+status 0 and no summary, so the test invokes the action directly and asserts
+target/action. `swift test --package-path Packages/MatterMacKit` passed
+(`/tmp/mattermac-jump-title-tests.log`), and the UI-support target alone passed
+161 tests (`/tmp/mattermac-jump-title-uitests.log`). Debug workspace build passed
+with only the existing AppIntents metadata warning
+(`/tmp/mattermac-jump-title-build.log`). Not checked in the packaged app against
+a live server; the Distribution build was not refreshed.
+
+### Sidebar edge and in-window media viewer (same session)
+
+The channel list is clipped at its top edge, and the macOS 26 top scroll edge
+effect is hidden. Rows no longer scroll on under the traffic lights, where they
+were blurred. `captureFloatingChrome` now also scrolls the channel list.
+
+Image attachments open in `MediaViewerController`, an in-window viewer over the
+whole window, including the title bar (decision 0030). The design was studied
+from SakuraCord's GPL-3.0 viewer; no code was copied. It shows:
+
+- the author avatar and name, date, file name and "n of m" at the top left;
+- a glass group with Copy Image, Save… and Actual Size/Fit, plus a separate Close
+  button, at the top right;
+- previous/next buttons and arrow keys for a message's images;
+- double-click, pinch and ⌘+/⌘-/⌘0 zoom, with drag to pan;
+- Escape, Space, ⌘W or a click outside the image to close.
+
+The timeline thumbnail (the same leased `Decoded`) stands in while the preview
+loads. `ImageViewerWindow.swift` was removed; file search uses the same viewer.
+Video and other files still go through Save only; playback is not implemented.
+
+New `mediaViewerCoversTheWindowAndMovesBetweenAMessagesImages` checks:
+
+- the overlay is on the frame view and first responder;
+- the author, time and three-image content are set;
+- → loads the next preview;
+- zoom toggles;
+- Escape removes the overlay and releases its leases.
+
+Captures from it were inspected (`MM_SNAPSHOT_DIR`). Full
+`swift test --package-path Packages/MatterMacKit` passed; the UI-support target
+ran 162 tests (`/tmp/mattermac-viewer-tests.log`). The Debug workspace build
+passed with only the existing AppIntents warning
+(`/tmp/mattermac-viewer-build.log`). None of this was checked in the packaged
+app against a live server, and the Distribution build was not refreshed.
+
+Next: check the viewer and title placement in the real app window with a local
+test server. Then decide whether to stream video through the app transport.
+
+## 2026-09-25 — on-device content cache (user request)
+
+The user rejected the session-only rule: "I want cache, images, profiles and
+anything that is good to be loaded fast should be cached on device, recent chats
+too." Implemented `ContentCache` (decision 0031; SPEC §2/§7, AGENTS.md,
+architecture updated).
+
+- **Models:** `Codable` added to models (synthesized), with validating decoders for
+  `SafeLink` and `SidebarCategoryID`.
+- **ContentCache (MatterMacCore/Persistence):**
+  - per-account AES-GCM files; kind and name are authenticated;
+  - digest names;
+  - two LRUs, bounded by `ResourceBudget.diskCache`;
+  - index rebuilt from disk;
+  - excluded from backups.
+- **Keys:** `KeychainCacheKeys` (MatterMacPlatform) stores one random 256-bit key
+  per account in the login Keychain.
+- **ImagePipeline:** reads compressed bytes from disk before the network; writes
+  them only after a successful decode; proxied images are excluded.
+- **ServerSession:**
+  - restores the directory, selected team and last channel before the first
+    request;
+  - seeds empty channel windows from cache (`HistoryWindow.isCached`);
+  - cached windows never mark channels read, keep the unread-line jump for the
+    server page, reload on the next open, and are never written back;
+  - writes are coalesced (4 s) and at quit (`persistCache()`);
+  - membership loss removes the channel's cached posts.
+- **UI:**
+  - the sidebar selects `restoredChannel`;
+  - Sign Out, server-ended sessions and saved sign-ins rejected at restore erase
+    the account's cache and key;
+  - Settings ▸ Accounts has a Cache section (size, Clear Cache);
+  - the privacy texts are updated.
+
+Tests:
+
+- New `ContentCacheTests` (4) cover:
+  - encryption with no plaintext or names on disk;
+  - relaunch index;
+  - authenticated names;
+  - tamper deletion;
+  - the wrong key;
+  - account removal and later writes being no-ops;
+  - LRU bounds and the per-object limit;
+  - Clear Cache;
+  - pipeline disk hits across relaunch at another size, and proxied images never
+    being cached.
+- New `SessionCacheTests`: on a relaunch with the channel list and posts held back,
+  the sidebar, profiles and last channel come from cache. The cached window shows
+  the five cached posts and does not mark the unread channel read. The server page
+  (six posts) then replaces it and the channel is marked read. This test found
+  that a replaced cached window needs an explicit read re-evaluation; fixed.
+- New opt-in `KeychainCacheKeysTests` (`MM_KEYCHAIN_TESTS=1`): real login-Keychain
+  round trip under a throwaway service. Passed.
+- `swift test --package-path Packages/MatterMacKit` passed (Core 166, UI-support
+  162; `/tmp/mattermac-cache-tests.log`). The Debug workspace build passed with
+  only the existing AppIntents warning (`/tmp/mattermac-cache-build.log`).
+
+Not verified: the packaged app against a live server (launch speed, and the cache
+directory contents in the container). `FirstLaunchUITests` disclosure text was
+updated but not run; XCUITests drive the shared desktop. The Distribution build
+was not refreshed.
+
+Next: run the Debug app against the local test servers (development cache
+directory). Measure cold and warm launch-to-sidebar and channel-open times, and
+inspect `~/Library/Containers/org.mattermac.MatterMac/Data/Library/Caches`.
+
+## 2026-09-25 — the account turned "away" while the user was at the Mac
+
+Cause: MatterMac never sent `user_update_active_status`. The plumbing existed
+(`SessionViewModel.userActivity()` → `ServerSession.reportUserActivity` →
+`MattermostRealtimeClient`, throttled to 60 s), but nothing called it. The server
+turns an account away `UserStatusAwayTimeout` (default 300 s) after the last
+connect, post, manual status change or activity report
+(docs/research/websocket.md §7, which predicted this).
+
+Fix: new `UserActivityMonitor` and `UserActivityPolicy` (MatterMacPlatform).
+
+- Every 15 s (5 s timer tolerance) it reads the system input idle time with
+  `CGEventSource.secondsSinceLastEventType(.combinedSessionState, any input)`. No
+  permission is needed. Any input on the Mac counts, like the Desktop App.
+- Idle under 60 s reports active to every signed-in session.
+- Idle of 300 s or more, screen sleep, system sleep or a session switch reports
+  inactive once.
+- It re-checks when MatterMac becomes active.
+- The server ignores these reports for a manually chosen status (Away, DND,
+  Offline), so they never override one.
+
+Tests:
+
+- `UserActivityTests` (3) cover the policy thresholds, the real idle reading, the
+  monitor's transitions, and view model → realtime forwarding (none after detach).
+- New opt-in `LiveActivityTests` on 11.11.1 root and 10.11.24: signed in as alice
+  over MatterMac's socket, `last_activity_at` stayed unchanged for 2 s without a
+  report. After one report it advanced and the status was `online`. **Passed**
+  (`/tmp/mattermac-live-activity.log`).
+- Full `swift test` passed (UI-support 167; `/tmp/mattermac-activity-tests.log`).
+  The Debug build passed with only the AppIntents warning
+  (`/tmp/mattermac-activity-build.log`).
+
+Not run: a 5-minute real-time check in the packaged app.
+
+## 2026-09-25 — README screenshots
+
+`LiveSeedDemoTests` now attaches a drawn dashboard mockup ("Dashboard mockup v2")
+and replaces the older flat placeholder on already seeded servers. New opt-in
+`LiveReadmeScreenshotsTests` signs in as alice on the local 11.11.1 server. It
+opens Design Demo, a thread and the image viewer, and captures only its own
+full-size-content window, dark and light, under a volatile `en_US` locale. The
+run passed. Four captures, downscaled to 1600 px, are committed in `docs/images`
+(1.4 MB); provenance is in `docs/assets.md`. README gained the screenshots and
+highlights, and its "What is saved" section now describes the content cache.

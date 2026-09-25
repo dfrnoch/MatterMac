@@ -55,3 +55,20 @@ swift Tools/GenerateEmojiCatalog.swift /tmp/emoji.json /tmp/emoji_data.go \
 The application uses system fonts and framework-provided controls at runtime;
 it bundles no font, emoji atlas, or external runtime dependency. See
 [LICENSE](../LICENSE) and [architecture](architecture.md).
+
+## README screenshots
+
+`docs/images/*.png` are captures of MatterMac's own test window, with no other part
+of the screen. They were taken by the opt-in `LiveReadmeScreenshotsTests`
+(UI-support target), signed in as the synthetic test user **alice** on the local
+Mattermost 11.11.1 test server (`Tests/Integration/Server`). The only content is
+the synthetic "Design Demo" channel seeded by `LiveSeedDemoTests`. Its dashboard
+image is drawn with Core Graphics in that test, and contains no real data or
+third-party art. Captures were downscaled to 1600 px with `sips`. To reproduce
+them, from the repository root with the test servers running:
+
+```sh
+set -a; . ./.local/test-server.env; set +a
+MM_LIVE_TESTS=1 MM_SEED_DEMO=1 swift test --package-path Packages/MatterMacKit --filter LiveSeedDemoTests
+MM_README_SCREENSHOTS=/tmp/mm-readme swift test --package-path Packages/MatterMacKit --filter LiveReadmeScreenshotsTests
+```

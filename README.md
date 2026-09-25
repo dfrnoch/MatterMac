@@ -1,9 +1,36 @@
 # MatterMac
 
 An independent native macOS client for existing Mattermost servers, built with
-SwiftUI, AppKit, Swift 6, and Apple frameworks. No external runtime dependencies.
-This is a development checkpoint, not an official Mattermost application or a
-release candidate.
+SwiftUI, AppKit, Swift 6, and Apple frameworks. No Electron, no web view, and no
+external runtime dependencies. This is a development checkpoint, not an official
+Mattermost application or a release candidate.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/conversation-dark.png">
+  <img alt="A MatterMac window: the channel sidebar with the team name in the title bar, and a conversation with a Markdown table, a thread summary, a task list, a New messages line and an image attachment" src="docs/images/conversation-light.png">
+</picture>
+
+| Threads beside the conversation | In-window image viewer |
+| --- | --- |
+| ![A thread open in a pane next to the channel](docs/images/thread-dark.png) | ![An attached image open in the dimmed in-window viewer with author, date and actions](docs/images/image-viewer-dark.png) |
+
+<sub>Screenshots show synthetic test users and content on a local test server
+(see [asset provenance](docs/assets.md#readme-screenshots)).</sub>
+
+## Highlights
+
+- **Native and light.** A SwiftUI shell with an AppKit timeline and composer that
+  render Markdown, tables, task lists, code and emoji natively. Memory, tasks and
+  caches are bounded by one resource budget.
+- **Fast to open.** An encrypted on-device cache shows your channels, profiles,
+  images and recent messages at once, then refreshes them from the server.
+- **Liquid Glass on macOS 26 and later** (earlier systems get material
+  fallbacks). Floating account and composer controls, a jump-to-latest pill, and
+  a full-window image viewer with zoom and keyboard navigation.
+- **Works with your server as it is.** Password, access-token and browser SSO
+  sign-in; channels, direct and group messages, threads, reactions, search,
+  uploads and notifications. Tested on Mattermost 10.11 and 11.11, including
+  subpath deployments.
 
 ## Build and run
 
@@ -33,10 +60,11 @@ been performed; there is no signed public release yet.
   reactions, saved/pinned messages, and server message/file search.
 - Native Markdown tables, task lists, code/quotes and attachment cards; system and
   custom emoji with completion, plus server slash-command suggestions.
-- File upload/download, pasted images, avatars, native image previews, and profile
-  editing with bounded profile-picture upload.
+- File upload/download, pasted images, avatars, an in-window image viewer, and
+  profile editing with bounded profile-picture upload.
 - Multiple server sessions, keyboard navigation, server notification preferences,
-  opt-in macOS notifications, and session-only appearance/settings.
+  opt-in macOS notifications, automatic online/away status, and session-only
+  appearance/settings.
 - Session recovery notices and Review Unsent Work: copy individual drafts or
   unconfirmed sends, export pasted images, and confirm local discard.
 
@@ -59,16 +87,25 @@ needs a sustained foreground remeasurement; macOS locked before that final run.
 
 ## What is saved
 
-Verified sign-ins are saved in the local macOS Keychain: bearer token and kind,
-canonical server address, and account ID. Passwords are never saved. **Quit keeps
-sign-ins; Sign Out removes them.** Saved identity is checked on launch. Server
-expiry or revocation can still require another sign-in.
-
-Messages, drafts, pending sends, images, and local preferences stay in bounded
-memory. **Drafts do not survive quit, a crash, or forced termination.** Drafts and
-pending sends share a 100-item / 4 MiB text budget; pasted images share 8 MiB. New
-work is refused at the limit without evicting existing unsent work. Review Unsent
-Work in the Session menu before leaving the app.
+- **Sign-ins:** verified sign-ins are saved in the local macOS Keychain (bearer
+  token and kind, canonical server address, and account ID). Passwords are never
+  saved. Saved identity is checked on launch; server expiry or revocation can
+  still require another sign-in.
+- **Content cache:** to open quickly, MatterMac keeps a cache in its sandbox Caches
+  directory. It holds image bytes (avatars, team icons, attachment thumbnails and
+  previews, custom emoji), the channel list and profiles, the last open channel,
+  and the latest messages of recently opened channels. Every file is encrypted
+  with a per-account key kept in Keychain. The cache is bounded (512 MiB of images,
+  96 MiB of other content) and excluded from backups. Cached messages are only
+  shown until the server answers, and never mark a channel read.
+- **Quit keeps both; Sign Out removes that account's sign-in, cache and key.**
+  Settings ▸ Accounts shows the cache size and has **Clear Cache**. See
+  [decision 0031](docs/decisions/0031-on-device-content-cache.md).
+- **Drafts:** drafts, pending sends, pasted images, and local preferences stay in
+  bounded memory. **Drafts do not survive quit, a crash, or forced termination.**
+  Drafts and pending sends share a 100-item / 4 MiB text budget; pasted images
+  share 8 MiB. New work is refused at the limit without evicting existing unsent
+  work. Review Unsent Work in the Session menu before leaving the app.
 
 Uploads begin on Send. Uploaded files can remain on the server if their message
 is never posted. Downloads and image exports write only when explicitly chosen;
