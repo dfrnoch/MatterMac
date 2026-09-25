@@ -18,7 +18,7 @@ public enum DesktopNotificationLevel: String, CaseIterable, Hashable, Sendable {
 }
 
 /// A channel member's desktop level; `default` defers to the account level.
-public enum ChannelDesktopLevel: String, CaseIterable, Hashable, Sendable {
+public enum ChannelDesktopLevel: String, CaseIterable, Hashable, Sendable, Codable {
     case `default`
     case all
     case mention
@@ -32,7 +32,7 @@ public enum ChannelDesktopLevel: String, CaseIterable, Hashable, Sendable {
 
 /// `ignore_channel_mentions`: whether @channel, @here and @all count as mentions in
 /// this channel. `default` follows the account's `channel` setting.
-public enum IgnoreChannelMentions: String, CaseIterable, Hashable, Sendable {
+public enum IgnoreChannelMentions: String, CaseIterable, Hashable, Sendable, Codable {
     case `default`
     case on
     case off
@@ -46,7 +46,7 @@ public enum IgnoreChannelMentions: String, CaseIterable, Hashable, Sendable {
 /// send the complete map back (`PUT /users/{id}/patch` replaces the whole map).
 /// Bounded at decode time; `isComplete` is `false` when anything was dropped, and
 /// such a map must not be written back.
-public struct UserNotifyProps: Hashable, Sendable {
+public struct UserNotifyProps: Hashable, Sendable, Codable {
     public static let maximumKeys = 48
     public static let maximumKeyBytes = 64
     public static let maximumValueBytes = 4_096

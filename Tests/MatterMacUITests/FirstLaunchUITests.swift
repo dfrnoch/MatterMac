@@ -74,7 +74,7 @@ final class FirstLaunchUITests: XCTestCase {
         XCTAssertTrue(disclosure.waitForExistence(timeout: 10), "session-only disclosure missing")
         let disclosureText = (disclosure.value as? String).flatMap { $0.isEmpty ? nil : $0 } ?? disclosure.label
         XCTAssertTrue(
-            disclosureText.contains("Messages and drafts stay in memory only"),
+            disclosureText.contains("encrypted cache") && disclosureText.contains("Drafts stay in memory only"),
             "unexpected disclosure text: \(disclosureText)")
 
         XCTAssertFalse(app.buttons["Continue"].isEnabled, "Continue must be disabled while the field is empty")

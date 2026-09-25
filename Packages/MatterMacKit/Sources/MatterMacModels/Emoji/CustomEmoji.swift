@@ -3,7 +3,7 @@
 // through the bounded image pipeline (`GET /emoji/{id}/image`) and never stored.
 
 /// One custom emoji (`model.Emoji`: `{id, name, creator_id, …}`).
-public struct CustomEmoji: Hashable, Sendable, Identifiable {
+public struct CustomEmoji: Hashable, Sendable, Identifiable, Codable {
     /// Path-safe server id, validated at decode time.
     public let id: String
     /// Lowercase short name, 1–64 characters of `[a-z0-9_+-]`.

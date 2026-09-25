@@ -3,15 +3,15 @@ public import Foundation
 /// A server-provided preview of the first link in a post (`metadata.embeds`), reduced
 /// to what MatterMac renders natively. The server fetched this metadata; MatterMac
 /// never contacts the linked site itself. Every string is bounded at decode time.
-public struct LinkPreview: Hashable, Sendable {
-    public enum Kind: Hashable, Sendable {
+public struct LinkPreview: Hashable, Sendable, Codable {
+    public enum Kind: Hashable, Sendable, Codable {
         /// An OpenGraph page summary (title, description, site name, optional image).
         case website
         /// A direct link to an image.
         case image
     }
 
-    public struct Image: Hashable, Sendable {
+    public struct Image: Hashable, Sendable, Codable {
         /// Absolute http(s) URL of the image as reported by the server.
         public var url: String
         /// Dimensions from `metadata.images`, when the server measured the image.

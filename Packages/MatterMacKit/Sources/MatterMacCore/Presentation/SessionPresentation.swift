@@ -170,11 +170,16 @@ public struct SidebarSnapshot: Sendable {
     public let canBrowseArchivedChannels: Bool
     /// The signed-in user's current `last_picture_update` (changes after Edit Profile).
     public let myPictureRevision: Int64
+    /// The channel that was open when this account's cache was written, until a
+    /// channel is opened: the window reopens where the user left off.
+    public let restoredChannel: ChannelID?
 
     public init(scope: AccountScope, generation: UInt64, teams: [TeamSummary], selectedTeam: TeamID?,
                 sections: [SidebarSection], isTruncated: Bool, myStatus: PresenceStatus? = nil,
                 myCustomStatus: CustomStatus? = nil, usesServerCategories: Bool = false, groupsUnreads: Bool = false,
-                directMessageMentions: Int = 0, canBrowseArchivedChannels: Bool = false, myPictureRevision: Int64 = 0) {
+                directMessageMentions: Int = 0, canBrowseArchivedChannels: Bool = false, myPictureRevision: Int64 = 0,
+                restoredChannel: ChannelID? = nil) {
+        self.restoredChannel = restoredChannel
         self.myPictureRevision = myPictureRevision
         self.usesServerCategories = usesServerCategories
         self.groupsUnreads = groupsUnreads

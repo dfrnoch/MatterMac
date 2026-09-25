@@ -114,8 +114,11 @@ public final class SessionViewModel {
                 header = nil
             }
         }
-        if selectedChannel == nil, let first = snapshot.sections.lazy.flatMap(\.rows).first {
-            select(channel: first.channelID)
+        if selectedChannel == nil {
+            // Reopen where the user left off (from the on-device cache), else the first row.
+            let rows = snapshot.sections.lazy.flatMap(\.rows)
+            let restored = snapshot.restoredChannel.flatMap { id in rows.first { $0.channelID == id } }
+            if let row = restored ?? rows.first { select(channel: row.channelID) }
         }
     }
 
@@ -193,6 +196,9 @@ public final class SessionViewModel {
         })
     }
 
+    /// This account's identity in the on-device cache.
+    var cacheAccount: CacheAccount { CacheAccount(endpoint: slot.endpoint, user: scope.user) }
+
     func handleNotice(_ notice: SessionNotice) async {
         guard !isDetached else { return }
         if notice == .signedOutByServer || notice == .identityChanged {
@@ -207,6 +213,7 @@ public final class SessionViewModel {
             selectedChannel = nil; replyTarget = nil; editing = nil
             isSearchVisible = false; isQuickSwitcherVisible = false; directorySheet = nil
             _ = await app?.forgetSavedAccount(self)
+            await app?.environment.contentCache?.removeAll(for: cacheAccount)
         } else if requiresAuthentication { return } // Keep the required recovery action visible.
         switch notice {
         case .accessRevoked(let channel) where channel == selectedChannel:

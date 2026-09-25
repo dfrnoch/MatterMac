@@ -14,12 +14,15 @@ public struct SessionDependencies: Sendable {
     public var documents: PostDocumentBuilder
     public var makeRealtime: @Sendable (ServerEndpoint, BearerCredential, UserID) -> any RealtimeConnection
     public var timeZone: @Sendable () -> TimeZone
+    /// On-device cache for the directory and recent channels (`nil`: nothing cached).
+    public var contentCache: ContentCache?
 
     public init(budget: ResourceBudget, retention: RetentionLedger, unsent: UnsentWorkLedger, diagnostics: DiagnosticRing,
                 wallClock: any WallClock = SystemWallClock(), clock: any Clock<Duration> = ContinuousClock(),
                 documents: PostDocumentBuilder,
                 makeRealtime: @escaping @Sendable (ServerEndpoint, BearerCredential, UserID) -> any RealtimeConnection,
-                timeZone: @escaping @Sendable () -> TimeZone = { TimeZone.current }) {
+                timeZone: @escaping @Sendable () -> TimeZone = { TimeZone.current }, contentCache: ContentCache? = nil) {
+        self.contentCache = contentCache
         self.budget = budget
         self.retention = retention
         self.unsent = unsent

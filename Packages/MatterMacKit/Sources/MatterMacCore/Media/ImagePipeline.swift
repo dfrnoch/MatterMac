@@ -7,8 +7,10 @@ public import MattermostAPI
 
 /// Process-wide bounded image pipeline (SPEC §14 Image pipeline, §15).
 ///
-/// - Fetches server thumbnails/previews/avatars into memory with a per-object
-///   compressed-size limit; never writes to disk; never fetches third-party URLs.
+/// - Fetches server thumbnails/previews/avatars with a per-object compressed-size
+///   limit; never fetches third-party URLs. With a `ContentCache`, the compressed
+///   bytes of immutable resources (keyed by file ID or picture/icon revision) are
+///   kept on disk and read before the network; proxied link-preview images are not.
 /// - Checks source pixel dimensions from metadata *before* decoding, reserves the
 ///   downsampled output's conservative size against the decoded budget, and
 ///   downsamples with Image I/O to the requested display pixel size (orientation
@@ -56,9 +58,11 @@ public actor ImagePipeline {
     private let decodeGate: AsyncGate
     private let retainedBytes = OSAllocatedUnfairLock(initialState: 0)
     private let diagnostics: DiagnosticRing
+    private let disk: ContentCache?
 
-    public init(budget: ResourceBudget, diagnostics: DiagnosticRing) {
+    public init(budget: ResourceBudget, diagnostics: DiagnosticRing, cache: ContentCache? = nil) {
         self.budget = budget
+        self.disk = cache
         self.decoded = CostLRU(countLimit: budget.decodedImageEntries, costLimit: budget.decodedImageBytes)
         self.failures = CostLRU(countLimit: budget.imageFailureEntries, costLimit: budget.imageFailureEntries)
         self.decodeGate = AsyncGate(limit: max(1, min(budget.imageDecodesGlobal,
@@ -117,16 +121,28 @@ public actor ImagePipeline {
     private func fetchAdmitted(_ key: Key, using service: any MattermostService) async -> Decoded? {
         guard !Task.isCancelled else { return nil }
         let maximumBytes = min(budget.compressedImagePerObjectBytes, budget.compressedImageBytes)
-        guard let data = try? await service.imageData(key.resource, maximumBytes: maximumBytes), !Task.isCancelled else {
-            if !Task.isCancelled { failures.set(true, for: key, cost: 1) }
-            return nil
+        let diskName = Self.diskName(key.resource)
+        var cached: Data?
+        if let disk, let diskName { cached = await disk.data(.image, diskName, scope: key.scope) }
+        let data: Data
+        var fromDisk = false
+        if let cached, cached.count <= maximumBytes {
+            data = cached
+            fromDisk = true
+        } else {
+            guard let fetched = try? await service.imageData(key.resource, maximumBytes: maximumBytes), !Task.isCancelled else {
+                if !Task.isCancelled { failures.set(true, for: key, cost: 1) }
+                return nil
+            }
+            guard fetched.count <= maximumBytes else { failures.set(true, for: key, cost: 1); return nil }
+            data = fetched
         }
-        guard data.count <= maximumBytes else { failures.set(true, for: key, cost: 1); return nil }
         // Source metadata is read before anything is decoded; the reservation is the
         // conservative size of the downsampled output, never the source.
         let edge = min(key.maxPixelSize, budget.maximumImagePixelDimension)
         guard let plan = Self.decodePlan(data, maxPixelSize: edge, maximumSourcePixels: budget.maximumSourceImagePixels),
               plan.reservedBytes <= min(budget.maximumDecodedImageBytes, budget.decodedImageBytes) else {
+            if fromDisk, let disk, let diskName { await disk.remove(.image, diskName, scope: key.scope) }
             failures.set(true, for: key, cost: 1)
             return nil
         }
@@ -150,8 +166,23 @@ public actor ImagePipeline {
         }
         let cost = image.bytesPerRow * image.height
         retainedBytes.withLock { $0 -= reservation - cost }
+        // Only bytes that decoded are kept on disk.
+        if !fromDisk, let disk, let diskName { await disk.store(data, .image, diskName, scope: key.scope) }
         let counter = retainedBytes
         return Decoded(image) { counter.withLock { $0 -= cost } }
+    }
+
+    /// The on-disk name of a resource whose bytes never change under that name, or
+    /// `nil` when it must not be kept (proxied external images).
+    static func diskName(_ resource: ImageResource) -> String? {
+        switch resource {
+        case .profileImage(let user, let revision): "profile/\(user.rawValue)/\(revision)"
+        case .teamIcon(let team, let revision): "team/\(team.rawValue)/\(revision)"
+        case .fileThumbnail(let file): "thumbnail/\(file.rawValue)"
+        case .filePreview(let file): "preview/\(file.rawValue)"
+        case .customEmoji(let id): "emoji/\(id)"
+        case .proxiedImage: nil
+        }
     }
 
     /// In-flight cancellation prevents late responses from repopulating the cache.

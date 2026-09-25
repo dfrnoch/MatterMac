@@ -6,11 +6,14 @@ public import MattermostAPI
 public import MattermostRealtime
 
 /// Process-lifetime composition object created once by the app target. Owns the
-/// shared budgets, in-memory stores, and optional Keychain sign-ins. Runtime state is
-/// released when the process exits.
+/// shared budgets, in-memory stores, optional Keychain sign-ins and the optional
+/// on-device content cache.
 @MainActor
 public final class AppEnvironment {
     public let accounts: KeychainAccounts?
+    /// Encrypted on-device cache (images, directory, recent channels); `nil` keeps
+    /// everything in memory (tests, UI testing).
+    public let contentCache: ContentCache?
     public let budget: ResourceBudget
     public let diagnostics: DiagnosticRing
     public let unsentLedger: UnsentWorkLedger
@@ -39,13 +42,15 @@ public final class AppEnvironment {
     }
 
     public init(budget: ResourceBudget = .standard, allowsInsecureLoopback: Bool = false,
-                accounts: KeychainAccounts? = nil,
+                accounts: KeychainAccounts? = nil, cacheStorage: ContentCache.Storage? = nil,
                 serviceFactory: any MattermostServiceFactory,
                 makeRealtime: @escaping @Sendable (ServerEndpoint, BearerCredential, UserID) -> any RealtimeConnection,
                 markupParse: @escaping @Sendable (String, MarkupLimits) -> MessageDocument) {
         self.accounts = accounts
         self.budget = budget
-        self.diagnostics = DiagnosticRing(byteBudget: budget.diagnosticRingBytes)
+        let diagnostics = DiagnosticRing(byteBudget: budget.diagnosticRingBytes)
+        self.diagnostics = diagnostics
+        self.contentCache = cacheStorage.map { ContentCache(storage: $0, budget: budget, diagnostics: diagnostics) }
         self.unsentLedger = UnsentWorkLedger(budget: budget)
         self.retention = RetentionLedger(budget: budget)
         self.drafts = DraftStore(ledger: unsentLedger)
@@ -61,7 +66,7 @@ public final class AppEnvironment {
             budget: budget, retention: retention, unsent: unsentLedger, diagnostics: diagnostics,
             documents: PostDocumentBuilder(limits: MarkupLimits(maximumInputCharacters: budget.maximumRenderedCharacters),
                                            parse: markupParse),
-            makeRealtime: makeRealtime)
+            makeRealtime: makeRealtime, contentCache: contentCache)
     }
 
     /// Whether quitting now would discard unsent drafts or pending sends.

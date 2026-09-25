@@ -297,6 +297,22 @@ public indirect enum MarkupInline: Hashable, Sendable {
 /// characters (bidi overrides, zero-width characters, BOM), any whitespace inside the
 /// destination, embedded credentials (`user@` / `user:password@`, including an empty
 /// user), web URLs without a plain host, and destinations longer than 2,048 bytes.
+/// Decoding re-applies the same checks as `init?(_:)`.
+extension SafeLink: Codable {
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        guard let link = SafeLink(try container.decode(String.self)) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsafe link")
+        }
+        self = link
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(url.absoluteString)
+    }
+}
+
 public struct SafeLink: Hashable, Sendable {
     public enum Kind: Hashable, Sendable { case web, mail }
     public let url: URL

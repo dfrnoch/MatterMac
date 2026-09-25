@@ -34,8 +34,11 @@ public struct HistoryWindow: Sendable {
     public var newerState: EdgeState = .idle
     /// Contents may be outdated (reconnect/resync pending).
     public var isStale = false
-    /// `true` once an initial page has been loaded.
+    /// `true` once an initial page has been loaded (or seeded from the cache).
     public var isLoaded = false
+    /// Seeded from the on-device cache; the server's page has not replaced it yet.
+    /// Such a window is shown but never marks the channel read.
+    public var isCached = false
     /// First unread post at the moment the conversation was opened (for the
     /// "New messages" line); not updated by later arrivals.
     public var unreadBoundary: PostID?
@@ -80,7 +83,22 @@ public struct HistoryWindow: Sendable {
         self.hasNewer = hasNewer
         isLoaded = true
         isStale = false
+        isCached = false
         return (added, removed)
+    }
+
+    /// Fills an empty window from the on-device cache (at the live edge). Returns the
+    /// IDs added so the caller can retain them.
+    public mutating func seed(with cached: [Entry], hasOlder: Bool) -> [PostID] {
+        guard entries.isEmpty else { return [] }
+        let sorted = Self.normalized(cached)
+        entries = sorted
+        index = Set(sorted.map(\.id))
+        self.hasOlder = hasOlder
+        hasNewer = false
+        isLoaded = true
+        isCached = true
+        return sorted.map(\.id)
     }
 
     /// Merges posts into the window keeping order. Posts outside the currently known

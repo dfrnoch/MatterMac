@@ -116,6 +116,14 @@ public actor ServerSession {
     var pendingAlerts: [(event: PostedEvent, cost: Int)] = []
     /// Custom emoji name → id, misses and queued lookups (ServerSession+CustomEmoji.swift).
     var customEmoji: CustomEmojiStore
+    // On-device cache (ServerSession+Cache.swift).
+    var cacheDirectoryPending = false
+    var cacheChannelsPending: Set<ChannelID> = []
+    /// Cached channels of this account, most recently written first.
+    var cachedChannels: [ChannelID] = []
+    /// The channel that was open when the cache was written; offered for selection
+    /// until a channel is opened.
+    var restoredChannel: ChannelID?
 
     enum TaskKey: Hashable {
         case realtimeConsumer
@@ -141,6 +149,7 @@ public actor ServerSession {
         case teamUnreads
         case alertSender
         case emojiFetch
+        case cacheWrite
     }
 
     struct VisibleRange: Equatable {
@@ -184,6 +193,8 @@ public actor ServerSession {
         guard isActiveSessionAlive, tasks[.realtimeConsumer] == nil else { return }
         deps.diagnostics.record(.lifecycle, .info, "session start")
         setConnection(.synchronizing)
+        await restoreFromCache()
+        guard isActiveSessionAlive, tasks[.realtimeConsumer] == nil else { return }
         startRealtimeConsumer()
         await realtime.start()
         guard isActiveSessionAlive else { return }
@@ -327,8 +338,14 @@ public actor ServerSession {
         guard !isShutDown else { return }
         let flags = dirty
         dirty = []
-        if flags.contains(.sidebar) { publishSidebar() }
-        if flags.contains(.timeline), let channel = activeChannel { publishTimeline(.channel(channel)) }
+        if flags.contains(.sidebar) {
+            publishSidebar()
+            scheduleCacheWrite(directory: true)
+        }
+        if flags.contains(.timeline), let channel = activeChannel {
+            publishTimeline(.channel(channel))
+            scheduleCacheWrite(channel: channel)
+        }
         if flags.contains(.thread) {
             if let thread = openThread { publishTimeline(thread) } else { threadContinuation.yield(nil) }
         }

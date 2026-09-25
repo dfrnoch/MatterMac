@@ -1,11 +1,13 @@
 import Foundation
+import MatterMacCore
 import MatterMacPlatform
 import MatterMacUI
 import MatterMacModels
 import MattermostAPI
 import MattermostRealtime
 
-/// Composition root, including the Keychain store for saved sign-ins.
+/// Composition root, including the Keychain store for saved sign-ins and the
+/// on-device content cache.
 enum AppComposition {
     /// Development-only launch argument: `-MatterMacAllowInsecureLoopback YES`.
     static let allowInsecureLoopbackArgument = "-MatterMacAllowInsecureLoopback"
@@ -18,18 +20,33 @@ enum AppComposition {
         arguments: [String] = ProcessInfo.processInfo.arguments
     ) -> AppEnvironment {
         let budget = ResourceBudget.standard
+        let uiTesting = debugFlag(uiTestingArgument, arguments: arguments)
+        let development = allowsInsecureLoopback(arguments: arguments)
         return AppEnvironment(
             budget: budget,
-            allowsInsecureLoopback: allowsInsecureLoopback(arguments: arguments),
-            accounts: debugFlag(uiTestingArgument, arguments: arguments) ? nil : KeychainAccounts(
-                service: allowsInsecureLoopback(arguments: arguments) ? "org.mattermac.MatterMac.development-accounts" : "org.mattermac.MatterMac.accounts",
-                budget: budget, allowsInsecureLoopback: allowsInsecureLoopback(arguments: arguments)),
+            allowsInsecureLoopback: development,
+            accounts: uiTesting ? nil : KeychainAccounts(
+                service: development ? "org.mattermac.MatterMac.development-accounts" : "org.mattermac.MatterMac.accounts",
+                budget: budget, allowsInsecureLoopback: development),
+            cacheStorage: uiTesting ? nil : cacheStorage(development: development),
             serviceFactory: DefaultMattermostServiceFactory(budget: budget),
             makeRealtime: { endpoint, credential, user in
                 MattermostRealtimeClient(endpoint: endpoint, credential: credential,
                                          currentUserID: user, budget: budget)
             },
             markupParse: { text, limits in MarkupParser.parse(text, limits: limits) })
+    }
+
+    /// The on-device cache in the app's Caches directory (inside the sandbox
+    /// container), keyed per account in the Keychain. Development runs use their own
+    /// directory and keys, like their saved sign-ins.
+    static func cacheStorage(development: Bool) -> ContentCache.Storage? {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        let directory = caches.appendingPathComponent("org.mattermac.MatterMac", isDirectory: true)
+            .appendingPathComponent(development ? "Content-development" : "Content", isDirectory: true)
+        let keys = KeychainCacheKeys(service: development ? "org.mattermac.MatterMac.development-cache-keys"
+                                                          : "org.mattermac.MatterMac.cache-keys")
+        return ContentCache.Storage(directory: directory, keys: keys)
     }
 
     /// Plain-HTTP loopback servers (e.g. a local Docker Mattermost) are allowed only

@@ -21,9 +21,24 @@ public struct SidebarCategoryID: Hashable, Sendable, CustomStringConvertible, Co
     public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
-public struct SidebarCategory: Hashable, Sendable, Identifiable {
+extension SidebarCategoryID: Codable {
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        guard let value = Self(rawValue: try container.decode(String.self)) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid category identifier")
+        }
+        self = value
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+public struct SidebarCategory: Hashable, Sendable, Identifiable, Codable {
     /// `type`. Unknown values are kept verbatim so an update sends them back unchanged.
-    public enum Kind: Hashable, Sendable {
+    public enum Kind: Hashable, Sendable, Codable {
         case favorites
         case channels
         case directMessages
@@ -57,7 +72,7 @@ public struct SidebarCategory: Hashable, Sendable, Identifiable {
 
     /// `sorting`. The server stores whatever an update sends, so unknown values are
     /// preserved verbatim.
-    public enum Sorting: Hashable, Sendable {
+    public enum Sorting: Hashable, Sendable, Codable {
         /// `""`: manual for every category except Direct Messages, which sorts by recency.
         case `default`
         case manual
@@ -128,7 +143,7 @@ public struct SidebarCategory: Hashable, Sendable, Identifiable {
 }
 
 /// `GET /users/me/teams/unread` entry. Muted channels contribute mentions only.
-public struct TeamUnread: Hashable, Sendable {
+public struct TeamUnread: Hashable, Sendable, Codable {
     public let teamID: TeamID
     public let messageCount: Int64
     public let mentionCount: Int64

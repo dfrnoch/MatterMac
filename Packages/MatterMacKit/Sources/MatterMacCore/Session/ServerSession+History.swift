@@ -95,7 +95,8 @@ extension ServerSession {
             await loadAround(post, target: target)
             return
         }
-        let needsLoad = !window.isLoaded || window.isStale
+        restoredChannel = nil
+        let needsLoad = !window.isLoaded || window.isStale || window.isCached
         if !window.isLoaded {
             let unread = directory.unread(for: id, collapsedThreads: collapsedThreadsActive)
             lastViewedOnOpen[id] = directory.memberships[id]?.lastViewedAt
@@ -113,6 +114,8 @@ extension ServerSession {
         let generation = windows[target]?.nextGeneration() ?? 0
         windows[target]?.initialLoad = .loading(generation: generation)
         run(.initialLoad(target)) { session in
+            await session.seedWindowFromCache(target, generation: generation)
+            guard !Task.isCancelled else { return }
             let epoch = session.epoch
             let journalStart = session.journal.position
             let crt = session.collapsedThreadsActive
@@ -134,6 +137,7 @@ extension ServerSession {
                 let entries = page.posts.filter { !crt || $0.rootID == nil }.map {
                     HistoryWindow.Entry(id: $0.id, createAt: $0.createAt)
                 }
+                let wasCached = window.isCached
                 let delta = window.replace(with: entries, hasOlder: page.previousPostID != nil,
                                            hasNewer: page.nextPostID != nil)
                 window.initialLoad = .idle
@@ -148,6 +152,9 @@ extension ServerSession {
                 session.windows[target] = window
                 session.enforceRetention()
                 session.markDirty([.timeline])
+                // The visible rows may not change, so no new visibility report would
+                // arrive; the channel can be marked read now that it is current.
+                if wasCached { session.evaluateReadState() }
             } catch {
                 guard session.epoch == epoch, !Task.isCancelled,
                       session.windows[target]?.initialLoad == .loading(generation: generation) else { return }
@@ -167,6 +174,8 @@ extension ServerSession {
         windows[target]?.initialLoad = .loading(generation: generation)
         pendingScroll[target] = .post(post)
         run(.initialLoad(target)) { session in
+            await session.seedWindowFromCache(target, generation: generation)
+            guard !Task.isCancelled else { return }
             let epoch = session.epoch
             let journalStart = session.journal.position
             let crt = session.collapsedThreadsActive
@@ -328,6 +337,8 @@ extension ServerSession {
         let generation = windows[target]?.nextGeneration() ?? 0
         windows[target]?.initialLoad = .loading(generation: generation)
         run(.initialLoad(target)) { session in
+            await session.seedWindowFromCache(target, generation: generation)
+            guard !Task.isCancelled else { return }
             let epoch = session.epoch
             let journalStart = session.journal.position
             let crt = session.collapsedThreadsActive
@@ -400,6 +411,8 @@ extension ServerSession {
         windows[target]?.initialLoad = .loading(generation: generation)
         markDirty(.thread)
         run(.initialLoad(target)) { session in
+            await session.seedWindowFromCache(target, generation: generation)
+            guard !Task.isCancelled else { return }
             let epoch = session.epoch
             let journalStart = session.journal.position
             let crt = session.collapsedThreadsActive
@@ -534,6 +547,8 @@ extension ServerSession {
         tasks.removeValue(forKey: .channelFetch(id))?.cancel()
         memberCounts[id] = nil
         let channel = directory.removeChannel(id)
+        removeCachedChannel(id)
+        if restoredChannel == id { restoredChannel = nil }
         for target in windows.keys where target.channelID == id { closeWindow(target) }
         _ = store.purge(channel: id)
         searchState.purge(channel: id)

@@ -14,6 +14,24 @@ public struct ResourceBudget: Sendable, Hashable {
         }
     }
 
+    /// On-device cache limits (`ContentCache`). Media: compressed image bytes as
+    /// received. Content: the directory snapshot and cached channels of every account.
+    public struct DiskCache: Sendable, Hashable {
+        public var mediaBytes = 512 * .mebibyte
+        public var mediaEntries = 20_000
+        public var contentBytes = 96 * .mebibyte
+        public var contentEntries = 200
+        /// Largest single cached file (a directory snapshot of a very large server).
+        public var perObjectBytes = 16 * .mebibyte
+        /// Channels whose latest posts are kept per account (most recently opened).
+        public var channelsPerAccount = 40
+        /// Posts kept per cached channel (the initial page size).
+        public var postsPerChannel = 60
+        public init() {}
+    }
+
+    public var diskCache = DiskCache()
+
     /// Active timeline window: ~300 posts, additionally capped by estimated content.
     public var activeTimeline = CountAndBytes(count: 300, bytes: 8 * .mebibyte)
     /// All retained post content across windows, threads, and search, all servers.

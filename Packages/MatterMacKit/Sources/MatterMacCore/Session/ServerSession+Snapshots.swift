@@ -23,7 +23,8 @@ extension ServerSession {
                                                   groupsUnreads: directory.groupsUnreads,
                                                   directMessageMentions: directMessageMentions(collapsedThreads: crt),
                                                   canBrowseArchivedChannels: directory.viewArchivedChannels,
-                                                  myPictureRevision: me.lastPictureUpdate.milliseconds))
+                                                  myPictureRevision: me.lastPictureUpdate.milliseconds,
+                                                  restoredChannel: restoredChannel))
     }
 
     func sidebarRow(for channel: Channel, collapsedThreads: Bool, isFavorite: Bool = false) -> SidebarChannelRow {
@@ -91,7 +92,9 @@ extension ServerSession {
             items = [TimelineItem(id: TimelineItemID(.olderGap), revision: 3,
                                   content: .gap(GapPresentation(direction: .older, state: .failed(error))))]
         }
-        let scroll = pendingScroll.removeValue(forKey: target)
+        // Cached posts have no unread line; the jump waits for the server's page.
+        let scroll = window.isCached && pendingScroll[target] == .unreadBoundary
+            ? nil : pendingScroll.removeValue(forKey: target)
         let snapshot = TimelineSnapshot(scope: scope, target: target, generation: generation, items: items,
                                         isAtLiveEdge: !window.hasNewer,
                                         isStale: window.isStale || connection != .connected,

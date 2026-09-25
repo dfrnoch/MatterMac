@@ -1,5 +1,7 @@
 # 0015 — Persist verified sign-ins in macOS Keychain
 
+> Superseded in part by [0031](0031-on-device-content-cache.md) (2026-09-25): sign-ins are no longer the only application persistence; the encrypted content cache is the other.
+
 Date: 2026-09-24. Status: accepted at the user's explicit request.
 
 The user reported that relaunch required login and requested account details in

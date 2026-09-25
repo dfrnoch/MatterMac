@@ -3,7 +3,7 @@ public import Foundation
 // Presentation-neutral domain values. Wire DTOs live in MattermostAPI and are mapped
 // explicitly into these types; nothing here retains raw server responses.
 
-public enum ChannelType: Hashable, Sendable {
+public enum ChannelType: Hashable, Sendable, Codable {
     case open
     case `private`
     case direct
@@ -33,7 +33,7 @@ public enum ChannelType: Hashable, Sendable {
     public var isDirectOrGroup: Bool { self == .direct || self == .group }
 }
 
-public struct Team: Hashable, Sendable, Identifiable {
+public struct Team: Hashable, Sendable, Identifiable, Codable {
     public let id: TeamID
     public var name: String
     public var displayName: String
@@ -53,7 +53,7 @@ public struct Team: Hashable, Sendable, Identifiable {
     }
 }
 
-public struct Channel: Hashable, Sendable, Identifiable {
+public struct Channel: Hashable, Sendable, Identifiable, Codable {
     public let id: ChannelID
     /// Empty for direct and group messages.
     public var teamID: TeamID?
@@ -109,12 +109,12 @@ public struct Channel: Hashable, Sendable, Identifiable {
     }
 }
 
-public enum MarkUnreadLevel: Hashable, Sendable {
+public enum MarkUnreadLevel: Hashable, Sendable, Codable {
     case all
     case mention
 }
 
-public struct ChannelMembership: Hashable, Sendable {
+public struct ChannelMembership: Hashable, Sendable, Codable {
     public let channelID: ChannelID
     public let userID: UserID
     public var roles: [String]
@@ -155,7 +155,7 @@ public struct ChannelMembership: Hashable, Sendable {
     public var isChannelAdmin: Bool { roles.contains("channel_admin") }
 }
 
-public struct User: Hashable, Sendable, Identifiable {
+public struct User: Hashable, Sendable, Identifiable, Codable {
     public let id: UserID
     public var username: String
     public var firstName: String
@@ -235,7 +235,7 @@ public enum CustomStatusDuration: String, CaseIterable, Hashable, Sendable {
 }
 
 /// `user.props["customStatus"]`. Expired statuses must be hidden by the presenter.
-public struct CustomStatus: Hashable, Sendable {
+public struct CustomStatus: Hashable, Sendable, Codable {
     public var emoji: String
     public var text: String
     /// `nil` means the status does not expire.
@@ -253,7 +253,7 @@ public struct CustomStatus: Hashable, Sendable {
     }
 }
 
-public enum PresenceStatus: Hashable, Sendable {
+public enum PresenceStatus: Hashable, Sendable, Codable {
     case online
     case away
     case doNotDisturb
@@ -300,7 +300,7 @@ public enum PresenceStatus: Hashable, Sendable {
     public var silencesNotifications: Bool { self == .doNotDisturb || self == .outOfOffice }
 }
 
-public struct PostType: RawRepresentable, Hashable, Sendable {
+public struct PostType: RawRepresentable, Hashable, Sendable, Codable {
     public let rawValue: String
     public init(rawValue: String) { self.rawValue = String(rawValue.prefix(64)) }
 
@@ -327,7 +327,7 @@ public struct PostType: RawRepresentable, Hashable, Sendable {
     public var isCustomPlugin: Bool { rawValue.hasPrefix("custom_") }
 }
 
-public struct Reaction: Hashable, Sendable {
+public struct Reaction: Hashable, Sendable, Codable {
     public let userID: UserID
     public let postID: PostID
     public let emojiName: String
@@ -357,7 +357,7 @@ public struct Reaction: Hashable, Sendable {
     }
 }
 
-public struct FileInfo: Hashable, Sendable, Identifiable {
+public struct FileInfo: Hashable, Sendable, Identifiable, Codable {
     public let id: FileID
     public var postID: PostID?
     public var channelID: ChannelID?
@@ -398,8 +398,8 @@ public struct FileInfo: Hashable, Sendable, Identifiable {
 
 /// A basic Slack-style message attachment (`props.attachments`), reduced to the
 /// fields MatterMac renders natively. Interactive actions are not executed.
-public struct MessageAttachment: Hashable, Sendable {
-    public struct Field: Hashable, Sendable {
+public struct MessageAttachment: Hashable, Sendable, Codable {
+    public struct Field: Hashable, Sendable, Codable {
         public var title: String
         public var value: String
         public var isShort: Bool
@@ -443,7 +443,7 @@ public struct MessageAttachment: Hashable, Sendable {
 
 /// The subset of `post.props` MatterMac understands. Unknown plugin props are not
 /// retained; `hasUnsupportedContent` records that something was not rendered.
-public struct PostProps: Hashable, Sendable {
+public struct PostProps: Hashable, Sendable, Codable {
     public var fromWebhook: Bool
     public var fromBot: Bool
     public var overrideUsername: String?
@@ -467,7 +467,7 @@ public struct PostProps: Hashable, Sendable {
     public static let empty = PostProps()
 }
 
-public struct Post: Hashable, Sendable, Identifiable {
+public struct Post: Hashable, Sendable, Identifiable, Codable {
     public let id: PostID
     public var channelID: ChannelID
     public var userID: UserID

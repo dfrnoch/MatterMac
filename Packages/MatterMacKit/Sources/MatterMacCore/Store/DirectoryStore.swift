@@ -3,7 +3,7 @@ public import MattermostAPI
 
 /// How teammates' names are displayed (server preference `display_settings/name_format`,
 /// falling back to the server's `TeammateNameDisplay`).
-public enum NameFormat: String, Sendable, Hashable {
+public enum NameFormat: String, Sendable, Hashable, Codable {
     case username
     case nicknameFullName = "nickname_full_name"
     case fullName = "full_name"
@@ -82,6 +82,84 @@ public struct DirectoryStore: Sendable {
     public var pendingCollapse: [SidebarCategoryID: Bool] = [:]
     public static let categoryTeamLimit = 8
     public static let categoriesPerTeam = 500
+
+    /// What the on-device cache keeps of the directory: enough to draw the sidebar,
+    /// names and avatars before the network answers. Presence, typing, pending
+    /// collapse writes and load state are not kept.
+    public struct CacheSnapshot: Codable, Sendable {
+        var teams: [Team]
+        var channels: [Channel]
+        var memberships: [ChannelMembership]
+        /// Most recently used first.
+        var users: [User]
+        var categories: [TeamID: [SidebarCategory]]
+        var categoryTeamOrder: [TeamID]
+        var categoriesUnavailable: Set<TeamID>
+        var teamUnreads: [TeamID: TeamUnread]
+        var preferredNameFormat: NameFormat?
+        var serverNameFormat: NameFormat
+        var isNameFormatLocked: Bool
+        var favorites: Set<ChannelID>
+        var hiddenDirectPartners: Set<UserID>
+        var hiddenGroups: Set<ChannelID>
+        var collapsedThreadsPreference: Bool?
+        var militaryTime: Bool
+        var militaryTimePreference: Bool?
+        var savedPosts: Set<PostID>
+        var savedPostsTruncated: Bool
+        var showsLinkPreviews: Bool
+        var viewArchivedChannels: Bool
+    }
+
+    public func cacheSnapshot() -> CacheSnapshot {
+        var cachedUsers = Array(pinnedUsers.values)
+        let pinned = Set(pinnedUsers.keys)
+        for id in users.keysByRecency where !pinned.contains(id) {
+            if let user = users.peek(id) { cachedUsers.append(user) }
+        }
+        return CacheSnapshot(
+            teams: Array(teams.values), channels: Array(channels.values), memberships: Array(memberships.values),
+            users: cachedUsers, categories: categories, categoryTeamOrder: categoryTeamOrder,
+            categoriesUnavailable: categoriesUnavailable, teamUnreads: teamUnreads,
+            preferredNameFormat: preferredNameFormat, serverNameFormat: serverNameFormat,
+            isNameFormatLocked: isNameFormatLocked, favorites: favorites, hiddenDirectPartners: hiddenDirectPartners,
+            hiddenGroups: hiddenGroups, collapsedThreadsPreference: collapsedThreadsPreference,
+            militaryTime: militaryTime, militaryTimePreference: militaryTimePreference, savedPosts: savedPosts,
+            savedPostsTruncated: savedPostsTruncated, showsLinkPreviews: showsLinkPreviews,
+            viewArchivedChannels: viewArchivedChannels)
+    }
+
+    /// Restores a cached directory into an empty store. No team counts as loaded, so
+    /// every channel list is still fetched; the cached one is shown meanwhile. The
+    /// usual limits apply to the restored values.
+    public mutating func restore(_ snapshot: CacheSnapshot) {
+        replaceTeams(snapshot.teams)
+        for channel in snapshot.channels.prefix(channelLimit) where channel.teamID.map({ teams[$0] != nil }) ?? true {
+            channels[channel.id] = channel
+        }
+        for membership in snapshot.memberships where channels[membership.channelID] != nil {
+            memberships[membership.channelID] = membership
+        }
+        for user in snapshot.users.reversed() where pinnedUsers[user.id] == nil { upsertUser(user) }
+        for team in snapshot.categoryTeamOrder where teams[team] != nil {
+            if let list = snapshot.categories[team] { replaceCategories(team: team, list) }
+        }
+        categoriesUnavailable = snapshot.categoriesUnavailable.filter { teams[$0] != nil }
+        teamUnreads = snapshot.teamUnreads.filter { teams[$0.key] != nil }
+        preferredNameFormat = snapshot.preferredNameFormat
+        serverNameFormat = snapshot.serverNameFormat
+        isNameFormatLocked = snapshot.isNameFormatLocked
+        favorites = snapshot.favorites
+        hiddenDirectPartners = snapshot.hiddenDirectPartners
+        hiddenGroups = snapshot.hiddenGroups
+        collapsedThreadsPreference = snapshot.collapsedThreadsPreference
+        militaryTime = snapshot.militaryTime
+        militaryTimePreference = snapshot.militaryTimePreference
+        savedPosts = Set(snapshot.savedPosts.prefix(savedPostLimit))
+        savedPostsTruncated = snapshot.savedPostsTruncated || snapshot.savedPosts.count > savedPostLimit
+        showsLinkPreviews = snapshot.showsLinkPreviews
+        viewArchivedChannels = snapshot.viewArchivedChannels
+    }
 
     public init(budget: ResourceBudget) {
         self.users = CostLRU(countLimit: budget.directoryDetails.count, costLimit: budget.directoryDetails.bytes)

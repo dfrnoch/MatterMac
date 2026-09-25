@@ -3,7 +3,7 @@
 **Project:** MatterMac  
 **Product:** An independent, open-source, native macOS client for existing Mattermost servers.  
 **Implementation:** Swift application code, SwiftUI and AppKit, Apple system frameworks, Swift Package Manager.  
-**Primary constraints:** Small distribution, bounded RAM, responsive UI, low idle CPU, no automatically persisted conversation data; account sign-ins in macOS Keychain.  
+**Primary constraints:** Small distribution, bounded RAM, responsive UI, low idle CPU; account sign-ins in macOS Keychain; a bounded, encrypted on-device content cache for fast launch.  
 **Specification date:** September 24, 2026.  
 **Status:** Build instructions and proposed acceptance targets, not an implemented application or measured benchmark.
 
@@ -21,7 +21,7 @@ The client is macOS-only. Use a minimum deployment target of macOS 14 initially.
 
 All application-owned runtime code and tests must be Swift. Swift calls into AppKit, Foundation, Image I/O, Core Graphics, AuthenticationServices, and other Apple system frameworks are allowed. “Written in Swift” refers to our implementation, not a claim that Apple's frameworks or macOS are implemented in Swift. Build configuration, property lists, asset metadata, Markdown, and minimal CI command glue are naturally allowed.
 
-Keep messages, attachments, thumbnails, drafts, and preferences session-only. Per the explicit 2026-09-24 user request, persist verified account sign-ins (canonical server endpoint, user ID, bearer token and token kind) in macOS Keychain. This policy is not a requirement to remove server-side persistence or make sent messages ephemeral. Make the resulting tradeoffs clear in the UI.
+Per the explicit 2026-09-24 user request, persist verified account sign-ins (canonical server endpoint, user ID, bearer token and token kind) in macOS Keychain. Per the explicit 2026-09-25 user request, keep a bounded on-device cache of content that makes MatterMac fast to open: image bytes (avatars, team icons, attachment thumbnails and previews, custom emoji), the directory (teams, channels, memberships, sidebar categories, user profiles, relevant preferences), the last open team and channel, and the latest messages of recently opened channels (§7). Drafts, pending sends, pasted images, search, and local presentation settings stay session-only. Make the resulting tradeoffs clear in the UI.
 
 Priority order when requirements conflict: security and correct user-visible behavior; protection against silently losing work during a running session; bounded resources; accessibility and native interaction; then optional features and visual effects. Do not “solve” a resource target by dropping messages, breaking input methods, or concealing an unsupported feature.
 
@@ -29,7 +29,7 @@ Priority order when requirements conflict: security and correct user-visible beh
 
 - No Electron, Chromium, WKWebView, embedded HTML interface, JavaScript runtime, React Native, Flutter, Tauri, Rust core, Go helper, or unofficial bridge to the official desktop process.
 - No server component in the shipped product. A development-only Mattermost test instance is permitted; it is not a MatterMac backend.
-- No SQLite, Core Data, SwiftData, Realm, disk HTTP cache, disk image cache, automatic file logging, or UserDefaults-backed user state. Saved sign-ins in macOS Keychain are the sole account-persistence exception.
+- No SQLite, Core Data, SwiftData, Realm, `URLCache`/disk HTTP cache, automatic file logging, or UserDefaults-backed user state. Application persistence is limited to saved sign-ins in macOS Keychain and the encrypted, bounded `ContentCache` (§7).
 - No `@AppStorage` or `@SceneStorage` for account, navigation, composer, or preference state. Disable relevant window restoration and text-document autosaving mechanisms.
 - No unbounded arrays of history, event streams, worker tasks, retry queues, image buffers, search results, or user-directory records.
 - No synchronous network or file operations on the main actor. No full-history Markdown parsing or image decoding on the main actor.
@@ -194,13 +194,21 @@ Caches, delegates, notification observers, retained task handles, continuations,
 
 Use typed errors and explicit state machines instead of strings scattered across views. Distinguish authentication failure, permission denial, unsupported capability, transport loss, cancellation, malformed data, rate limiting, and unknown send outcome.
 
-## 7. Session-only content and Keychain sign-ins
+## 7. Keychain sign-ins and the on-device content cache
 
 ### Application-controlled persistence
 
-Persist only verified sign-ins in macOS Keychain: bearer token and kind, canonical server endpoint, and expected user ID. Never persist passwords, usernames, message text, reaction data, read cursors, images, drafts, search queries, navigation, preferences, or window restoration containing that state. Do not move persistence to iCloud or an app-controlled remote service.
+Persist verified sign-ins in macOS Keychain: bearer token and kind, canonical server endpoint, and expected user ID. Never persist passwords. Do not move persistence to iCloud or an app-controlled remote service.
 
-Use `URLSessionConfiguration.ephemeral` for API, WebSocket, and in-memory media requests. Apple documents that ephemeral configurations do not persist their caches, cookies, or credentials. Additionally disable the URL cache and shared credential storage where appropriate, and avoid shared cookie jars. Keep required authentication cookies in an isolated session-only store, not a process-global or disk store. [S5]
+Keep an on-device content cache (user request, 2026-09-25) so launch and channel switches show content before the network answers:
+
+- Scope: compressed image bytes of resources that are immutable under their key (profile image and team icon per revision, file thumbnail/preview, custom emoji; never proxied external images); a directory snapshot (teams, channels, memberships, categories, profiles, name-format/clock/favorite/hidden/saved/link-preview preferences, last open team and channel); and the newest `postsPerChannel` posts (plus their thread roots) of up to `channelsPerAccount` recently opened channels. Never drafts, pending or failed sends, pasted images, search, typing, presence, or local presentation settings.
+- Storage: the app's Caches directory (inside the sandbox container), excluded from backups, one directory per account named by a digest of server and user. Every file is sealed with AES-GCM under a random per-account key in the login Keychain (not synchronized); kind and name are authenticated. A file that does not open is deleted.
+- Bounds: `ResourceBudget.diskCache` media bytes/entries, content bytes/entries and a per-object limit, enforced by cost-tracked LRUs whose recency survives relaunch.
+- Semantics: cached content is a starting point, never the truth. Sessions restore the directory before their first request and still fetch every channel list; a channel window seeded from the cache is marked `isCached`, is replaced by the server's first page, is never written back, and never marks the channel read. Only windows loaded from the server and at the live edge are written.
+- Lifetime: Quit writes the cache. Sign Out, a server-ended session, and a saved sign-in rejected at restore remove that account's files and key. Settings ▸ Accounts shows the cache size and offers Clear Cache. Membership loss removes the channel's cached posts.
+
+Use `URLSessionConfiguration.ephemeral` for API, WebSocket, and media requests. Apple documents that ephemeral configurations do not persist their caches, cookies, or credentials. Additionally disable the URL cache and shared credential storage where appropriate, and avoid shared cookie jars. Keep required authentication cookies in an isolated session-only store, not a process-global or disk store. [S5]
 
 Do not use `URLSession.shared`, background transfer sessions, shared `URLCache`, disk-writing image libraries, cached Quick Look previews, or download-task temporary files for automatic previews. Audit the actual chosen APIs; naming a custom dictionary “memory cache” is not a privacy audit.
 
@@ -216,7 +224,7 @@ Pasted image data remains session-only, with an explicit memory cap. At a cap, r
 
 ### OS boundaries and notifications
 
-Promise “no automatic application-managed persistence of user content,” not “no bytes ever reach disk.” macOS swap, system diagnostics, filesystem metadata, the system authentication service, browser history, file dialogs, clipboard managers, and Notification Center are outside that absolute guarantee. Document what was audited and what remains outside the application boundary.
+Promise “application-managed persistence is limited to the Keychain sign-ins and the encrypted content cache,” not “no other bytes ever reach disk.” macOS swap, system diagnostics, filesystem metadata, the system authentication service, browser history, file dialogs, clipboard managers, and Notification Center are outside that absolute guarantee. Document what was audited and what remains outside the application boundary.
 
 Disable native OS notifications by default in strict session mode. Use in-app badges and optional in-app sounds. Enabling Notification Center must be an explicit exception with a disclosure that the OS may retain delivered notifications. Default such notifications to generic text, with no message contents or attachment thumbnails. Do not put a secret into notification identifiers or userInfo. Clear app-delivered notifications on logout where possible without claiming guaranteed erasure.
 
@@ -224,7 +232,7 @@ Use `ASWebAuthenticationSession` with an ephemeral-session preference where supp
 
 Release diagnostics stay in a bounded in-memory ring containing redacted categories, durations, counters, and non-sensitive codes. No automatic file logs, unified-log message contents, telemetry, or crash uploads. Developer-enabled Instruments captures and explicitly requested test reports are separate from normal user operation.
 
-On logout, first remove the saved Keychain sign-in, then cancel requests and tasks, close sockets, discard session stores, clear text undo buffers and previews, remove relevant delivered notifications, and reset the visible account context. Attempt appropriate server-side session logout when possible. Discarding a PAT locally is not revoking it; never revoke a user's PAT without an explicit action. If offline, explain that server logout could not be confirmed.
+On logout, first remove the saved Keychain sign-in, remove the account's cached content and cache key, then cancel requests and tasks, close sockets, discard session stores, clear text undo buffers and previews, remove relevant delivered notifications, and reset the visible account context. Attempt appropriate server-side session logout when possible. Discarding a PAT locally is not revoking it; never revoke a user's PAT without an explicit action. If offline, explain that server logout could not be confirmed.
 
 ## 8. Connection, authentication, and server compatibility
 
@@ -388,7 +396,7 @@ Keep uploaded server file IDs in pending-send state until attached to a confirme
 
 For explicit downloads, stream to the user-selected destination. Account for partial outputs and remove/retain them only according to a documented cancellation policy. Avoid path traversal, unsafe filenames, overwrite surprises, and automatic executable opening. Never place credentials in saved filenames or public share URLs.
 
-In-app previews must remain memory-only. Opening a downloaded file in another application is an explicit handoff outside MatterMac's session-only boundary. Do not secretly materialize a temporary file to feed Quick Look.
+In-app previews use the bounded image pipeline and its content cache, never an ad hoc file. Opening a downloaded file in another application is an explicit handoff outside MatterMac's boundary. Do not secretly materialize a temporary file to feed Quick Look.
 
 ## 15. Resource budgets and backpressure
 
@@ -443,7 +451,7 @@ Establish a reproducible reference profile: a physical Apple silicon Mac, releas
 | Input responsiveness | p95 key-to-visible-update below 16 ms on the reference setup |
 | Scrolling | No persistent frame hitches; meet a 16.7 ms frame budget at 60 Hz and report 120 Hz separately |
 | Idle CPU | Below 0.5% of one logical core on average over a settled five-minute window, including liveness work |
-| App-managed content persistence | None during ordinary session operation; explicit exports and OS-managed artifacts are reported separately |
+| App-managed content persistence | Only Keychain sign-ins and the bounded, encrypted content cache (§7); explicit exports and OS-managed artifacts are reported separately |
 | Long-running resource behavior | No continuing growth in retained objects, tasks, queues, or cache cost after repeated workload cycles reach steady state |
 
 These targets are not correctness shortcuts. If a target is missed, provide the measurement, dominant contributors, investigated changes, and the tradeoff. Do not silently change the test corpus, suppress accessibility, disable TLS, omit images from an image benchmark, or remove a feature to manufacture a pass.
@@ -538,7 +546,7 @@ In an isolated test account/container, audit application-controlled writes durin
 
 Use conspicuous synthetic canary strings in tests, never real secrets, and search observed app-controlled outputs for them. Separate system-owned artifacts from application writes and explicitly document the limitation. A passing directory check alone is not proof that swap or external system services retain nothing.
 
-Verify explicit download/export exceptions separately. Ensure ordinary preview does not create a temporary file. Verify that tokens survive only in the dedicated Keychain item, relaunch revalidates the expected account, and Sign Out removes its saved sign-in. Re-launch must not restore session-only drafts.
+Verify explicit download/export exceptions separately. Ensure ordinary preview does not create a temporary file. Verify that tokens survive only in the dedicated Keychain item, relaunch revalidates the expected account, and Sign Out removes its saved sign-in, cached content and cache key. Verify that cache files are encrypted and stay within `ResourceBudget.diskCache`. Re-launch must not restore session-only drafts.
 
 ### Integration tests
 
@@ -608,7 +616,7 @@ Implement safe Markdown, uploads/downloads, bounded images, server search, profi
 
 Add password/MFA and permitted PAT coverage plus a validated browser-based login flow for a supported configured server, or mark the specific auth capability incomplete. Do not delay all product work when an external IdP test environment is unavailable.
 
-Proof gate: the native messaging checklist passes on supported test environments; unsupported plugin/call features are accurately labeled; ordinary app use persists only the specified Keychain sign-ins.
+Proof gate: the native messaging checklist passes on supported test environments; unsupported plugin/call features are accurately labeled; ordinary app use persists only the specified Keychain sign-ins and the bounded, encrypted content cache.
 
 ### Milestone 4 — Hardening and release candidate
 
@@ -651,7 +659,7 @@ Before declaring messaging v1 complete, verify all of the following:
 5. The native composer handles tested input methods, selection, shortcuts, and accessibility without data loss.
 6. Timelines recycle views, retain only bounded windows, preserve scroll anchors, and do not grow with total account history.
 7. Pending text is never silently evicted; uncertain sends are not falsely confirmed; quitting does not promise draft recovery.
-8. Automatic persistence is limited to the specified Keychain sign-ins in the audited application paths; explicit external actions and OS limitations are disclosed.
+8. Automatic persistence is limited to the specified Keychain sign-ins and the encrypted content cache in the audited application paths; explicit external actions and OS limitations are disclosed.
 9. Memory, size, startup, CPU, and long-session results are measured and published against the specified workload; misses are explained.
 10. Account switching, logout, revocation, reconnect, sleep/wake, and late async callbacks do not leak or corrupt session state.
 11. Calls, web plugins, and other unimplemented capabilities have honest boundaries instead of fake native support.

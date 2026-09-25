@@ -56,7 +56,8 @@ public final class AppModel {
         let dependencies = environment.sessionDependencies
         self.registry = SessionRegistry(dependencies: dependencies, factory: environment.serviceFactory)
         self.layoutCaches = TimelineLayoutCaches(budget: environment.budget)
-        self.images = ImagePipeline(budget: environment.budget, diagnostics: environment.diagnostics)
+        self.images = ImagePipeline(budget: environment.budget, diagnostics: environment.diagnostics,
+                                    cache: environment.contentCache)
         self.loginCoordinator = LoginCoordinator(factory: environment.serviceFactory)
         registry.onChange = { [weak self] in self?.registryChanged() }
         notifications.onOpen = { [weak self] target in self?.open(target) }
@@ -242,9 +243,11 @@ public final class AppModel {
                     try await completeLogin(login, discovery: discovery, remember: false)
                 } catch LoginCoordinator.RestoreError.invalidCredential {
                     try await accounts.remove(endpoint: account.endpoint, userID: account.userID)
+                    await environment.contentCache?.removeAll(for: CacheAccount(endpoint: account.endpoint, user: account.userID))
                     lastSignOutMessage = "A saved sign-in has expired or was revoked. Sign in again."
                 } catch LoginCoordinator.RestoreError.accountChanged {
                     try await accounts.remove(endpoint: account.endpoint, userID: account.userID)
+                    await environment.contentCache?.removeAll(for: CacheAccount(endpoint: account.endpoint, user: account.userID))
                     lastSignOutMessage = "A saved sign-in returned a different account and was removed. Sign in again."
                 } catch {
                     canRetrySavedSignIn = true
@@ -323,6 +326,7 @@ public final class AppModel {
         environment.drafts.discardAll(for: model.scope)
         layoutCaches.purge(scope: model.scope)
         await images.purge(scope: model.scope)
+        await environment.contentCache?.removeAll(for: model.cacheAccount)
         let outcome = await registry.remove(slot, revokeServerSession: true)
         lastSignOutMessage = outcome.map(SignOutText.describe)
         updateDockBadge()
@@ -350,6 +354,12 @@ public final class AppModel {
         notifications.removeDelivered()
         if case .login(let login) = phase { login.cancel() }
         for model in sessionModels.values {
+            // Quitting keeps the account's cache current for the next launch.
+            if preservingSavedSignIns, !model.requiresAuthentication {
+                await model.slot.session.persistCache()
+            } else {
+                await environment.contentCache?.removeAll(for: model.cacheAccount)
+            }
             model.prepareForSignOut()
             environment.drafts.discardAll(for: model.scope)
             layoutCaches.purge(scope: model.scope)

@@ -9,12 +9,17 @@ durable rules and commands that have actually been run in this repository.
 - All app-owned runtime code and tests are **Swift**. No Electron, WKWebView, JS,
   Rust/Go helpers, or non-Swift runtime hidden behind a Swift wrapper. Zero external
   runtime dependencies.
-- **Session-only content:** no database, disk cache, `URLCache`, cookies,
+- **Persistence:** no database, `URLCache`, cookies,
   `UserDefaults`/`@AppStorage`/`@SceneStorage` user state, window restoration, or
-  automatic logs. Explicit downloads/exports and saved sign-ins in macOS Keychain
-  are the only app-controlled persistence. The user explicitly requested Keychain
-  sign-ins on 2026-09-24: save verified bearer token, kind, canonical endpoint and
-  user ID; never passwords. Quit preserves sign-ins; Sign Out deletes them.
+  automatic logs. App-controlled persistence is: explicit downloads/exports, saved
+  sign-ins in macOS Keychain (user request 2026-09-24: verified bearer token, kind,
+  canonical endpoint and user ID; never passwords), and the on-device
+  `ContentCache` (user request 2026-09-25: images, profiles, directory, last open
+  channel, recent channels' latest posts). The cache is AES-GCM encrypted with a
+  per-account Keychain key, bounded by `ResourceBudget.diskCache`, never holds
+  drafts or pending sends, and cached windows never mark channels read. Quit keeps
+  sign-ins and cache; Sign Out deletes both for that account. See SPEC §7 and
+  decision 0031.
 - Networking: `URLSessionConfiguration.ephemeral` with `urlCache = nil`,
   `httpCookieStorage = nil`, `httpShouldSetCookies = false`,
   `urlCredentialStorage = nil`. Never `URLSession.shared`. Bearer header only; never

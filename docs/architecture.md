@@ -35,12 +35,22 @@ pending sends, and pasted-image ownership across sessions. New unsent work is
 refused when full; existing work is not evicted. Network failures preserve the
 difference between a confirmed message, failed send, and unknown outcome.
 
-Verified sign-ins are the sole automatic application-managed persistence:
-`KeychainAccounts` stores endpoint, user ID, bearer credential and kind in the
-local Keychain. Startup checks `/users/me` against the saved identity. Quit closes
-transports while preserving sign-ins; Sign Out removes saved credentials. Message
-content, drafts, navigation, and image caches are session-only. Explicit exports
-and downloads have separate user-selected destinations.
+Automatic application-managed persistence has two parts. `KeychainAccounts`
+stores endpoint, user ID, bearer credential and kind in the local Keychain.
+Startup checks `/users/me` against the saved identity. `ContentCache` (decision
+0031) keeps these for fast launch, in the app's Caches directory:
+
+- compressed image bytes;
+- a directory snapshot, with the last open team and channel;
+- the latest posts of recently opened channels.
+
+It is AES-GCM encrypted under a per-account key held by `KeychainCacheKeys`, and
+bounded by `ResourceBudget.diskCache`. `ImagePipeline` reads it before the network.
+`ServerSession` restores the directory before its first request, and seeds empty
+channel windows (`isCached`) until the server's page replaces them. Quit writes the
+cache and preserves sign-ins. Sign Out removes both for that account. Drafts,
+pending sends, search and local settings stay in memory. Explicit exports and
+downloads have separate user-selected destinations.
 
 See [SPEC.md](../SPEC.md) for requirements, [decisions](decisions/) for significant
 tradeoffs, [compatibility](compatibility.md) for implemented protocol scope, and

@@ -421,15 +421,57 @@ struct AccountsSettingsTab: View {
             Section("Privacy") {
                 Text("""
                     MatterMac saves each verified sign-in (an access token, never your password) in your macOS \
-                    Keychain so it can reconnect after you quit. Signing out removes it from Keychain. Messages, \
-                    drafts, images and the settings marked “On This Mac” stay in memory and are discarded when \
-                    MatterMac quits. Server settings are stored by your Mattermost server.
+                    Keychain so it can reconnect after you quit. To open quickly, it also keeps a cache on this \
+                    Mac: images, profiles, your channel list and the latest messages of recently opened \
+                    channels, encrypted with a key in Keychain. Signing out removes the sign-in and that \
+                    account’s cache. Drafts and the settings marked “On This Mac” stay in memory and are \
+                    discarded when MatterMac quits. Server settings are stored by your Mattermost server.
                     """)
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("accountsPrivacyNote")
             }
+            if let cache = environment.contentCache {
+                CacheSettingsSection(cache: cache)
+            }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Size of the on-device cache and a way to clear it.
+struct CacheSettingsSection: View {
+    let cache: ContentCache
+    @State private var usage: ContentCache.Usage?
+    @State private var isClearing = false
+
+    var body: some View {
+        Section("Cache") {
+            LabeledContent("Stored on this Mac") {
+                if let usage {
+                    Text(verbatim: ByteCountFormatter.string(fromByteCount: Int64(usage.totalBytes), countStyle: .file))
+                        .monospacedDigit()
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .accessibilityIdentifier("cacheUsage")
+            HStack {
+                Text("Clearing makes MatterMac download images and recent messages again.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Clear Cache") {
+                    isClearing = true
+                    Task {
+                        await cache.removeEverything()
+                        usage = await cache.usage
+                        isClearing = false
+                    }
+                }
+                .disabled(isClearing || usage?.files == 0)
+                .accessibilityIdentifier("clearCache")
+            }
+        }
+        .task { usage = await cache.usage }
     }
 }

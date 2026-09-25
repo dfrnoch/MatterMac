@@ -47,7 +47,7 @@ extension ServerSession {
 
     func readConditionsHold(for channel: ChannelID) -> Bool {
         guard appIsActive, windowIsVisible, activeChannel == channel, isActiveSessionAlive, manualUnreadHold != channel,
-              let window = windows[.channel(channel)], window.isLoaded, !window.hasNewer,
+              let window = windows[.channel(channel)], window.isLoaded, !window.isCached, !window.hasNewer,
               visibility[.channel(channel)]?.atLiveEdge == true
         else { return false }
         return directory.unread(for: channel, collapsedThreads: collapsedThreadsActive).isUnread
