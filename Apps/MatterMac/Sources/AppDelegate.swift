@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Created on first use (the scene body); lives until the process exits.
     private(set) lazy var environment: AppEnvironment = AppComposition.makeEnvironment()
     private let events = SystemEventMonitor()
+    private let splitViewPersistence = SplitViewPersistenceGuard()
     private var terminating = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
