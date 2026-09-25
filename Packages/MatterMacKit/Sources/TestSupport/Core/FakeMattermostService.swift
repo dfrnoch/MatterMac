@@ -180,7 +180,12 @@ public final class FakeMattermostService: MattermostService {
         return member
     }
 
-    public func channelStats(_ id: ChannelID) async throws(APIError) -> ChannelStats { ChannelStats(memberCount: 3, pinnedPostCount: 0) }
+    /// Members from `DirectoryState.memberCounts` (default 3); pinned posts from `posts`.
+    public func channelStats(_ id: ChannelID) async throws(APIError) -> ChannelStats {
+        let members = directory.withLock { $0.memberCounts[id] } ?? 3
+        let pinned = withState { state in state.posts.values.filter { $0.channelID == id && $0.isPinned && !$0.isDeleted }.count }
+        return ChannelStats(memberCount: members, pinnedPostCount: pinned)
+    }
 
     public func channelMembers(_ id: ChannelID, page: Int, perPage: Int) async throws(APIError) -> [User] {
         record("channelMembers")
