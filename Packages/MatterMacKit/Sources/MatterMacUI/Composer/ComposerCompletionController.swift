@@ -67,7 +67,8 @@ final class ComposerCompletionController {
     /// Replaces trigger and query with the highlighted item plus a space, as one
     /// undoable edit. Returns `false` when nothing was inserted.
     func acceptSelected() -> Bool {
-        guard popup.isVisible, let item = popup.selectedItem, let textView, let storage = textView.textStorage else {
+        guard popup.isVisible, let item = popup.selectedItem, let textView,
+              !textView.hasMarkedText(), let storage = textView.textStorage else {
             return false
         }
         // Always replace the query as it is *now* (the list may lag one keystroke).

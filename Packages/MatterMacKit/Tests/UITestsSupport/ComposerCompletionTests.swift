@@ -256,6 +256,27 @@ struct ComposerCompletionTests {
         #expect(h.provider.queries.last?.1 == "雪")
     }
 
+    @Test("Clicking an existing completion leaves active composition untouched")
+    func clickDoesNotReplaceComposition() async {
+        let h = ComposerHarness()
+        defer { h.close() }
+        h.enableCompletions(ComposerProviderDouble.users(["yuki"]))
+        h.type("@")
+        await h.settleCompletions()
+        #expect(h.controller.completion.isVisible)
+        h.setMarked("ゆき")
+        let markedRange = h.textView.markedRange()
+        h.controller.completion.popup.onClickAccept?()
+        #expect(h.text == "@ゆき")
+        #expect(h.textView.markedRange() == markedRange)
+        #expect(h.textView.hasMarkedText())
+        #expect(h.spy.sentTexts.isEmpty)
+        h.textView.insertText("雪", replacementRange: NSRange(location: NSNotFound, length: 0))
+        await h.settleCompletions()
+        h.controller.completion.popup.onClickAccept?()
+        #expect(h.text == "@yuki ")
+    }
+
     @Test("Resigning first responder closes the popup")
     func resignCloses() async {
         let h = ComposerHarness()
