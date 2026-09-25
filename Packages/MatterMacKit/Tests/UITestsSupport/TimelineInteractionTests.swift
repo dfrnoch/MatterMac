@@ -134,6 +134,35 @@ struct TimelineInteractionTests {
         #expect(f.spy.actions.count == count + 1 && f.spy.actions.last == .previewImage(image))
     }
 
+    @Test(arguments: [NSAppearance.Name.aqua, .darkAqua])
+    func reactionEmojiInkIsCenteredInsideItsPill(appearance: NSAppearance.Name) throws {
+        let f = makeTimeline(text: "Reaction alignment", reactions: [
+            ReactionGroup(emojiName: "heart", count: 1, includesCurrentUser: false),
+        ], appearance: appearance)
+        defer { f.close() }
+        let chip = try #require(try cell(f).subviews.compactMap { $0 as? ReactionChipView }.first)
+        let root = f.controller.view
+        let rep = render(root)
+        let scale = CGFloat(rep.pixelsWide) / root.bounds.width
+        var inkY: [CGFloat] = []
+        // Inspect the actual red emoji pixels, including the area above/below the
+        // pill: baseline-origin drawing can otherwise look like valid chip geometry.
+        for y in stride(from: -30.0, through: chip.bounds.height + 30, by: 0.5) {
+            for x in stride(from: 0.0, through: chip.bounds.width, by: 0.5) {
+                let point = root.convert(NSPoint(x: x, y: y), from: chip)
+                guard root.bounds.contains(point),
+                      let color = rep.colorAt(x: Int(point.x * scale), y: Int((root.isFlipped ? point.y : root.bounds.height - point.y) * scale))?.usingColorSpace(.sRGB)
+                else { continue }
+                if color.redComponent > 0.5, color.redComponent - color.greenComponent > 0.25,
+                   color.redComponent - color.blueComponent > 0.2 { inkY.append(y) }
+            }
+        }
+        let top = try #require(inkY.min()), bottom = try #require(inkY.max())
+        #expect(top >= 0)
+        #expect(bottom <= chip.bounds.height)
+        #expect(abs((top + bottom) / 2 - chip.bounds.midY) <= 3)
+    }
+
     /// Relative luminance of the rendered pixel at `point` in `view` coordinates.
     func luminance(_ rep: NSBitmapImageRep, of root: NSView, at point: NSPoint, in view: NSView) -> CGFloat {
         let p = root.convert(point, from: view)

@@ -338,7 +338,7 @@ final class ReactionChipView: TimelinePressableView {
                            from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             } else {
                 emojiText.draw(with: NSRect(x: x - metrics.emojiInkMinX, y: floor((bounds.height - emojiText.size().height) / 2),
-                                           width: metrics.emojiWidth, height: bounds.height), options: [.truncatesLastVisibleLine])
+                                           width: metrics.emojiWidth, height: bounds.height), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
             }
             x += metrics.emojiWidth + ReactionChipMetrics.spacing
             countText.draw(at: NSPoint(x: x, y: floor((bounds.height - countText.size().height) / 2)))
