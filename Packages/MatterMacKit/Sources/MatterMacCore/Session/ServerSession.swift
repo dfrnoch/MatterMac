@@ -109,6 +109,7 @@ public actor ServerSession {
     var isShutDown = false
     var authenticationEnded = false
     var missingUsers: Set<UserID> = []
+    var pendingAlerts: [(event: PostedEvent, cost: Int)] = []
     /// Custom emoji name → id, misses and queued lookups (ServerSession+CustomEmoji.swift).
     var customEmoji: CustomEmojiStore
 
@@ -134,6 +135,7 @@ public actor ServerSession {
         case sidebarCategories(TeamID)
         case categoryUpdate(SidebarCategoryID)
         case teamUnreads
+        case alertSender
         case emojiFetch
     }
 
@@ -219,6 +221,7 @@ public actor ServerSession {
         downloads.removeAll()
         for task in tasks.values { task.cancel() }
         tasks.removeAll()
+        pendingAlerts.removeAll()
         await realtime.stop()
         var outcome: SignOutOutcome = credentialKind == .personalAccessToken
             ? .personalAccessTokenDiscardedLocally : .serverLogoutUnconfirmed
@@ -349,6 +352,7 @@ public actor ServerSession {
             journal.removeAll()
             typing.removeAll()
             missingUsers.removeAll()
+            pendingAlerts.removeAll()
             searchState = SearchModel()
             activeChannel = nil
             openThread = nil

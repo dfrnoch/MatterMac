@@ -95,32 +95,60 @@ extension ServerSession {
     /// Posts from others that the user's server notification preferences say should
     /// notify, unless the user set Do Not Disturb or is looking at that conversation.
     func alertIfNeeded(_ event: PostedEvent) {
+        guard let (kind, channel) = eligibleAlert(event) else { return }
         let post = event.post
-        guard let channel = directory.channels[post.channelID] else { return }
-        let input = NotificationPolicy.Input(
-            post: post, channelType: channel.type, serverMentioned: event.mentionsCurrentUser,
-            membership: directory.memberships[channel.id], account: me.notifyProps ?? .serverDefault,
-            username: me.username, firstName: me.firstName, collapsedThreads: collapsedThreadsActive,
-            notifiesThreadFollower: event.notifiesCurrentThreadFollower)
-        guard let kind = NotificationPolicy.kind(for: input) else { return }
-        guard directory.status(of: me.id)?.silencesNotifications != true else { return }
-        if collapsedThreadsActive, let root = post.rootID {
-            if let read = threadReadMark, read.root == root, read.at >= post.createAt { return }
-            if appIsActive, windowIsVisible, openThread == .thread(root: root, channel: channel.id) { return }
-        } else if appIsActive, windowIsVisible, activeChannel == channel.id { return }
-        if post.props.overrideUsername == nil, directory.peekUser(post.userID) == nil {
-            // First message from someone not yet in the directory: resolve the name.
-            let epoch = epoch
-            Task { [weak self] in await self?.alertAfterResolvingSender(post, kind: kind, epoch: epoch) }
+        guard post.props.overrideUsername == nil, directory.peekUser(post.userID) == nil else {
+            yieldAlert(post, kind: kind, channel: channel)
             return
         }
-        yieldAlert(post, kind: kind, channel: channel)
+        // Keep the in-flight event in this queue, so both waiting and resolving
+        // content count toward the same budget. Alerts may be dropped; drafts may not.
+        let cost = PostStore.estimatedCost(of: post, document: .empty)
+        guard pendingAlerts.count < budget.pendingAlerts.count,
+              cost <= budget.pendingAlerts.bytes - pendingAlerts.reduce(0, { $0 + $1.cost }),
+              !pendingAlerts.contains(where: { $0.event.post.id == post.id }) else { return }
+        pendingAlerts.append((event, cost))
+        guard !isRunning(.alertSender) else { return }
+        run(.alertSender) { session in
+            let epoch = session.epoch
+            while let queued = session.pendingAlerts.first, !Task.isCancelled {
+                let post = queued.event.post
+                if session.directory.peekUser(post.userID) == nil,
+                   let user = try? await session.service.users(ids: [post.userID]).first {
+                    guard session.epoch == epoch, session.isActiveSessionAlive, !Task.isCancelled else { return }
+                    session.directory.upsertUser(user)
+                }
+                guard session.epoch == epoch, session.isActiveSessionAlive, !Task.isCancelled else { return }
+                session.pendingAlerts.removeFirst()
+                // Focus, DND, membership and notification preferences may have
+                // changed while resolving the sender. Never use the earlier decision.
+                if let (kind, channel) = session.eligibleAlert(queued.event) {
+                    session.yieldAlert(post, kind: kind, channel: channel)
+                }
+            }
+        }
     }
 
-    private func alertAfterResolvingSender(_ post: Post, kind: IncomingMessageAlert.Kind, epoch: UInt64) async {
-        if let user = try? await service.users(ids: [post.userID]).first, self.epoch == epoch { directory.upsertUser(user) }
-        guard self.epoch == epoch, isActiveSessionAlive, let channel = directory.channels[post.channelID] else { return }
-        yieldAlert(post, kind: kind, channel: channel)
+    private func eligibleAlert(_ event: PostedEvent) -> (IncomingMessageAlert.Kind, Channel)? {
+        let post = event.post
+        guard isActiveSessionAlive, post.userID != me.id,
+              let channel = directory.channels[post.channelID],
+              let member = directory.memberships[channel.id] else { return nil }
+        let input = NotificationPolicy.Input(
+            post: post, channelType: channel.type, serverMentioned: event.mentionsCurrentUser,
+            membership: member, account: me.notifyProps ?? .serverDefault,
+            username: me.username, firstName: me.firstName, collapsedThreads: collapsedThreadsActive,
+            notifiesThreadFollower: event.notifiesCurrentThreadFollower)
+        guard let kind = NotificationPolicy.kind(for: input),
+              directory.status(of: me.id)?.silencesNotifications != true else { return nil }
+        if collapsedThreadsActive, let root = post.rootID {
+            if let read = threadReadMark, read.root == root, read.at >= post.createAt { return nil }
+            if appIsActive, windowIsVisible, openThread == .thread(root: root, channel: channel.id) { return nil }
+        } else {
+            if member.lastViewedAt >= post.createAt { return nil }
+            if appIsActive, windowIsVisible, activeChannel == channel.id { return nil }
+        }
+        return (kind, channel)
     }
 
     private func yieldAlert(_ post: Post, kind: IncomingMessageAlert.Kind, channel: Channel) {

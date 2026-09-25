@@ -181,6 +181,71 @@ struct NotificationPreferenceSessionTests {
         #expect(await alerts.next() == nil)
     }
 
+    @Test func unknownSenderQueueCapsCountAndBytesAndRechecksNavigation() async throws {
+        var budget = ResourceBudget.standard
+        budget.pendingAlerts = .init(count: 2, bytes: 2_000)
+        let h = await SessionHarness(budget: budget)
+        _ = await eventually { await h.session.directory.channels[h.channel.id] != nil }
+        await h.session.updateAppState(isActive: false, isWindowVisible: true)
+        let gate = Gate()
+        let baseline = h.service.withState { $0.calls.filter { $0 == "users" }.count }
+        h.service.withState { $0.usersGate = gate }
+        var alerts = h.session.alerts.makeAsyncIterator()
+        // One oversize post must not consume a slot, then only two small ones fit.
+        await h.session.testQueueUnknownAlerts(count: 1, message: String(repeating: "x", count: 2_000))
+        #expect(await h.session.pendingAlerts.isEmpty)
+        await h.session.testQueueUnknownAlerts(count: 20, message: "hello")
+        #expect(await h.session.pendingAlerts.count == 2)
+        #expect(await h.session.tasks.keys.filter { $0 == .alertSender }.count == 1)
+        #expect(await eventually { h.service.withState { $0.calls.filter { $0 == "users" }.count } == baseline + 1 })
+        // Navigating to the conversation while lookup is suspended suppresses both.
+        await h.session.testFocusAlertChannel()
+        await gate.open()
+        #expect(await eventually { await h.session.testAlertQueueIdle })
+        _ = await h.session.shutdown(revokeServerSession: false)
+        #expect(await alerts.next() == nil)
+    }
+
+    @Test func unknownSenderQueueResolvesNameAndDeduplicatesPendingPost() async throws {
+        let h = await SessionHarness()
+        _ = await eventually { await h.session.directory.channels[h.channel.id] != nil }
+        await h.session.updateAppState(isActive: false, isWindowVisible: true)
+        let gate = Gate()
+        let user = User(id: UserID(unchecked: CoreFixtures.id("unknown", 0)), username: "newcomer")
+        h.service.withState { $0.usersGate = gate; $0.users[user.id] = user }
+        var alerts = h.session.alerts.makeAsyncIterator()
+        await h.session.testQueueUnknownAlerts(count: 1, message: "hello")
+        await h.session.testQueueUnknownAlerts(count: 1, message: "hello")
+        #expect(await h.session.pendingAlerts.count == 1)
+        await gate.open()
+        let alert = try #require(await alerts.next())
+        #expect(alert.senderName == "newcomer")
+        #expect(alert.kind == .mention)
+        #expect(await eventually { await h.session.testAlertQueueIdle })
+        _ = await h.session.shutdown(revokeServerSession: false)
+        #expect(await alerts.next() == nil)
+    }
+
+    @Test func unknownSenderQueueDropsOnShutdownAndAuthenticationDetach() async throws {
+        for detach in [false, true] {
+            let h = await SessionHarness()
+            _ = await eventually { await h.session.directory.channels[h.channel.id] != nil }
+            await h.session.updateAppState(isActive: false, isWindowVisible: true)
+            let gate = Gate()
+            h.service.withState { $0.usersGate = gate }
+            var alerts = h.session.alerts.makeAsyncIterator()
+            await h.session.testQueueUnknownAlerts(count: 3, message: "hello")
+            #expect(await eventually { await h.session.isRunning(.alertSender) })
+            if detach { await h.session.notify(.signedOutByServer) }
+            else { _ = await h.session.shutdown(revokeServerSession: false) }
+            #expect(await h.session.pendingAlerts.isEmpty)
+            await gate.open()
+            #expect(await eventually { await !h.session.isRunning(.alertSender) })
+            if detach { _ = await h.session.shutdown(revokeServerSession: false) }
+            #expect(await alerts.next() == nil)
+        }
+    }
+
     @Test func accountNotificationChangesSendTheCompleteMap() async throws {
         let h = await signedIn()
         var updates = h.session.accountSettingsUpdates.makeAsyncIterator()
@@ -286,6 +351,22 @@ struct NotificationPreferenceSessionTests {
 }
 
 private extension ServerSession {
+    var testAlertQueueIdle: Bool { pendingAlerts.isEmpty && !isRunning(.alertSender) }
+    func testQueueUnknownAlerts(count: Int, message: String) {
+        for n in 0..<count {
+            let post = CoreFixtures.post(900 + n, channel: CoreFixtures.channel(1).id,
+                                         user: UserID(unchecked: CoreFixtures.id("unknown", n)), message: message)
+            alertIfNeeded(PostedEvent(post: post, channelType: .open, teamID: CoreFixtures.team.id,
+                                     mentionsCurrentUser: true, setOnline: true))
+        }
+    }
+
+    func testFocusAlertChannel() {
+        activeChannel = CoreFixtures.channel(1).id
+        appIsActive = true
+        windowIsVisible = true
+    }
+
     func testThreadAlert(_ event: PostedEvent, open: Bool, read: Bool) {
         let root = event.post.rootID!
         activeChannel = event.post.channelID

@@ -24,6 +24,7 @@ public final class FakeMattermostService: MattermostService {
         public var memberships: [ChannelID: ChannelMembership] = [:]
         public var posts: [PostID: Post] = [:]
         public var users: [UserID: User] = [:]
+        public var usersGate: Gate?
         public var calls: [String] = []
         public var createdPosts: [OutgoingPost] = []
         public var viewedChannels: [ChannelID] = []
@@ -345,6 +346,7 @@ public final class FakeMattermostService: MattermostService {
 
     public func users(ids: [UserID]) async throws(APIError) -> [User] {
         record("users")
+        if let gate = withState({ $0.usersGate }) { await gate.wait() }
         return withState { state in ids.compactMap { state.users[$0] } }
     }
 

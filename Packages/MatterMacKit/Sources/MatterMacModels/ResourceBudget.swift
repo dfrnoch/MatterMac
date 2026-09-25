@@ -63,6 +63,8 @@ public struct ResourceBudget: Sendable, Hashable {
     public var outstandingImageRequests = 16
     public var webSocketMessageBytes = 2 * .mebibyte
     public var realtimeMailbox = CountAndBytes(count: 512, bytes: 2 * .mebibyte)
+    /// Incoming alerts waiting for one serial sender lookup; excess alerts are dropped.
+    public var pendingAlerts = CountAndBytes(count: 32, bytes: 256 * .kibibyte)
     public var diagnosticRingBytes = 256 * .kibibyte
     public var connectedSessions = 3
     public var rememberedAccountBytes = 32 * .kibibyte

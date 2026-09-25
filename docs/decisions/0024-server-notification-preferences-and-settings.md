@@ -104,3 +104,15 @@ Protocol sources: [server v11.11.1 notification policy](https://github.com/matte
 and [official desktop policy](https://github.com/mattermost/mattermost/blob/v11.11.1/webapp/channels/src/actions/notification_actions.tsx).
 Servers omitting `followers` keep mention-only CRT reply notifications; incomplete
 locally paged follow lists are deliberately not used to guess eligibility.
+
+## Bounded sender resolution (2026-09-25)
+
+Unknown senders are resolved by one tracked session task. The queue, including its
+in-flight event, is capped by `ResourceBudget.pendingAlerts` at 32 events / 256 KiB
+of estimated retained post cost. Duplicate pending posts and overflow are dropped;
+this queue contains incoming alerts, never drafts or pending sends. Authentication
+detachment and shutdown clear it and cancel the worker. After each response the
+worker checks the epoch, cancellation, membership, current notification settings,
+DND, read state and visible conversation again before delivering. A failed lookup
+keeps the existing generic sender label. Gate tests exercise count/byte refusal,
+deduplication, sender resolution, navigation during the request and cancellation.
