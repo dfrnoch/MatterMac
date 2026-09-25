@@ -212,6 +212,30 @@ struct TransportIntegrationTests {
         await transport.shutdown()
     }
 
+    @Test(arguments: ["%2e%2e%2fother", "%2F..%2Fother", "..%5Cother"])
+    func refusesEncodedSeparatorsInTraversal(segment: String) async throws {
+        let escaped = "/company/chat/" + segment
+        let server = try await LocalHTTPServer.start { request in
+            request.path == "/company/chat/start" ? .redirect(to: escaped) : .json("{}")
+        }
+        defer { server.stop() }
+        let scope = server.endpoint(pathSegments: ["company", "chat"])
+        let transport = URLSessionTransport(scope: scope)
+        // Refuse both directly constructed requests and redirects before the
+        // bearer can reach a proxy-normalized sibling application path.
+        let direct = try #require(URL(string: server.baseURL.absoluteString + escaped))
+        #expect(throws: APIError.redirectRefused) {
+            try URLSessionTransport.makeURLRequest(for: HTTPRequest(method: .get, url: direct, credential: Self.token),
+                                                   scope: scope, userAgent: "MatterMac")
+        }
+        await #expect(throws: APIError.redirectRefused) {
+            _ = try await transport.send(HTTPRequest(method: .get, url: scope.url(path: ["start"]), credential: Self.token),
+                                         limits: ResponseLimits(maximumBodyBytes: 1_024))
+        }
+        #expect(server.requests.count == 1)
+        await transport.shutdown()
+    }
+
     @Test func refusesRedirectThatTurnsAWriteIntoAGet() async throws {
         try await withServer({ request in
             request.method == "POST" ? .redirect(303, to: "/api/v4/elsewhere") : .json("{}")

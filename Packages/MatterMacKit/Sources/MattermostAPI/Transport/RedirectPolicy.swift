@@ -35,7 +35,11 @@ public enum RedirectPolicy {
         let raw = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? url.path
         for segment in raw.split(separator: "/", omittingEmptySubsequences: false) {
             let decoded = String(segment).removingPercentEncoding ?? String(segment)
-            if decoded == "." || decoded == ".." { return true }
+            // A proxy can decode an encoded slash before normalizing the path:
+            // `%2e%2e%2fother` is a traversal even though it is one URL component.
+            // Backslashes are separators for some upstream servers as well.
+            if decoded.split(whereSeparator: { $0 == "/" || $0 == "\\" })
+                .contains(where: { $0 == "." || $0 == ".." }) { return true }
         }
         return false
     }
