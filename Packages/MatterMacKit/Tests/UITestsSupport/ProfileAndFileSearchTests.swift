@@ -8,6 +8,26 @@ import TestSupport
 
 @MainActor @Suite("Profile editor and file search", .serialized)
 struct ProfileAndFileSearchTests {
+    @Test func detachingSessionClearsRetainedProfilePopover() async throws {
+        let h = try await SettingsAndAttentionTests.Harness()
+        let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 400, height: 400),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        defer { window.close() }
+        let anchor = try #require(window.contentView)
+        let popover = try #require(ProfilePopover.show(session: h.model, lookup: .id(CoreFixtures.me.id),
+                                          relativeTo: NSRect(x: 10, y: 10, width: 20, height: 20), of: anchor))
+        #expect(popover.contentViewController != nil)
+        h.model.detach()
+        #expect(!popover.isShown)
+        #expect(popover.contentViewController == nil)
+        #expect(ProfilePopover.show(session: h.model, lookup: .id(CoreFixtures.me.id),
+                                    relativeTo: .zero, of: anchor) == nil)
+        popover.close()
+        await h.close()
+    }
+
     @Test func hostsProfileEditorAndDisplaysFileResultsWithoutShowingWindow() async throws {
         let h = try await SettingsAndAttentionTests.Harness()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 560),

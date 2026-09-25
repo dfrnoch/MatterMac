@@ -84,6 +84,7 @@ public final class SessionViewModel {
     func detach() {
         isDetached = true
         ProfileEditSheet.close(for: self)
+        ProfilePopover.close(for: self)
         navigationTask?.cancel()
         directMessageTask?.cancel()
         recoveryTask?.cancel()

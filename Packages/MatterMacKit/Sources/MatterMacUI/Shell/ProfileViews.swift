@@ -310,7 +310,21 @@ enum EmojiText {
 /// Presents a profile card from AppKit (the native timeline).
 @MainActor
 enum ProfilePopover {
-    static func show(session: SessionViewModel, lookup: ProfileLookup, relativeTo rect: NSRect, of view: NSView) {
+    private static weak var current: NSPopover?
+    private static weak var owner: SessionViewModel?
+
+    static func close(for session: SessionViewModel) {
+        guard owner === session else { return }
+        current?.close()
+        current?.contentViewController = nil
+        current = nil
+        owner = nil
+    }
+
+    @discardableResult
+    static func show(session: SessionViewModel, lookup: ProfileLookup, relativeTo rect: NSRect, of view: NSView) -> NSPopover? {
+        guard !session.isDetached, !session.requiresAuthentication else { return nil }
+        if let owner { close(for: owner) }
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -318,6 +332,9 @@ enum ProfilePopover {
         let host = NSHostingController(rootView: card)
         host.sizingOptions = .preferredContentSize
         popover.contentViewController = host
+        current = popover
+        owner = session
         popover.show(relativeTo: rect, of: view, preferredEdge: .maxX)
+        return popover
     }
 }
