@@ -37,9 +37,10 @@ final class LiveMemberListUITests: XCTestCase {
         let passwordField = app.secureTextFields["Password"]
         XCTAssertTrue(passwordField.waitForExistence(timeout: 10))
         passwordField.click()
+        sleep(1)
         passwordField.typeText(password + "\r")
 
-        let interop = app.staticTexts["Interop"].firstMatch
+        let interop = app.buttons.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Interop", "Interop, ")).firstMatch
         XCTAssertTrue(interop.waitForExistence(timeout: 30), "sidebar did not load")
         interop.click()
 
@@ -48,7 +49,7 @@ final class LiveMemberListUITests: XCTestCase {
         let found = members.waitForExistence(timeout: 20)
         if !found { add(XCTAttachment(screenshot: app.windows.firstMatch.screenshot())) }
         XCTAssertTrue(found, "members section missing")
-        let bob = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "bob")).firstMatch
+        let bob = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", ", @bob")).firstMatch
         XCTAssertTrue(bob.waitForExistence(timeout: 20), "member row missing")
         sleep(3)
         // Still responsive: the menu bar opens and the profile popover appears.

@@ -260,6 +260,9 @@ struct SidebarRow: View {
         .opacity(row.isMuted && row.mentionCount == 0 ? 0.55 : 1)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAddTraits(session.selectedChannel == row.channelID ? .isSelected : [])
+        .accessibilityAction { session.select(channel: row.channelID) }
     }
 
     @ViewBuilder private var icon: some View {

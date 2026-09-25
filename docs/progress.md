@@ -1006,3 +1006,21 @@ ConversationIntegrationTests/commandFeedbackStaysInItsConversation` failed on th
 navigation case before the fix and passed both cases afterward, with zero
 compiler warnings (`/tmp/mm-command-feedback-before.log`,
 `/tmp/mm-command-feedback-after.log`).
+
+### Sidebar accessibility and recovered visual tour
+
+Channel/DM rows now expose a button role, selected state and a default activation
+action. The signed-in accessibility audit no longer reports their unknown roles.
+The member-list test explicitly requires the channel button and matches the
+member's `@bob` label, avoiding the newly accessible DM button. The first recheck
+caught that ambiguous test selector; the corrected member-list recheck passed.
+The active-window visual tour also passed through search and Settings.
+
+- `xcodebuild … -only-testing:MatterMacUITests/AccessibilityAuditUITests/testSignedInMainWindow
+  -only-testing:MatterMacUITests/LiveMemberListUITests
+  -only-testing:MatterMacUITests/LiveVisualTourUITests test`: audit and tour passed;
+  member test failed on its ambiguous selector (`/tmp/mm-sidebar-accessibility.log`).
+- `xcodebuild … -only-testing:MatterMacUITests/LiveMemberListUITests test` after the
+  selector correction: **1 passed**, `/tmp/mm-sidebar-member-recheck.log`.
+- Remaining audit reports include contrast, SwiftUI container labels and native
+  menu actions; no blanket accessibility pass is claimed.

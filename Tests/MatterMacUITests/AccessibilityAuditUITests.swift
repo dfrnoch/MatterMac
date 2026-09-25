@@ -61,7 +61,7 @@ final class AccessibilityAuditUITests: XCTestCase {
         passwordField.click()
         sleep(1)
         passwordField.typeText(password + "\r")
-        let interop = app.staticTexts["Interop"].firstMatch
+        let interop = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Interop", "Interop, ")).firstMatch
         XCTAssertTrue(interop.waitForExistence(timeout: 30))
         interop.click()
         sleep(2)
