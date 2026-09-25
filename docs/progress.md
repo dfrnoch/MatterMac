@@ -1900,3 +1900,35 @@ Tests and checks:
 
 Not verified: a real GitHub Developer ID and notarized release end to end (needs
 two published releases), and macOS 14/15.
+
+## 2026-09-25 — first published nightly
+
+The first Release run (36134978967) built and notarized the DMG, then failed while
+writing release notes with exit 141. `git log | head` under `pipefail` gets
+SIGPIPE when the history exceeds the limit. Fixed in `b3069bc` with
+`git log --max-count` and no piping into `head`. Nightlies are now ordered by build
+number, because a date sort picked the wrong tag for commits with the same
+timestamp; verified by replaying the step locally. The artifact actions moved to
+Node 24 (upload v7.0.1, download v8.0.1).
+
+A clean checkout of the updater commit then failed to build: zero-context hunk
+staging had placed the new package-product entries in `project.pbxproj` after the
+`objects` dictionary. The commit was amended with the working copy (minus the
+user's local `DEVELOPMENT_TEAM` lines) and then built from a fresh worktree (Release
+ad-hoc and Debug) before `0e0a2e5` was pushed.
+
+Release run 36138787071 (nightly) succeeded and published pre-release
+**MatterMac 1.0.0-nightly.20260925.2** (build 2) with the DMG, its `.sha256`, the
+app ZIP and `update.json`. Downloaded and checked on this Mac:
+
+- the manifest's SHA-256 and size match the ZIP;
+- Info.plist reads 1.0.0 / 2 / 1.0.0-nightly.20260925.2;
+- the app satisfies the updater's requirement (Developer ID team ZJ37A69485,
+  notarized);
+- `spctl` accepts the app and the DMG as "Notarized Developer ID";
+- the stapled ticket validates;
+- the embedded `MatterMacUpdateInstaller` has a Developer ID signature, the
+  hardened runtime and no sandbox entitlement.
+
+Next: the first real in-app update is from this nightly to the next one; confirm
+it on a copy installed in /Applications.
