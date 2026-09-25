@@ -1112,3 +1112,21 @@ The full syscall filesystem trace cannot run without administrator access:
 `fs_usage` requires root and `sudo -n` requires a password. No permission prompt was
 made. A scoped before/after app-storage inspection is being collected with the
 long-run sampler; it will not be represented as a full privacy audit.
+
+### Thread preference availability and final UI tour
+
+Changing collapsed-thread preferences now republishes followed-thread availability
+and counters, and late totals/pages check that the feature is still enabled. The
+new regression toggles both directions; `swift test … --filter
+'ThreadsTests|NotificationPreferencesTests'` passed (20 Core tests, plus 2 disabled
+opt-in live cases reported by other targets), zero compiler warnings:
+`/tmp/mm-crt-availability.log`.
+
+The integrated XCUITest run passed **12 executed + 1 deliberately skipped official
+peer test**, zero failures (`/tmp/mm-final-uitests.log`, result bundle dated
+2026.09.25_02-51-18). The official-peer test passed separately as recorded above.
+The visual tour captures actual-app channel/thread/search/settings states under
+`/tmp/mm-final-tour`. Small footer/status contrast reports no longer appeared;
+date/login/title/placeholder and native group/menu audit reports remain, so this
+is not a clean accessibility audit. The search capture exposed clipped outer pane
+edges; that layout defect is under investigation before the sustained run.

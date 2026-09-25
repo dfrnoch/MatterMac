@@ -111,6 +111,22 @@ struct ThreadsTests {
         _ = await h.session.shutdown(revokeServerSession: false)
     }
 
+    @Test func changingCollapsedThreadPreferencePublishesAvailability() async throws {
+        let h = await SessionHarness(collapsedThreads: "default_off")
+        #expect(await eventually { await !h.session.isRunning(.threadTotals) })
+        try await h.session.setCollapsedThreads(true)
+        #expect(await eventually { await !h.session.isRunning(.threadTotals) })
+        var activity = h.session.threadActivity.makeAsyncIterator()
+        let enabled = await activity.next()
+        #expect(enabled?.isAvailable == true)
+        try await h.session.setCollapsedThreads(false)
+        #expect(await eventually { await !h.session.isRunning(.threadTotals) })
+        let disabled = await activity.next()
+        #expect(disabled?.isAvailable == false)
+        #expect(disabled?.unreadThreads == 0)
+        _ = await h.session.shutdown(revokeServerSession: false)
+    }
+
     @Test func visibleThreadAtLiveEdgeIsMarkedReadOnce() async throws {
         let h = await SessionHarness(configure: { state in state.collapsedThreadsConfig = "always_on" })
         await h.openChannel()

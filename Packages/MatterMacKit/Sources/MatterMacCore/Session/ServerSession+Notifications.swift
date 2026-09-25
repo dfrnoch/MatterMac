@@ -214,6 +214,7 @@ extension ServerSession {
     /// dropped and the visible one reloaded, like the official client's full reload.
     func reloadAfterCollapsedThreadsChange() {
         deps.diagnostics.record(.sync, .info, "collapsed threads changed")
+        refreshThreadTotals()
         for target in windows.keys {
             guard case .channel(let channel) = target else { continue }
             if channel == activeChannel { startInitialLoadReplacingWindow(target) } else { closeWindow(target) }

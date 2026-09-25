@@ -26,7 +26,8 @@ extension ServerSession {
                 }
                 guard let list = try? await session.service.userThreads(team: team, me: session.me.id, before: nil,
                                                                         perPage: 1, unreadOnly: false, totalsOnly: true),
-                      session.epoch == epoch, !Task.isCancelled, session.selectedTeam == team else { continue }
+                      session.epoch == epoch, !Task.isCancelled, session.selectedTeam == team,
+                      session.collapsedThreadsActive else { continue }
                 session.publishThreadActivity(unreadThreads: list.totalUnreadThreads, unreadMentions: list.totalUnreadMentions)
             }
         }
@@ -56,7 +57,8 @@ extension ServerSession {
             handleAuthenticationFailureIfNeeded(error)
             throw Self.userFacing(error)
         }
-        guard self.epoch == epoch, isActiveSessionAlive, selectedTeam == team, !Task.isCancelled else { throw .cancelled }
+        guard self.epoch == epoch, isActiveSessionAlive, selectedTeam == team, collapsedThreadsActive,
+              !Task.isCancelled else { throw .cancelled }
         var missing = Set<UserID>()
         let summaries = list.threads.map { thread -> ThreadSummary in
             for user in thread.participants { directory.upsertUser(user) }
