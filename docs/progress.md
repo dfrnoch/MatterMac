@@ -1038,3 +1038,34 @@ Text retains image links and unsupported-action notices. See decision 0027.
 API 53, Models 18, Realtime 27; opt-in live/Keychain/demo checks were not enabled).
 Evidence: `/tmp/mm-rendering-integrated.log`. Performance measurements and the
 other two recovered feature branches remain in progress.
+
+### Recovered daily-use features and asynchronous isolation
+
+Integrated custom emoji (inline/reactions/picker/completion), command completion,
+own-profile editing and picture updates, and file search/preview/navigation. The
+recovered branches include focused fixture and live tests against all three local
+servers; the final combined live verification is still pending. Native rendering
+measurements and their limits are recorded in `docs/benchmarks.md`.
+
+Hardening after integration fixed canceled searches returning into reopened
+queries, overlapping pagination skipping pages, and revoked file results retaining
+an open preview or accepting a delayed response. Search invalidation now covers
+all result kinds. Duplicate server emoji pages stop instead of paging forever.
+Encoded forward/backslash dot traversal is rejected before both direct HTTP
+requests and redirects; the real loopback regression failed before the fix and
+all 22 transport tests passed afterward (`/tmp/mm-encoded-traversal-after.log`).
+
+The first combined package/Keychain run exposed a thread-test race: its revision
+assertion overlapped the independent startup refresh. It now waits for that
+refresh. Investigation also found two production bugs: an event during a totals
+request was lost, and switching teams could publish the previous team's totals.
+One bounded refresh task now coalesces pending changes and checks the team after
+the response. Followed-thread pages and follow-state reads reject stale team
+responses too. Gated regressions fail on the old totals implementation and pass
+with the fix; a separate gated page test checks a team switch.
+
+`swift test --package-path Packages/MatterMacKit --filter CoreTests`: **142 tests,
+all passed**, zero compiler warnings (`/tmp/mm-core-hardening.log`). Totals failure
+reproduction: `/tmp/mm-thread-refresh-before.log`. Full combined package, app,
+live and sustained-use checks are still in progress; no production-readiness or
+completed privacy-audit claim is made by this milestone.

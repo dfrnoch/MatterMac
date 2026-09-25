@@ -30,6 +30,7 @@ public final class FakeMattermostService: MattermostService {
         public var statuses: [UserID: PresenceStatus] = [:]
         public var executedCommands: [String] = []
         public var threads: [UserThread] = []
+        public var userThreadsHandler: (@Sendable (TeamID, Bool) async throws -> UserThreadList)?
         /// Saved (flagged) post ids, newest first.
         public var flagged: [PostID] = []
         public var threadReadMarks: [PostID?] = []
@@ -390,6 +391,7 @@ public final class FakeMattermostService: MattermostService {
     public func userThreads(team: TeamID, me: UserID, before: PostID?, perPage: Int, unreadOnly: Bool, totalsOnly: Bool)
         async throws(APIError) -> UserThreadList {
         record("userThreads")
+        if let handler = withState({ $0.userThreadsHandler }) { return try await Self.typed { try await handler(team, totalsOnly) } }
         return withState { state in
             var threads = state.threads.filter { !unreadOnly || $0.unreadReplies > 0 }
                 .sorted { $0.lastReplyAt > $1.lastReplyAt }

@@ -10,20 +10,25 @@ extension ServerSession {
 
     /// Refreshes the unread totals (coalesced; one request at a time).
     func refreshThreadTotals() {
-        guard isActiveSessionAlive, !isRunning(.threadTotals) else { return }
-        guard collapsedThreadsActive, let team = selectedTeam else {
-            publishThreadActivity(unreadThreads: 0, unreadMentions: 0)
-            return
-        }
+        guard isActiveSessionAlive else { return }
+        threadTotalsPending = true
+        guard !isRunning(.threadTotals) else { return }
         run(.threadTotals) { session in
             let epoch = session.epoch
-            // Coalesce bursts of thread events into one request.
-            try? await session.deps.clock.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled,
-                  let list = try? await session.service.userThreads(team: team, me: session.me.id, before: nil,
-                                                                    perPage: 1, unreadOnly: false, totalsOnly: true),
-                  session.epoch == epoch else { return }
-            session.publishThreadActivity(unreadThreads: list.totalUnreadThreads, unreadMentions: list.totalUnreadMentions)
+            while session.threadTotalsPending, session.epoch == epoch, !Task.isCancelled {
+                // Coalesce bursts without losing events arriving during the request.
+                try? await session.deps.clock.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                session.threadTotalsPending = false
+                guard session.collapsedThreadsActive, let team = session.selectedTeam else {
+                    session.publishThreadActivity(unreadThreads: 0, unreadMentions: 0)
+                    continue
+                }
+                guard let list = try? await session.service.userThreads(team: team, me: session.me.id, before: nil,
+                                                                        perPage: 1, unreadOnly: false, totalsOnly: true),
+                      session.epoch == epoch, !Task.isCancelled, session.selectedTeam == team else { continue }
+                session.publishThreadActivity(unreadThreads: list.totalUnreadThreads, unreadMentions: list.totalUnreadMentions)
+            }
         }
     }
 
@@ -51,7 +56,7 @@ extension ServerSession {
             handleAuthenticationFailureIfNeeded(error)
             throw Self.userFacing(error)
         }
-        guard self.epoch == epoch, isActiveSessionAlive else { throw .cancelled }
+        guard self.epoch == epoch, isActiveSessionAlive, selectedTeam == team, !Task.isCancelled else { throw .cancelled }
         var missing = Set<UserID>()
         let summaries = list.threads.map { thread -> ThreadSummary in
             for user in thread.participants { directory.upsertUser(user) }
@@ -89,7 +94,7 @@ extension ServerSession {
         let epoch = epoch
         do {
             let thread = try await service.userThread(root, team: team, me: me.id)
-            guard self.epoch == epoch else { return nil }
+            guard self.epoch == epoch, isActiveSessionAlive, selectedTeam == team, !Task.isCancelled else { return nil }
             return thread != nil
         } catch {
             return nil

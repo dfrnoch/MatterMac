@@ -29,9 +29,14 @@ been performed; there is no signed public release yet.
 ## Current scope
 
 - Password/PAT login, browser SSO handoff, and Keychain sign-in restoration.
-- Channel navigation, DMs, history, text composition and formatting, mentions,
-  basic threads, edits, deletions, reactions, and search.
-- File upload/download, pasted images, avatars, and native image previews.
+- Channels, DMs/group messages, collapsed threads, unread state, edits/deletions,
+  reactions, saved/pinned messages, and server message/file search.
+- Native Markdown tables, task lists, code/quotes and attachment cards; system and
+  custom emoji with completion, plus server slash-command suggestions.
+- File upload/download, pasted images, avatars, native image previews, and profile
+  editing with bounded profile-picture upload.
+- Multiple server sessions, keyboard navigation, server notification preferences,
+  opt-in macOS notifications, and session-only appearance/settings.
 - Session recovery notices and Review Unsent Work: copy individual drafts or
   unconfirmed sends, export pasted images, and confirm local discard.
 
@@ -43,9 +48,11 @@ providers still require deployment testing. See [compatibility](docs/compatibili
 and the dated [verification record](docs/progress.md).
 
 Calls, arbitrary web plugins, Boards, Playbooks dashboards, and administration are
-outside the native messaging scope. Emoji completion, a compatibility panel, and
-broader permission controls still need UI integration. Accessibility, real IMEs,
-minimum-OS execution, privacy audits, and performance gates remain incomplete.
+outside the native messaging scope. Interactive command dialogs and ephemeral bot
+posts remain unsupported. Accessibility, real IMEs, minimum-OS execution, privacy
+audits, and full application performance gates remain incomplete. The synthetic
+native rendering measurements are recorded in [benchmarks](docs/benchmarks.md);
+they are not whole-application memory or startup measurements.
 
 ## What is saved
 

@@ -46,7 +46,8 @@ Normal package test runs skip the benchmark unless `MM_BENCHMARKS=1`.
 
 ## Measurements
 
-Measured 2026-09-25, rendering source through `425a1b7`, with this benchmark harness.
+Measured 2026-09-25, rendering source through `5735c65` (the integrated equivalent of recovered
+commit `425a1b7`), with this benchmark harness.
 No explicit warm-up is excluded; first-use costs remain in the distribution. The
 final run took 75.148 seconds and passed every cache-bound assertion.
 
