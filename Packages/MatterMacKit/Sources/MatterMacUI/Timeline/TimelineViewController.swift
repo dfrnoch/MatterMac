@@ -56,7 +56,7 @@ public final class TimelineViewController: NSViewController {
 
     let scrollView = NSScrollView()
     let tableView = TimelineTableView()
-    let newMessagesButton = NSButton(title: "", target: nil, action: nil)
+    let newMessagesButton = JumpToLatestPill(frame: .zero)
     let contextMenu = NSMenu()
     private(set) lazy var adapter = TimelineTableAdapter(controller: self)
     /// Floating actions for the hovered/selected message (see `+Hover`).
@@ -187,12 +187,8 @@ public final class TimelineViewController: NSViewController {
         tableView.fitColumnToWidth()
         installHoverBar(in: container)
 
-        newMessagesButton.bezelStyle = .push
-        newMessagesButton.controlSize = .regular
-        newMessagesButton.image = NSImage(systemSymbolName: "arrow.down", accessibilityDescription: nil)
-        newMessagesButton.imagePosition = .imageTrailing
-        newMessagesButton.target = self
-        newMessagesButton.action = #selector(newMessagesButtonPressed(_:))
+        newMessagesButton.button.target = self
+        newMessagesButton.button.action = #selector(newMessagesButtonPressed(_:))
         newMessagesButton.isHidden = true
         container.addSubview(newMessagesButton)
 

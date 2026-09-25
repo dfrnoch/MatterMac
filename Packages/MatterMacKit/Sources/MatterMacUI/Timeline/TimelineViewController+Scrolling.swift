@@ -421,10 +421,8 @@ extension TimelineViewController {
             return
         }
         let wasHidden = newMessagesButton.isHidden
-        if newMessagesButton.title != title {
-            newMessagesButton.title = title
-            newMessagesButton.setAccessibilityLabel(title)
-        }
+        newMessagesButton.title = title
+        newMessagesButton.isProminent = newItemsBelow > 0
         layoutNewMessagesButton()
         newMessagesButton.isHidden = false
         if wasHidden, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
@@ -440,9 +438,7 @@ extension TimelineViewController {
 
     func layoutNewMessagesButton() {
         guard isViewLoaded else { return }
-        newMessagesButton.sizeToFit()
-        var frame = newMessagesButton.frame
-        frame.size.width += 16
+        var frame = NSRect(origin: .zero, size: newMessagesButton.fittingPillSize)
         frame.origin.x = floor((view.bounds.width - frame.width) / 2)
         let bottomInset = scrollView.contentView.contentInsets.bottom
         frame.origin.y = view.isFlipped ? view.bounds.height - frame.height - 12 - bottomInset : 12 + bottomInset

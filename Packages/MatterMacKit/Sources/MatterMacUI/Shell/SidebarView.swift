@@ -7,6 +7,7 @@ import MatterMacCore
 struct SidebarView: View {
     let app: AppModel
     @Bindable var session: SessionViewModel
+    @State private var columnWidth: CGFloat = 280
 
     var body: some View {
         HStack(spacing: 0) {
@@ -14,7 +15,6 @@ struct SidebarView: View {
                 WorkspaceRail(app: app, session: session)
             }
             VStack(spacing: 0) {
-                SidebarHeader(app: app, session: session)
                 channelList
                     .contentMargins(.bottom, session.connection == .connected ? 64 : 100, for: .scrollContent)
                     .overlay(alignment: .bottom) {
@@ -51,6 +51,8 @@ struct SidebarView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(SidebarMaterial().ignoresSafeArea().allowsHitTesting(false))
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnWidth = $0 }
+        .modifier(SidebarTitleToolbar(app: app, session: session, columnWidth: columnWidth))
         .sheet(item: $session.directorySheet) { sheet in
             DirectorySheetView(session: session, sheet: sheet)
         }
@@ -105,6 +107,11 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        // Rows end at the list's top edge instead of scrolling on under the title
+        // bar, where the scroll edge effect blurred them behind the traffic lights.
+        .modifier(HiddenTopScrollEdgeEffect())
+        .padding(.top, 6)
+        .clipped()
     }
 
     @ViewBuilder private func rowMenu(_ row: SidebarChannelRow) -> some View {
@@ -134,53 +141,84 @@ struct SidebarView: View {
     }
 }
 
-/// Team name and the menu for browsing, creating and messaging.
+/// The team name in the sidebar column's part of the title bar, beside the traffic
+/// lights. An `.automatic` item declared by the sidebar is placed just before the
+/// sidebar toggle; its width fills the space back to the traffic lights so the name
+/// starts there. (`.navigation` items start after the toggle, in the detail column,
+/// and a plain overlay there would not receive clicks: the title bar view takes them.)
+private struct SidebarTitleToolbar: ViewModifier {
+    /// Traffic lights, the sidebar toggle, and toolbar margins.
+    static let reservedWidth: CGFloat = 154
+    let app: AppModel
+    let session: SessionViewModel
+    let columnWidth: CGFloat
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.toolbar {
+                ToolbarItem(placement: .automatic) { header }
+                    .sharedBackgroundVisibility(.hidden)
+            }
+        } else {
+            content.toolbar {
+                ToolbarItem(placement: .automatic) { header }
+            }
+        }
+    }
+
+    private var header: some View {
+        SidebarHeader(app: app, session: session)
+            .frame(width: max(40, columnWidth - Self.reservedWidth), alignment: .leading)
+    }
+}
+
+/// Team (and, with several servers, server) name; a menu for browsing, creating and
+/// messaging.
 struct SidebarHeader: View {
     let app: AppModel
     let session: SessionViewModel
 
     var body: some View {
-        HStack(spacing: 6) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(verbatim: teamName)
-                    .font(.headline)
-                    .lineLimit(1)
-                if app.slots.count > 1 {
-                    Text(verbatim: serverName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            Spacer(minLength: 4)
-            Menu {
-                Button("Browse Channels…") { session.directorySheet = .browseChannels }
-                Button("New Channel…") { session.directorySheet = .createChannel }
-                Button("New Direct Message…") { session.directorySheet = .newMessage }
+        Menu {
+            Button("Browse Channels…") { session.directorySheet = .browseChannels }
+            Button("New Channel…") { session.directorySheet = .createChannel }
+            Button("New Direct Message…") { session.directorySheet = .newMessage }
+            Divider()
+            Button("Mark All as Read") { session.markChannelsRead(nil) }
+            Divider()
+            Toggle("Group Unread Channels Separately", isOn: Binding(
+                get: { session.sidebar?.groupsUnreads ?? false },
+                set: { session.setGroupsUnreads($0) }))
+            if app.canAddServer {
                 Divider()
-                Button("Mark All as Read") { session.markChannelsRead(nil) }
-                Divider()
-                Toggle("Group Unread Channels Separately", isOn: Binding(
-                    get: { session.sidebar?.groupsUnreads ?? false },
-                    set: { session.setGroupsUnreads($0) }))
-                if app.canAddServer {
-                    Divider()
-                    Button("Add Server…") { app.showAddServer() }
-                }
-            } label: {
-                Image(systemName: "plus")
+                Button("Add Server…") { app.showAddServer() }
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .disabled(session.requiresAuthentication)
-            .help("Browse or create channels and messages")
-            .accessibilityLabel("Channels and messages")
-            .accessibilityIdentifier("sidebarAddMenu")
+        } label: {
+            HStack(spacing: 5) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(verbatim: teamName)
+                        .font(.headline)
+                    if app.slots.count > 1 {
+                        Text(verbatim: serverName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .lineLimit(1)
+                .truncationMode(.tail)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 10)
-        .padding(.vertical, 8)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .disabled(session.requiresAuthentication)
+        .help("\(teamName) — browse or create channels and messages")
+        .accessibilityLabel("\(teamName), channels and messages")
+        .accessibilityIdentifier("sidebarAddMenu")
     }
 
     private var teamName: String {
@@ -627,6 +665,16 @@ struct ConnectionFooter: View {
         case .offline: String(localized: "Offline — showing messages already loaded")
         case .disconnected: String(localized: "Disconnected")
         case .authenticationRequired: String(localized: "Signed out by the server — sign in again")
+        }
+    }
+}
+
+private struct HiddenTopScrollEdgeEffect: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            content
         }
     }
 }

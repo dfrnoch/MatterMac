@@ -112,6 +112,63 @@ struct TimelineIntegrationTests {
         #expect(c.currentVisibilityReport(state).last == state.items.last?.post?.postID)
     }
 
+    /// `MM_SNAPSHOT_DIR` optionally captures only this test's window in both appearances.
+    @Test(arguments: [NSAppearance.Name.darkAqua, .aqua])
+    func jumpToLatestPillFollowsTheLiveEdge(appearance: NSAppearance.Name) async throws {
+        let c = TimelineViewController()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.appearance = NSAppearance(named: appearance)
+        window.contentViewController = c
+        defer { c.removeAllContent(); window.close() }
+        c.apply(snapshot((1...100).map { item($0) }, generation: 1))
+        window.orderFrontRegardless()
+        window.contentView?.layoutSubtreeIfNeeded()
+        #expect(c.newMessagesButton.isHidden)
+
+        c.setVisibleTop(c.tableView.rect(ofRow: 10).minY)
+        c.updateNewMessagesButton()
+        #expect(!c.newMessagesButton.isHidden)
+        #expect(c.newMessagesButton.title == TimelineStrings.jumpToLatest)
+        #expect(!c.newMessagesButton.isProminent)
+        let pill = c.newMessagesButton.frame
+        #expect(pill.height == JumpToLatestPill.height)
+        #expect(abs(pill.midX - c.view.bounds.midX) <= 1)
+        await capture(window, "jump-to-latest-\(appearance.rawValue).png")
+
+        c.newItemsBelow = 3
+        c.updateNewMessagesButton()
+        #expect(c.newMessagesButton.title == TimelineStrings.newMessagesButton(3))
+        #expect(c.newMessagesButton.isProminent)
+        #expect(c.newMessagesButton.button.accessibilityLabel() == TimelineStrings.newMessagesButton(3))
+        await capture(window, "new-messages-\(appearance.rawValue).png")
+
+        #expect(c.newMessagesButton.button.target === c)
+        #expect(c.newMessagesButton.button.action == #selector(TimelineViewController.newMessagesButtonPressed(_:)))
+        c.newMessagesButtonPressed(nil)
+        window.contentView?.layoutSubtreeIfNeeded()
+        c.updateNewMessagesButton()
+        #expect(c.distanceFromBottom() < 1)
+        #expect(c.newMessagesButton.isHidden)
+    }
+
+    private func capture(_ window: NSWindow, _ name: String) async {
+        guard let directory = ProcessInfo.processInfo.environment["MM_SNAPSHOT_DIR"] else { return }
+        for _ in 0..<10 {
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-x", "-o", "-l", String(window.windowNumber),
+                             URL(fileURLWithPath: directory).appendingPathComponent(name).path]
+        try? process.run()
+        process.waitUntilExit()
+    }
+
     private func snapshot(_ items: [TimelineItem], generation: UInt64) -> TimelineSnapshot {
         TimelineSnapshot(scope: AccountScope(server: ServerSlotID(1), user: CoreFixtures.me.id),
                          target: .channel(CoreFixtures.channel(1).id), generation: generation,
