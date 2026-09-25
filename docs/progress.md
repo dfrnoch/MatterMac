@@ -1932,3 +1932,40 @@ app ZIP and `update.json`. Downloaded and checked on this Mac:
 
 Next: the first real in-app update is from this nightly to the next one; confirm
 it on a copy installed in /Applications.
+
+### Transparent title bar after using the media viewer (2026-09-25)
+
+Report: the nightly downloaded from GitHub showed messages sharply behind the
+toolbar, with no scroll edge effect, while local builds looked right. The build was
+not the cause:
+
+- a fresh copy of the same notarized nightly, a local Release build and
+  Release-optimized package fixtures all showed the effect;
+- the long-running instance still had a 1007×646 scroll area inset 72 pt from its
+  window edges, found by a read-only Accessibility walk. That is the media viewer's
+  stage.
+
+`MediaViewerController.close()` removed the overlay in the fade-out completion
+through `[weak self]`. `onClose` releases the controller synchronously (the pane
+sets `imageViewer = nil`), so the completion found `self == nil`. The transparent
+overlay then stayed in the window's frame view for good, still holding its last
+image. Its stage `NSScrollView` lies under the title bar, so AppKit attached the
+toolbar's `NSScrollPocket` to it instead of the timeline. Fixture dumps showed that
+the pocket is a single view that AppKit moves to whichever scroll view is under the
+title bar. It moves to `NSTitlebarBackgroundView` while Channel Info, Threads or
+Search cover the detail column, and back afterwards.
+
+Fix: the completion now captures the overlay strongly and always removes it and its
+images. `mediaViewerCoversTheWindowAndMovesBetweenAMessagesImages` gained a case
+where only the pane owns the viewer. That case failed on the old code (overlay still
+attached, image retained) and passes now.
+
+- `swift test --package-path Packages/MatterMacKit`: all suites pass.
+- Debug `xcodebuild`: succeeds with no warnings.
+
+SakuraCord (studied, not copied) has a SwiftUI timeline with an explicit
+`.scrollEdgeEffectStyle(.soft, for: .top)`, so it never meets this AppKit
+pocket-ownership case.
+
+Next: publish a nightly with the fix. Until then, relaunching clears the leftover
+overlay.

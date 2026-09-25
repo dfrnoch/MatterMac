@@ -249,13 +249,17 @@ final class MediaViewerController {
         onSave = nil
         placeholder = nil
         fetch = nil
+        // `onClose` usually releases this controller before the fade ends, so the
+        // completion holds the overlay itself. A leftover transparent overlay would keep
+        // its stage under the title bar, which takes the toolbar's scroll edge effect
+        // away from the timeline.
+        let overlay = overlay
         overlay.animateOut { [weak self] in
-            guard let self else { return }
             overlay.removeFromSuperview()
             overlay.setImage(nil, pointSize: .zero)
             overlay.setAvatar(nil)
-            lease = nil
-            avatarLease = nil
+            self?.lease = nil
+            self?.avatarLease = nil
         }
         if let window {
             if let restore, (restore as? NSView)?.window === window || restore === window {

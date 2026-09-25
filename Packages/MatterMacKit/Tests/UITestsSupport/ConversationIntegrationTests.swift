@@ -636,6 +636,17 @@ struct ConversationIntegrationTests {
         #expect(h.controller.imageViewer == nil)
         #expect(await waitUntil { viewer.overlay.superview == nil && viewer.lease == nil })
         #expect(viewer.imageView.image == nil)
+
+        // Only the pane owns a viewer, and it lets go on close, before the fade ends.
+        // The overlay must still leave: a transparent leftover keeps its stage under
+        // the title bar and takes the toolbar's scroll edge effect from the timeline.
+        h.controller.timeline(perform: .previewImage(files[0]))
+        let overlay = try #require(h.controller.imageViewer?.overlay)
+        #expect(overlay.superview === window.contentView?.superview)
+        overlay.cancelOperation(nil)
+        #expect(h.controller.imageViewer == nil)
+        #expect(await waitUntil { overlay.superview == nil })
+        #expect(overlay.imageView.image == nil)
         await h.close()
     }
 
