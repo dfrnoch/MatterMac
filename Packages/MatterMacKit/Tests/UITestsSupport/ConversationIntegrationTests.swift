@@ -258,6 +258,36 @@ struct ConversationIntegrationTests {
         #expect(await provider.completions(for: .user, query: "al").isEmpty)
     }
 
+    @Test func queuedSidebarCannotRevokeNewDirectMessageSelection() async throws {
+        let h = try await Harness()
+        let queued = try #require(h.model.sidebar)
+        h.controller.composer.load(draft: Draft(text: "keep channel draft"))
+        let key = h.controller.key
+        let direct = try await h.model.session.directMessageChannel(with: CoreFixtures.bob.id)
+        h.model.select(channel: direct)
+        // The stream consumer may have dequeued this snapshot before the Core
+        // request completed and resume only after the navigation continuation.
+        await h.model.applySidebar(queued)
+        #expect(h.model.selectedChannel == direct)
+        #expect(h.controller.composer.textView.isEditable)
+        #expect(h.app.environment.drafts.draft(for: key)?.text == "keep channel draft")
+        #expect(await waitUntil { h.model.timeline?.target.channelID == direct })
+        await h.close()
+    }
+
+    @Test func switchingTeamsStillSelectsVisibleChannelAndPreservesDraft() async throws {
+        let team = Team(id: TeamID(unchecked: CoreFixtures.id("team", 2)), name: "second", displayName: "Second")
+        var channel = CoreFixtures.channel(3)
+        channel.teamID = team.id
+        let h = try await Harness(extraTeam: team, extraChannel: channel)
+        h.controller.composer.load(draft: Draft(text: "team draft"))
+        let key = h.controller.key
+        h.model.selectTeam(team.id)
+        #expect(await waitUntil { h.model.selectedChannel == channel.id })
+        #expect(h.app.environment.drafts.draft(for: key)?.text == "team draft")
+        await h.close()
+    }
+
     @Test func openingDirectMessageResetsThreadAndPublishesMatchingHistory() async throws {
         let h = try await Harness()
         let root = CoreFixtures.post(1, channel: h.first.id)
@@ -555,11 +585,11 @@ struct ConversationIntegrationTests {
         let controller: ConversationController
         let realtime = FakeRealtimeConnection()
 
-        init(budget: ResourceBudget = .standard, posts: [Post] = [], seedMessages: Bool = false) async throws {
+        init(budget: ResourceBudget = .standard, posts: [Post] = [], seedMessages: Bool = false, extraTeam: Team? = nil, extraChannel: Channel? = nil) async throws {
             let service = FakeMattermostService(endpoint: CoreFixtures.endpoint, me: CoreFixtures.me)
-            let channels = [first, second]
+            let channels = [first, second] + (extraChannel.map { [$0] } ?? [])
             service.withState { state in
-                state.teams = [CoreFixtures.team]
+                state.teams = [CoreFixtures.team] + (extraTeam.map { [$0] } ?? [])
                 for post in posts { state.posts[post.id] = post }
                 if seedMessages {
                     for n in 0..<40 {

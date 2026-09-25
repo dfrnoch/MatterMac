@@ -35,6 +35,14 @@ extension ServerSession {
         return image
     }
 
+    /// Current selection eligibility, independent of an older or filtered sidebar.
+    public func channelSelectionState(_ id: ChannelID) -> (team: TeamID?, isAvailable: Bool) {
+        guard isActiveSessionAlive, let channel = directory.channels[id], directory.memberships[id] != nil else {
+            return (selectedTeam, false)
+        }
+        return (selectedTeam, channel.type.isDirectOrGroup || channel.teamID == selectedTeam)
+    }
+
     /// The member channel with this URL name on the selected team.
     public func memberChannel(named name: String) -> ChannelID? {
         let needle = name.lowercased()

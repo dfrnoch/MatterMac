@@ -92,28 +92,40 @@ public final class SessionViewModel {
         subscriptions.removeAll()
     }
 
+    /// A sidebar snapshot can predate a just-created DM or a navigation change.
+    /// Absence from that presentation alone does not revoke current membership.
+    func applySidebar(_ snapshot: SidebarSnapshot) async {
+        guard !isDetached, !requiresAuthentication, snapshot.scope == scope else { return }
+        sidebar = snapshot
+        app?.updateDockBadge()
+        if let selected = selectedChannel,
+           !snapshot.sections.contains(where: { $0.rows.contains(where: { $0.channelID == selected }) }) {
+            let current = await session.channelSelectionState(selected)
+            guard !Task.isCancelled, !isDetached, !requiresAuthentication, selectedChannel == selected else { return }
+            guard current.team == snapshot.selectedTeam else { return }
+            if !current.isAvailable {
+                saveDrafts()
+                draftProvider?.discardEditingState()
+                threadDraftProvider?.discardEditingState()
+                selectedChannel = nil
+                timeline = nil
+                thread = nil
+                replyTarget = nil
+                header = nil
+            }
+        }
+        if selectedChannel == nil, let first = snapshot.sections.lazy.flatMap(\.rows).first {
+            select(channel: first.channelID)
+        }
+    }
+
     private func subscribe() {
         let session = slot.session
         let scope = session.scope
         subscriptions.append(Task { [weak self] in
             for await snapshot in session.sidebarUpdates {
                 guard let self, !self.requiresAuthentication, !self.isDetached, snapshot.scope == scope else { continue }
-                self.sidebar = snapshot
-                self.app?.updateDockBadge()
-                if let selected = self.selectedChannel,
-                   !snapshot.sections.contains(where: { $0.rows.contains(where: { $0.channelID == selected }) }) {
-                    self.saveDrafts()
-                    self.draftProvider?.discardEditingState()
-                    self.threadDraftProvider?.discardEditingState()
-                    self.selectedChannel = nil
-                    self.timeline = nil
-                    self.thread = nil
-                    self.replyTarget = nil
-                    self.header = nil
-                }
-                if self.selectedChannel == nil, let first = snapshot.sections.lazy.flatMap(\.rows).first {
-                    self.select(channel: first.channelID)
-                }
+                await self.applySidebar(snapshot)
             }
         })
         subscriptions.append(Task { [weak self] in
