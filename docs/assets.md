@@ -1,21 +1,36 @@
 # Asset provenance
 
-The app icon is an original geometric drawing made for MatterMac: two speech
-bubbles, three dots, and a rounded background. It uses Core Graphics paths and
-colors, with no fonts, SF Symbols, stock art, downloaded image, or Mattermost logo.
-The recovered generator is [Tools/GenerateAppIcon.swift](../Tools/GenerateAppIcon.swift),
-covered by the repository's MIT license along with its generated PNGs.
+The app icons are two Icon Composer documents in `Apps/MatterMac/Resources`:
 
-To reproduce the app icon from the repository root:
+- `AppIcon.icon` is the production and local-build icon: white glass on Swift's
+  orange-to-red gradient.
+- `AppIconNightly.icon` is used by nightly releases: violet glass on near-black.
+
+Each holds the same two hand-written SVG layers (`Assets/ring.svg` and
+`Assets/drop.svg`) and an `icon.json` that sets the fills, glass and shadows. The
+drawing is original, written as SVG path coordinates for MatterMac, and covered by
+the repository's MIT license: an open ring with rounded ends, and a drop whose tip
+curves into the ring's gap. The build setting `MATTERMAC_APP_ICON` (`App.xcconfig`,
+default `AppIcon`) selects the icon; `build-dmg.yml` sets `AppIconNightly` for
+`-nightly.` labels and checks `CFBundleIconName`.
+
+It nods to Mattermost's ring-and-drop mark but is not the Mattermost logo: no
+Mattermost artwork was traced or copied. It uses no fonts, SF Symbols, stock art or
+downloaded images.
+
+Xcode compiles the selected document into the layered Liquid Glass icon in `Assets.car`,
+plus an `AppIcon.icns` fallback for macOS 14 and 15. Icon Composer can edit it
+(Xcode ▸ Open Developer Tool). To preview a rendition from the repository root:
 
 ```sh
-swift Tools/GenerateAppIcon.swift /tmp/mattermac-icons
+"/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool" \
+  Apps/MatterMac/Resources/AppIcon.icon --export-image --output-file /tmp/icon.png \
+  --platform macOS --rendition Default --width 1024 --height 1024 --scale 1
 ```
 
-The initial-publication check reproduced all ten committed PNGs byte-for-byte on
-the recorded local toolchain. Image encoders on other OS versions may produce
-different PNG byte streams for the same drawing. The generator is a development
-tool and is not linked into the app.
+`--rendition` also accepts `Dark`, `ClearLight`, `ClearDark`, `TintedLight` and
+`TintedDark`. The earlier two-bubble icon and its generator, `Tools/GenerateAppIcon.swift`,
+were removed on 2026-09-25.
 
 ## System emoji table
 

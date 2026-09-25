@@ -1969,3 +1969,25 @@ pocket-ownership case.
 
 Next: publish a nightly with the fix. Until then, relaunching clears the leftover
 overlay.
+
+### Liquid Glass app icon (2026-09-25)
+
+- Replaced `AppIcon.appiconset` and `Tools/GenerateAppIcon.swift` with an Icon
+  Composer document, `Apps/MatterMac/Resources/AppIcon.icon`: two hand-written SVG
+  layers (open ring, Swift-orange drop) on a blue gradient. Provenance is in
+  `docs/assets.md`.
+- `ictool` rendered the Default, Dark, ClearLight and TintedDark renditions, and
+  all four were checked visually.
+- The Debug `xcodebuild` succeeds with no warnings. The app bundle has a layered
+  `AppIcon` in `Assets.car` and a generated `AppIcon.icns` fallback (checked with
+  `sips`), and `CFBundleIconName` is `AppIcon`.
+
+Follow-up the same day: the blue default was replaced at the user's request.
+
+- Production and local builds use `AppIcon.icon`: white glass on Swift's orange-red
+  gradient.
+- Nightlies use the new `AppIconNightly.icon` (violet on near-black), selected by
+  `MATTERMAC_APP_ICON` in `build-dmg.yml`.
+- Release builds without signing ran with each icon name; both succeeded with no
+  warnings. `CFBundleIconName` matched each name, and each `.icns` fallback was
+  checked visually.

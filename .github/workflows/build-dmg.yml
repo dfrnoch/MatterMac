@@ -94,12 +94,16 @@ jobs:
           VERSION_LABEL: ${{ inputs.version_label }}
         run: |
           set -euo pipefail
+          # Nightlies get the purple icon, so they are easy to tell from production.
+          app_icon=AppIcon
+          if [[ "$VERSION_LABEL" == *-nightly.* ]]; then app_icon=AppIconNightly; fi
           xcodebuild -workspace MatterMac.xcworkspace -scheme MatterMac \
             -configuration Release -derivedDataPath build \
             MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            MATTERMAC_VERSION_LABEL="$VERSION_LABEL" build
+            MATTERMAC_VERSION_LABEL="$VERSION_LABEL" MATTERMAC_APP_ICON="$app_icon" build
           app=build/Build/Products/Release/MatterMac.app
           info="$app/Contents/Info.plist"
+          [[ $(plutil -extract CFBundleIconName raw "$info") == "$app_icon" ]]
           [[ $(plutil -extract CFBundleShortVersionString raw "$info") == "$MARKETING_VERSION" ]]
           [[ $(plutil -extract CFBundleVersion raw "$info") == "$BUILD_NUMBER" ]]
           [[ $(plutil -extract MatterMacVersionLabel raw "$info") == "$VERSION_LABEL" ]]
