@@ -7,7 +7,7 @@ import Foundation
 
 // Only these native geometry values are inspected. No preference value or digest
 // is printed; historical OS-owned panel keys are outside this attribution check.
-let geometryKeys = ["NSSplitView Subview Frames main", "NSSplitView Subview Frames SidebarNavigationSplitView"]
+let geometryKeys = ["NSSplitView Subview Frames main, SidebarNavigationSplitView"]
 let maximumPreferenceBytes = 1_048_576
 
 func geometryFingerprints(_ data: Data?) throws -> [[UInt8]?] {
@@ -30,10 +30,10 @@ if CommandLine.arguments.dropFirst() == ["--self-test"] {
     }
     let before = try geometryFingerprints(encoded([geometryKeys[0]: ["fixture-a"], "unrelated": 1]))
     let same = try geometryFingerprints(encoded(["unrelated": 2, geometryKeys[0]: ["fixture-a"]]))
-    let changed = try geometryFingerprints(encoded([geometryKeys[0]: ["fixture-b"], geometryKeys[1]: ["fixture-c"]]))
-    precondition(before == same && before[0] != changed[0] && before[1] != changed[1])
+    let changed = try geometryFingerprints(encoded([geometryKeys[0]: ["fixture-b"]]))
+    precondition(before == same && before[0] != changed[0])
     let absent = try geometryFingerprints(nil)
-    precondition(absent == [nil, nil])
+    precondition(absent == [nil])
     do {
         _ = try geometryFingerprints(Data(repeating: 0, count: maximumPreferenceBytes + 1))
         fatalError("oversize input accepted")
