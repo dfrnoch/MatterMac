@@ -593,10 +593,14 @@ struct ConversationIntegrationTests {
             }
             try #require(model.sidebar?.sections.contains(where: { $0.rows.contains(where: { $0.channelID == channelID }) }) == true)
             model.select(channel: first.id)
-            while model.header?.channelID != first.id, ContinuousClock.now < deadline {
+            // Navigation starts only after directory readiness. Main-actor contention
+            // may have consumed the directory deadline before selection was possible.
+            let navigationDeadline = ContinuousClock.now + .seconds(3)
+            while model.header?.channelID != first.id, ContinuousClock.now < navigationDeadline {
                 try await Task.sleep(for: .milliseconds(5))
             }
-            #expect(model.header?.fileAttachmentsEnabled == true)
+            try #require(model.header?.channelID == first.id)
+            try #require(model.header?.fileAttachmentsEnabled == true)
             controller = ConversationController(session: model, target: .channel(first.id))
             controller.updateComposerAvailability()
             #expect(controller.composer.textView.isEditable, "Fixture controller was discarded during initial directory loading")
