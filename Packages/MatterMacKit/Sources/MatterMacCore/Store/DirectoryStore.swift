@@ -356,6 +356,23 @@ public struct DirectoryStore: Sendable {
         pinnedUsers[id] ?? users.peek(id)
     }
 
+    /// Known users among lowercased `usernames`, keyed by lowercased username. One
+    /// pass over the bounded directory; recency is not touched and nothing is fetched.
+    public func peekUsers(usernames: Set<String>) -> [String: User] {
+        guard !usernames.isEmpty else { return [:] }
+        var found: [String: User] = [:]
+        func consider(_ user: User) {
+            let key = user.username.lowercased()
+            if found[key] == nil, usernames.contains(key) { found[key] = user }
+        }
+        for user in pinnedUsers.values { consider(user) }
+        for id in users.keysByRecency {
+            guard found.count < usernames.count else { break }
+            if let user = users.peek(id) { consider(user) }
+        }
+        return found
+    }
+
     public mutating func setStatus(_ status: PresenceStatus, for user: UserID) {
         statuses.set(status, for: user, cost: 64)
     }

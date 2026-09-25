@@ -120,19 +120,53 @@ public struct QuickSwitchItem: Hashable, Sendable, Identifiable {
         case channel(ChannelID)
         case user(UserID)
     }
+    /// Where the item is listed: with no query, unread conversations then recently
+    /// viewed ones; with a query, ranked matches then people without a DM yet.
+    public enum Section: Hashable, Sendable { case unread, recent, matches, people }
+    /// Someone pictured on the row: the DM partner, the person, or GM members.
+    public struct Person: Hashable, Sendable {
+        public let id: UserID
+        /// `last_picture_update`, for the avatar cache key.
+        public let revision: Int64
+        public let name: String
+
+        public init(id: UserID, revision: Int64, name: String) {
+            self.id = id
+            self.revision = revision
+            self.name = name
+        }
+    }
     public let kind: Kind
     public let title: String
     public let subtitle: String
     public let channelType: ChannelType?
     public let isUnread: Bool
+    public let mentionCount: Int
+    public let isArchived: Bool
+    public let isMuted: Bool
+    public let section: Section
+    /// At most `QuickSwitchItem.maxPeople`, known to the directory; empty for channels.
+    public let people: [Person]
+    /// Presence of the DM partner or person.
+    public let presence: PresenceStatus?
     public var id: Kind { kind }
 
-    public init(kind: Kind, title: String, subtitle: String, channelType: ChannelType?, isUnread: Bool) {
+    public static let maxPeople = 3
+
+    public init(kind: Kind, title: String, subtitle: String, channelType: ChannelType?, isUnread: Bool,
+                mentionCount: Int = 0, isArchived: Bool = false, isMuted: Bool = false,
+                section: Section = .matches, people: [Person] = [], presence: PresenceStatus? = nil) {
         self.kind = kind
         self.title = title
         self.subtitle = subtitle
         self.channelType = channelType
         self.isUnread = isUnread
+        self.mentionCount = mentionCount
+        self.isArchived = isArchived
+        self.isMuted = isMuted
+        self.section = section
+        self.people = Array(people.prefix(Self.maxPeople))
+        self.presence = presence
     }
 }
 

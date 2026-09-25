@@ -245,7 +245,7 @@ struct MainWindowView: View {
         .themeAccentTint()
         .environment(\.matterMacTheme, app.environment.settings.theme)
         .focusedSceneValue(\.matterMacSession, session)
-        .sheet(isPresented: $session.isQuickSwitcherVisible) { QuickSwitcherView(session: session) }
+        .overlay { QuickSwitcherOverlay(session: session) }
         .sheet(isPresented: $session.isUnsentRecoveryVisible) { UnsentRecoveryView(session: session) }
     }
 }

@@ -149,39 +149,139 @@ extension ServerSession {
 
     // MARK: - Quick switcher & completions
 
+    /// ⌘K results. With no query: unread conversations, then recently viewed ones
+    /// (not the open one, nor archived channels). With a query: local channels and
+    /// conversations ranked by match quality (case- and diacritic-insensitive), then
+    /// unread, then recency; then people without a DM from server autocomplete.
+    /// Group messages are titled with the members' display names when the directory
+    /// knows them. Nothing but that autocomplete leaves the device.
     public func quickSwitcherResults(query: String, limit: Int = 20) async -> [QuickSwitchItem] {
         guard isActiveSessionAlive else { return [] }
         let epoch = epoch
-        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let needle = QuickSwitchMatching.fold(trimmed)
         let crt = collapsedThreadsActive
-        var results: [QuickSwitchItem] = []
+        let format = directory.nameFormat
+        let showsTeams = directory.teams.count > 1
+
+        // Group members by username, resolved in one pass over the directory.
+        var groupMembers: [ChannelID: [String]] = [:]
+        var wanted = Set<String>()
+        for channel in directory.channels.values where channel.type == .group {
+            let names = QuickSwitchMatching.groupUsernames(channel.displayName, excluding: me.username)
+            groupMembers[channel.id] = names
+            wanted.formUnion(names.map { $0.lowercased() })
+        }
+        let known = directory.peekUsers(usernames: wanted)
+
+        struct Candidate {
+            let channel: Channel
+            let title: String
+            let rank: QuickSwitchMatching.Rank
+            let unread: (isUnread: Bool, messages: Int64, mentions: Int64)
+            let viewedAt: Int64
+        }
+        var candidates: [Candidate] = []
         for channel in directory.channels.values {
-            let name = displayName(of: channel)
-            guard needle.isEmpty || name.lowercased().contains(needle) || channel.name.lowercased().contains(needle)
-            else { continue }
-            let team = channel.teamID.flatMap { directory.teams[$0]?.displayName } ?? ""
-            results.append(QuickSwitchItem(kind: .channel(channel.id), title: name,
-                                           subtitle: channel.type.isDirectOrGroup ? String(localized: "Direct message") : team,
-                                           channelType: channel.type,
-                                           isUnread: directory.unread(for: channel.id, collapsedThreads: crt).isUnread))
+            if needle.isEmpty, channel.isArchived || channel.id == activeChannel { continue }
+            let title: String
+            var keys: [String]
+            switch channel.type {
+            case .group:
+                let usernames = groupMembers[channel.id] ?? []
+                let names = usernames.map { known[$0.lowercased()].map(format.displayName(for:)) ?? $0 }
+                title = QuickSwitchMatching.groupTitle(names, fallback: displayName(of: channel))
+                keys = [title] + usernames
+            case .direct:
+                title = displayName(of: channel)
+                keys = [title]
+                if let partner = channel.directPartner(of: me.id).flatMap({ directory.peekUser($0) }) {
+                    keys += [partner.username, partner.fullName, partner.nickname]
+                }
+            default:
+                title = displayName(of: channel)
+                keys = [title, channel.name]
+            }
+            let rank: QuickSwitchMatching.Rank
+            if needle.isEmpty {
+                rank = .exact
+            } else {
+                guard let found = QuickSwitchMatching.rank(needle, in: keys.map(QuickSwitchMatching.fold)) else { continue }
+                // A member's name is only part of a group: the DM with that person
+                // (or a channel named so) ranks first.
+                rank = channel.type == .group ? max(found, .wordPrefix) : found
+            }
+            candidates.append(Candidate(channel: channel, title: title, rank: rank,
+                                        unread: directory.unread(for: channel.id, collapsedThreads: crt),
+                                        viewedAt: directory.memberships[channel.id]?.lastViewedAt.milliseconds ?? 0))
         }
-        results.sort {
-            if $0.isUnread != $1.isUnread { return $0.isUnread }
-            return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+        candidates.sort { a, b in
+            if a.rank != b.rank { return a.rank < b.rank }
+            if a.unread.isUnread != b.unread.isUnread { return a.unread.isUnread }
+            if needle.isEmpty, a.unread.isUnread {
+                if (a.unread.mentions > 0) != (b.unread.mentions > 0) { return a.unread.mentions > 0 }
+                if a.channel.lastPostAt != b.channel.lastPostAt { return a.channel.lastPostAt > b.channel.lastPostAt }
+            }
+            if a.viewedAt != b.viewedAt { return a.viewedAt > b.viewedAt }
+            return a.title.localizedStandardCompare(b.title) == .orderedAscending
         }
-        results = Array(results.prefix(limit))
+        var results = candidates.prefix(limit).map { candidate in
+            quickSwitchItem(candidate.channel, title: candidate.title, unread: candidate.unread,
+                            section: needle.isEmpty ? (candidate.unread.isUnread ? .unread : .recent) : .matches,
+                            members: groupMembers[candidate.channel.id] ?? [], known: known, showsTeams: showsTeams)
+        }
         // People without an existing DM, from the server's user autocomplete.
-        if needle.count >= 2, let team = selectedTeam, results.count < limit,
-           let users = try? await service.autocompleteUsers(team: team, channel: nil, name: needle, limit: 10) {
+        let term = trimmed.lowercased()
+        if term.count >= 2, let team = selectedTeam, results.count < limit,
+           let users = try? await service.autocompleteUsers(team: team, channel: nil, name: term, limit: 10) {
             guard self.epoch == epoch, isActiveSessionAlive else { return [] }
             let existing = Set(directory.channels.values.compactMap { $0.directPartner(of: me.id) })
             for user in users where user.id != me.id && !existing.contains(user.id) && !user.isDeactivated {
                 directory.upsertUser(user)
-                results.append(QuickSwitchItem(kind: .user(user.id), title: directory.nameFormat.displayName(for: user),
-                                               subtitle: "@" + user.username, channelType: .direct, isUnread: false))
+                let name = format.displayName(for: user)
+                results.append(QuickSwitchItem(
+                    kind: .user(user.id), title: name, subtitle: "@" + user.username, channelType: .direct,
+                    isUnread: false, section: .people,
+                    people: [QuickSwitchItem.Person(id: user.id, revision: user.lastPictureUpdate.milliseconds, name: name)],
+                    presence: directory.status(of: user.id)))
             }
         }
         return Array(results.prefix(limit))
+    }
+
+    private func quickSwitchItem(_ channel: Channel, title: String, unread: (isUnread: Bool, messages: Int64, mentions: Int64),
+                                 section: QuickSwitchItem.Section, members: [String], known: [String: User],
+                                 showsTeams: Bool) -> QuickSwitchItem {
+        var people: [QuickSwitchItem.Person] = []
+        var presence: PresenceStatus?
+        var subtitle = ""
+        switch channel.type {
+        case .direct:
+            let partnerID = channel.directPartner(of: me.id)
+            let partner = partnerID.flatMap { directory.peekUser($0) } ?? (partnerID == nil ? me : nil)
+            if let partnerID = partnerID ?? (partner?.id) {
+                people = [QuickSwitchItem.Person(id: partnerID, revision: partner?.lastPictureUpdate.milliseconds ?? 0,
+                                                 name: title)]
+                presence = directory.status(of: partnerID)
+            }
+            if let partner, partner.username != title { subtitle = "@" + partner.username }
+        case .group:
+            people = members.lazy.compactMap { known[$0.lowercased()] }.prefix(QuickSwitchItem.maxPeople).map {
+                QuickSwitchItem.Person(id: $0.id, revision: $0.lastPictureUpdate.milliseconds,
+                                       name: directory.nameFormat.displayName(for: $0))
+            }
+            subtitle = String(localized: "\(members.count + 1) members")
+        default:
+            let team = showsTeams ? channel.teamID.flatMap { directory.teams[$0]?.displayName } ?? "" : ""
+            subtitle = channel.isArchived
+                ? (team.isEmpty ? String(localized: "Archived") : String(localized: "Archived · \(team)"))
+                : team
+        }
+        return QuickSwitchItem(kind: .channel(channel.id), title: title, subtitle: subtitle, channelType: channel.type,
+                               isUnread: unread.isUnread, mentionCount: Int(clamping: unread.mentions),
+                               isArchived: channel.isArchived,
+                               isMuted: directory.memberships[channel.id]?.markUnread == .mention,
+                               section: section, people: people, presence: presence)
     }
 
     public func completions(trigger: Character, query: String, channel: ChannelID?, rootID: PostID? = nil) async -> [CompletionCandidate] {
