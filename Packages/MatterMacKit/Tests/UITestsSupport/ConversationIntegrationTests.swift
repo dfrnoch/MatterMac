@@ -32,6 +32,8 @@ struct ConversationIntegrationTests {
     func captureFloatingChrome() async throws {
         let h = try await Harness(seedMessages: true, extraTeam: Team(
             id: TeamID(unchecked: CoreFixtures.id("team", 2)), name: "second", displayName: "Second"))
+        await h.realtime.push(.state(.connected(resumed: false)))
+        #expect(await waitUntil { h.model.connection == .connected })
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
             styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -590,6 +592,7 @@ struct ConversationIntegrationTests {
         init(budget: ResourceBudget = .standard, posts: [Post] = [], seedMessages: Bool = false, extraTeam: Team? = nil, extraChannel: Channel? = nil) async throws {
             let service = FakeMattermostService(endpoint: CoreFixtures.endpoint, me: CoreFixtures.me)
             let channels = [first, second] + (extraChannel.map { [$0] } ?? [])
+                + (seedMessages ? (3...30).map { CoreFixtures.channel($0) } : [])
             service.withState { state in
                 state.teams = [CoreFixtures.team] + (extraTeam.map { [$0] } ?? [])
                 for post in posts { state.posts[post.id] = post }

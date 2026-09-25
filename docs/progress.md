@@ -1441,3 +1441,25 @@ with only Xcode's existing skipped-AppIntents-metadata tool warning. Staged
 `lipo -archs` reported `x86_64 arm64`. Refreshed `build/MatterMac-universal.zip`,
 SHA-256 `17f11bea7be43d83d16c0e620f9d4abd5da6338223018a8036b585728e177d2a`.
 The running `/Applications/MatterMac.app` was not replaced or terminated.
+
+## 2026-09-25 — float the account pill over the channel list
+
+Removed the reserved sidebar footer and its horizontal divider. The account
+capsule now overlays the channel List, so rows scroll behind its glass. Scroll
+content bottom margins let the final row clear the capsule. Healthy connections
+show no redundant “Connected as” line; connecting/disconnected notices and the
+Reconnect action remain available as a separate floating notice when needed.
+
+`swift test --package-path Packages/MatterMacKit --filter
+'SidebarShellTests|ConversationIntegrationTests.captureFloatingChrome'` with
+`MM_GLASS_SNAPSHOTS=/tmp/mm-floating-profile` passed three tests in 15.728 s.
+Expanded the visual fixture to 30 channels and drove its fake realtime connection
+to connected; the follow-up capture passed in 6.565 s. Inspected light/dark native
+captures: no footer strip, no connected label, channel rows extend beneath the
+account capsule. The pre-existing AppKit reentrant table delegate runtime warning
+remains in the sidebar sheet test.
+
+Universal Release build passed (`/tmp/mm-floating-profile-release.log`), with only
+the existing skipped-AppIntents metadata warning. Refreshed
+`build/Distribution/MatterMac.app` and verified its signature. Updated ZIP SHA-256:
+`c656b8d9441c3ca0bec9cdcd0f2f13813b22066672e0db67cb0aadfc1aff1157`.

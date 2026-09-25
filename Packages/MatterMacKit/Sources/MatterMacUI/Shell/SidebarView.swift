@@ -16,10 +16,18 @@ struct SidebarView: View {
             VStack(spacing: 0) {
                 SidebarHeader(app: app, session: session)
                 channelList
-                Divider()
-                ConnectionFooter(session: session)
-                AccountBar(app: app, session: session)
-                    .padding(.horizontal, 10).padding(.bottom, 8)
+                    .contentMargins(.bottom, session.connection == .connected ? 64 : 100, for: .scrollContent)
+                    .overlay(alignment: .bottom) {
+                        VStack(spacing: 8) {
+                            if session.connection != .connected {
+                                ConnectionFooter(session: session)
+                                    .glassCapsule()
+                            }
+                            AccountBar(app: app, session: session)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 8)
+                    }
             }
             // The column may be narrower than the list's ideal width; never push the
             // rail out of the column.
