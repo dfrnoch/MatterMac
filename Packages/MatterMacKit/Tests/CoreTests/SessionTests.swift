@@ -26,7 +26,7 @@ struct SessionHarness {
     let channel: Channel
 
     init(budget: ResourceBudget = .standard, posts: Int = 5, unread: Bool = false,
-         collapsedThreads: String = "disabled",
+         collapsedThreads: String = "disabled", clock: any Clock<Duration> = ImmediateClock(),
          configure: @Sendable (inout FakeMattermostService.State) -> Void = { _ in }) async {
         let me = CoreFixtures.me
         let service = FakeMattermostService(endpoint: CoreFixtures.endpoint, me: me)
@@ -51,7 +51,7 @@ struct SessionHarness {
         let unsent = UnsentWorkLedger(budget: budget)
         var deps = CoreFixtures.dependencies(budget: budget, realtime: realtime, retention: retention, unsent: unsent,
                                              clock: wallClock)
-        deps.clock = ImmediateClock()
+        deps.clock = clock
         let session = ServerSession(
             scope: AccountScope(server: ServerSlotID(1), user: me.id), endpoint: CoreFixtures.endpoint, me: me,
             credential: BearerCredential(token: "tokentokentokentokentoken1", kind: .session)!,

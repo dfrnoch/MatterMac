@@ -546,7 +546,9 @@ extension ServerSession {
         typing[id] = nil
         for transfer in downloads.values where transfer.channel == id { transfer.task.cancel() }
         let blocked = pending.items.filter { $0.channelID == id }
-        if blocked.contains(where: \.isInFlight) { tasks[.sender]?.cancel() }
+        if let activeSendID, blocked.contains(where: { $0.pendingID == activeSendID }) {
+            tasks[.sender]?.cancel()
+        }
         for item in blocked {
             tasks[.sendRetry(item.pendingID)]?.cancel()
             pending.update(item.pendingID) {

@@ -104,6 +104,8 @@ public actor ServerSession {
 
     // Tasks (bounded by purpose; all cancelled on shutdown)
     var tasks: [TaskKey: Task<Void, Never>] = [:]
+    /// The operation currently executing in the single sender, excluding retry waits.
+    var activeSendID: PendingPostID?
     var downloads: [UUID: (channel: ChannelID, task: Task<Void, any Error>)] = [:]
     var epoch: UInt64 = 1
     /// Invalidates membership snapshots that began before a channel was purged.

@@ -74,6 +74,8 @@ extension ServerSession {
 
     func attempt(_ id: PendingPostID) async {
         guard var send = pending.item(id) else { return }
+        activeSendID = id
+        defer { if activeSendID == id { activeSendID = nil } }
         let epoch = epoch
         // 1. Uploads (files attach only once the post is created).
         let needsUpload = send.attachments.filter { $0.uploadedFileID == nil }
@@ -199,6 +201,9 @@ extension ServerSession {
     public func retrySend(_ id: PendingPostID) {
         guard let item = pending.item(id), !item.isInFlight,
               (try? validateSend(text: item.message, channel: item.channelID, attachments: item.attachments.map(\.source))) != nil else { return }
+        // A previous automatic retry must not requeue this item while the explicit
+        // retry's POST is in flight (which would also make discard look safe).
+        tasks[.sendRetry(id)]?.cancel()
         // firstPostAttemptAt is kept: if the dedup window still applies, the retry
         // cannot duplicate; otherwise the UI has warned the user that it might.
         pending.update(id) { item in
@@ -215,7 +220,7 @@ extension ServerSession {
     public func discardSend(_ id: PendingPostID) -> String? {
         guard let item = pending.item(id) else { return nil }
         if case .sending = item.state { return nil } // A POST in flight may already have created a message.
-        if case .uploading = item.state { tasks[.sender]?.cancel() }
+        if case .uploading = item.state, activeSendID == id { tasks[.sender]?.cancel() }
         pending.remove(id)
         tasks[.sendRetry(id)]?.cancel()
         deps.unsent.release(item.reservation)

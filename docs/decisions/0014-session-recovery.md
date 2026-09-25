@@ -48,3 +48,14 @@ recreating a window can reuse its initial generation number. Gated regressions
 reproduced both stale-error clobbering and stale-success acceptance before the fix.
 This independently confirmed race is not by itself attribution of a live reconnect
 timeout; live failures still need their stage diagnostics.
+
+Sender ownership (2026-09-25): the single sender records the pending ID it is
+currently uploading/posting. A retry wait can retain a `.sending` presentation
+state while another channel's send executes, so channel revocation must use the
+active ID rather than the parked item's state to decide whether to cancel the
+worker. A genuinely interrupted operation still retains its unknown outcome and
+unsent reservation. Explicit retry cancels any prior automatic retry timer before
+queueing the item, preventing that timer from making an active POST appear safely
+discardable. Stable pending IDs and the existing unknown-outcome warning remain.
+The gated regression sources compile; execution is deferred until the exclusive
+real-app soak finishes.
