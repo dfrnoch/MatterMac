@@ -79,7 +79,14 @@ public final class TimelineLayoutCaches {
     }
 
     static func renderCost(of text: NSAttributedString) -> Int {
-        max(text.length, 1) * renderBytesPerUTF16Unit
+        // Table cells and decorated blocks retain native layout objects even when
+        // their text is empty. Charge each shared block once, independent of text size.
+        var blocks: Set<ObjectIdentifier> = []
+        text.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: text.length)) { value, _, _ in
+            guard let paragraph = value as? NSParagraphStyle else { return }
+            for block in paragraph.textBlocks { blocks.insert(ObjectIdentifier(block)) }
+        }
+        return max(text.length, 1) * renderBytesPerUTF16Unit + blocks.count * 512
     }
 
     /// Drops every entry for one account (sign-out, account switch).

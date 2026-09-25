@@ -28,6 +28,7 @@ struct RenderingTests {
             if attrs[.matterMacSelfMention] != nil { mentions += 1 }
         }
         #expect(tables > 0)
+        #expect(TimelineLayoutCaches.renderCost(of: text) > text.length * TimelineLayoutCaches.renderBytesPerUTF16Unit)
         #expect(mentions > 0)
         let view = MessageBodyTextView(usingTextLayoutManager: false)
         view.configureForTimeline()
