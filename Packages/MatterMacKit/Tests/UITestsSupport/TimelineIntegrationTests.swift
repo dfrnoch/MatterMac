@@ -38,7 +38,7 @@ struct TimelineIntegrationTests {
         #expect(c.imageDemand.isEmpty)
     }
 
-    @Test func repeatedReloadsReuseABoundedSetOfNativeRowViews() throws {
+    @Test func repeatedReloadsReuseABoundedSetOfNativeRowViews() async throws {
         let c = TimelineViewController()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
                               styleMask: [.titled], backing: .buffered, defer: false)
@@ -47,18 +47,31 @@ struct TimelineIntegrationTests {
         window.contentViewController = c
         defer { c.removeAllContent(); window.close() }
         c.apply(snapshot((1...4).map { item($0) }, generation: 1))
-        // Hold observed objects so allocator address reuse cannot conceal a new
-        // row allocation. The table must retrieve its own recycled row objects.
-        var seen: [ObjectIdentifier: TimelineRowView] = [:]
+        window.orderFront(nil)
+        // An offscreen rowView(makeIfNecessary: true) can create a temporary row
+        // outside the display/reuse lifecycle. Observe only real displayed rows,
+        // allowing AppKit to finish each run-loop transaction between reloads.
+        let seen = NSHashTable<TimelineRowView>.weakObjects()
+        var allocations = 0
         for _ in 0..<20 {
-            c.tableView.reloadData()
-            window.contentView?.layoutSubtreeIfNeeded()
-            for index in 0..<4 {
-                let row = try #require(c.tableView.rowView(atRow: index, makeIfNecessary: true) as? TimelineRowView)
-                seen[ObjectIdentifier(row)] = row
+            try await Task.sleep(for: .milliseconds(30))
+            autoreleasepool {
+                window.contentView?.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+                var displayed = 0
+                c.tableView.enumerateAvailableRowViews { row, index in
+                    guard index >= 0, let row = row as? TimelineRowView else { return }
+                    displayed += 1
+                    if !seen.contains(row) {
+                        allocations += 1
+                        seen.add(row)
+                    }
+                }
+                #expect(displayed == 4)
+                c.tableView.reloadData()
             }
         }
-        #expect(seen.count <= 8, "Four visible rows must reuse a bounded pool across twenty reloads")
+        #expect(allocations <= 8, "Four visible rows must reuse a bounded pool across twenty reloads")
     }
 
     @Test func floatingControlsPreserveAnchorAndExcludeCoveredMessages() throws {
