@@ -1277,3 +1277,118 @@ the 65th alert, account isolation, delayed callbacks and shutdown/authorization
 races. Test targets compile without warnings; execution is deferred until the
 exclusive UI soak completes. This change is outside the running soak's binary;
 the final app must be rebuilt and validated after integration.
+
+`741ec98` fixes sender ownership: a retry-wait item could still be labeled sending,
+so revoking its channel cancelled the single sender even when it was processing
+a different channel. Cancellation now checks the executing pending ID. Explicit
+retry also cancels its older automatic timer, preventing that timer from marking
+an active POST queued and allowing an unsafe discard. Gated regressions compile;
+execution remains queued behind the soak. `ec571c3` additionally scopes notification
+clicks to a random in-memory app-instance identity, rejecting notifications retained
+by macOS after a previous process ended. Forced termination cannot run cleanup;
+documentation now makes that OS retention limit explicit.
+
+Hosted CI for `ec571c3` passed package tests (including the new sender and
+notification regressions) and the universal build: run `36085096911`. Local
+live/Keychain checks and the final artifact rebuild remain queued after the soak.
+
+The ongoing baseline showed sustained footprint drift, prompting content-free
+`vmmap -summary`, `leaks --noContent --forkCorpse` and `heap --noContent --forkCorpse -s`
+inspection. The leak scan found 1,792 unreachable allocations totaling 63,968 bytes,
+mostly native menu configuration objects; that small total did not explain the
+drift. The heap snapshot found **810 `TimelineRowView` instances**, while there was
+only one conversation/timeline/composer controller and five message cells. The
+custom row class declared a reuse identifier but never assigned it, unlike sibling
+cells. `2d3e831` supplies it in the initializer. Its effect on the actual app still
+requires the patched workload comparison.
+
+The first reuse fixture failed hosted CI: it synchronously requested and retained
+80 temporary offscreen rows. The SDK explicitly limits the lifetime of temporary
+`rowView(atRow:makeIfNecessary:)` results to the current run-loop cycle. `7f61b9d`
+corrects the fixture to observe displayed rows, yield between reloads and retain
+only weak references, without raising its eight-row allocation bound. Local
+red/green execution is deferred until the exclusive baseline ends. Profiling
+interruptions will be included with the final timing evidence; the original
+running binary has not been replaced by these fixes.
+
+The displayed-row fixture also failed with 80 cumulative allocations. A further
+SDK check established that `reloadData` explicitly drops all known views, so that
+total allocation expectation was invalid even when rows are released correctly.
+`4f9c3fe` instead scrolls one 100-post snapshot and checks weakly tracked **live**
+rows remain within two observed viewports. It is still pending runtime red/green
+verification; passing compilation alone is not evidence that the reuse fix works.
+
+The full baseline completed **252 cycles in 7,223.092 active seconds**, with zero
+workflow assertions. Its sampled peak was **154.91 MiB**, idle median **79.75 MiB**,
+and consecutive half-hour medians **104.33 / 114.20 / 125.64 / 136.34 MiB**. These
+miss the proposed memory targets and demonstrate sustained growth. Final heap
+inspection found 1,458 timeline rows versus 810 earlier, with one controller of
+each major kind. The full measurements, profiler interruptions and storage scope
+are recorded in [soak.md](soak.md). Correct geometry-key comparisons stayed
+unchanged/valid in both roots.
+
+After releasing the exclusive lane, local red/green verification of
+`scrollingKeepsNativeRowRetentionBounded` failed 18 assertions without the identifier
+(live rows 33–220 against a 22-row bound), then passed in 0.928 seconds with it
+restored. Hosted CI `36089048119` also passed for `4f9c3fe`.
+
+The subsequent combined live/Keychain package run exposed a DM navigation timeout
+(`/tmp/mm-release-candidate-package.log`). An isolated rerun passed, but inspection
+found a real race: an older sidebar snapshot could clear a newly created DM's
+selection and retire its composer. A deterministic retained-snapshot test failed
+three assertions before `bd0d4d3`; the fix revalidates current membership and team
+eligibility before clearing selection, then rechecks lifecycle and selection after
+the actor hop. Four focused cases passed, including team switching and actual
+revocation. No timeout was increased. An explicit serial combined run separately
+exposed the rapid category-toggle save race (`/tmp/mm-release-candidate-serial.log`);
+its correction and final combined rerun follow below.
+
+`b94c7df` fixes rapid category toggles with the existing bounded pending-value map
+and a single worker per category. Later clicks replace the desired value; each
+write re-reads the server category, and a later failure restores the last confirmed
+server value. The gated regression failed 11 assertions before the fix, then all
+19 focused Core tests passed, covering success, refusal and cancellation.
+
+The normal combined command (without serializing the tests), with
+`MM_LIVE_TESTS=1 MM_KEYCHAIN_TESTS=1`, now passes **428 reported tests**: UI 159,
+Core 161, realtime 29, models 18, API 61. Separate opt-in cases remain skipped as
+described above. `/tmp/mm-final-integrated-package.log` contains no Swift compiler
+or SwiftUI runtime warnings. The final runtime candidate is `b94c7df`; the
+unmodified Release build, actual-app UI suite and patched soak are the remaining
+artifact checks at this checkpoint.
+
+### Final artifact and explicit remaining gates
+
+The unmodified universal Release build at runtime `b94c7df` succeeded
+(`/tmp/mm-final-release-build.log`). Strict deep signature verification and ZIP
+integrity passed; both arm64/x86_64 slices link Apple frameworks/Swift libraries.
+The only build warning is the standard skipped AppIntents metadata extraction.
+Hosted CI **36092699575** passed package tests and the universal build for this
+runtime. Local packaging is ad-hoc signing, not Developer ID or notarization.
+
+- App: `build/Distribution/MatterMac.app` (28,224 KiB allocated).
+- Archive: `build/MatterMac-universal.zip` (7,833,723 bytes).
+- SHA-256: `614eb46ccce4dc6f5a407654a79e4ce4e9303805bbbe6fb9a22fd0a91f252aac`.
+- Local source/toolchain/signing metadata: `build/Distribution/BUILD-INFO.txt`.
+
+The final actual-app UI rerun was **blocked**, not passed. macOS automatically
+locked before launch (`CGSSessionScreenIsLocked=Yes`); XCUITest failed to activate
+the Debug app, reporting Running Background. The owned test process was stopped
+(`/tmp/mm-final-candidate-uitests.log`). No unlock or authentication bypass was
+attempted and the sleeping user was not asked to intervene. Consequently the
+prepared patched 15-minute app soak was not launched. The earlier 13-enabled-test
+UI pass remains evidence for runtime `5af680b`, not this final binary.
+
+A narrower native AppKit check works behind the locked screen: the row-retention
+fixture passed **1,000 cycles in 45.014 seconds**, keeping the same two-viewport
+live-row bound with no issues or warnings (`/tmp/mm-row-retention-1000.log`). Only
+the test loop count changed temporarily; the original 20-cycle source was restored
+and the worktree is clean. This does not establish the patched app's whole-process
+memory plateau. The two-hour baseline's memory misses remain recorded, not waived.
+
+Next concrete task: from an unlocked desktop, rerun the final actual-app suite and
+the patched sustained workload in [soak.md](soak.md), comparing row counts and
+footprint. Remaining release gates also include minimum-OS/Intel execution, real
+IME/VoiceOver coverage, a full filesystem audit, startup/input latency, broad IdP
+validation, and Developer ID/notarization. The built local candidate should not be
+described as a certified production release.

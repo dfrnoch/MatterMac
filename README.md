@@ -52,8 +52,10 @@ Calls, arbitrary web plugins, Boards, Playbooks dashboards, and administration a
 outside the native messaging scope. Interactive command dialogs and ephemeral bot
 posts remain unsupported. Accessibility, real IMEs, minimum-OS execution, privacy
 audits, and full application performance gates remain incomplete. The synthetic
-native rendering measurements are recorded in [benchmarks](docs/benchmarks.md);
-they are not whole-application memory or startup measurements.
+native rendering measurements are recorded in [benchmarks](docs/benchmarks.md).
+A [two-hour app soak](docs/soak.md) exposed a native row-retention defect, now fixed
+and covered by a failing-before/passing-after regression. The corrected app still
+needs a sustained foreground remeasurement; macOS locked before that final run.
 
 ## What is saved
 

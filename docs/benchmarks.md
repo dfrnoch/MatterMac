@@ -69,9 +69,11 @@ Final rendered-text cache accounting: 4,185,692 bytes (4 MiB limit), row-layout 
 570,880 bytes (4 MiB limit). New native table/decorated blocks are explicitly charged
 512 estimated bytes each, once per distinct retained block, in addition to text.
 
-No broad performance rewrite was justified by these measurements. Longer app-level
-soaks, genuine presentation/input latency, images and network-backed session
-retention measurements remain necessary before claiming the SPEC acceptance gates.
+No broad performance rewrite was justified by these measurements. A later
+[two-hour actual-app soak](soak.md) found increasing native row retention; assigning
+the missing row reuse identifier fixes the deterministic regression. That baseline
+missed the memory targets. The corrected app's sustained footprint and genuine
+presentation/input latency still need measurement before claiming the SPEC gates.
 Evidence logs for this run: `/tmp/mm-render-benchmark2.log`; preliminary run:
 `/tmp/mm-render-benchmark.log`. Normal tests and test compilation passed without
 compiler warnings; the benchmark itself emitted no runtime warnings.

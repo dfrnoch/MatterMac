@@ -63,7 +63,10 @@ check does not establish support for every configuration of that identity provid
 
 Calls, screen sharing, arbitrary web plugins, Boards, Playbooks dashboards,
 enterprise administration, and custom theme CSS are outside native v1 scope.
-There are no durable offline drafts or background notification delivery after the app quits. Notification Center is an explicit persistence exception: macOS may retain already delivered alerts, especially after a crash or forced termination. Cleanup requests do not guarantee OS erasure.
+There are no durable offline drafts or background notification delivery after the
+app quits. Opting into Notification Center hands alert content to macOS, which may
+retain delivered alerts after a crash or forced termination. Cleanup requests do
+not guarantee OS erasure.
 
 Broader permission controls still need UI integration. VoiceOver and real IME coverage, minimum-OS execution, full
 privacy/filesystem audits, and performance acceptance measurements are incomplete.
