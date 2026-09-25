@@ -59,6 +59,9 @@ struct SettingsScene: Scene {
 /// The single main window. A `Window` (not `WindowGroup`): one window per process,
 /// no "New Window" command, and nothing to restore.
 struct MainWindowScene: Scene {
+    @Environment(\.scenePhase) private var phase
+    @Environment(\.openWindow) private var openWindow
+    @State private var presentedInitialWindow = false
     static let id = "main"
     let environment: AppEnvironment
 
@@ -68,6 +71,14 @@ struct MainWindowScene: Scene {
                 .background(WindowRestorationDisabler())
         }
         .defaultSize(width: 1100, height: 720)
+        .onChange(of: phase, initial: true) { _, _ in
+            // Default launch behavior only applies without previous saved state.
+            // Open our one fresh window even if a legacy restore session was empty.
+            // Do not wait for .active: a windowless scene can stay inactive.
+            guard !presentedInitialWindow else { return }
+            presentedInitialWindow = true
+            openWindow(id: Self.id)
+        }
         .commands {
             MainWindowCommands()
             MatterMacCommands(environment: environment)
