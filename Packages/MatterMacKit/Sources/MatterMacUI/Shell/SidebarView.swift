@@ -210,6 +210,7 @@ struct SidebarSectionHeader: View {
             }
             Spacer(minLength: 0)
         }
+        .foregroundStyle(Color.primary)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
         .accessibilityAddTraits(onToggle == nil ? [.isHeader] : [.isHeader, .isButton])
