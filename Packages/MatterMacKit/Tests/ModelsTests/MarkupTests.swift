@@ -32,4 +32,8 @@ import MatterMacModels
     #expect(table.rows.first?.first == [.strong([.text("bold")])])
     #expect(MarkupAttachment.Accent("#abc") == .rgb(0xAABBCC))
     #expect(MarkupAttachment.Accent("bad-color") == .none)
+    let attachment = MarkupAttachment(imageLink: SafeLink("https://example.org/image"), hasUnsupportedActions: true)
+    let plain = MessageDocument(blocks: [.attachment(attachment)]).plainText
+    #expect(plain.contains("https://example.org/image"))
+    #expect(plain.contains("Interactive buttons"))
 }

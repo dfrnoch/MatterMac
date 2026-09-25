@@ -241,7 +241,11 @@ public struct MarkupAttachment: Hashable, Sendable {
             let value = MessageDocument(blocks: field.value).plainText
             lines.append(field.title.isEmpty ? value : field.title + ": " + value)
         }
+        if let imageLink { lines.append(imageLink.url.absoluteString) }
         if !footer.isEmpty { lines.append(footer) }
+        if hasUnsupportedActions {
+            lines.append(String(localized: "Interactive buttons in this message are not supported in MatterMac."))
+        }
         out += lines.joined(separator: "\n")
     }
 }
