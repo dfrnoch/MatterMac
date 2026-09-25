@@ -29,7 +29,10 @@ durable rules and commands that have actually been run in this repository.
 - Networking: `URLSessionConfiguration.ephemeral` with `urlCache = nil`,
   `httpCookieStorage = nil`, `httpShouldSetCookies = false`,
   `urlCredentialStorage = nil`. Never `URLSession.shared`. Bearer header only; never
-  tokens in URLs. Credentials never follow a cross-origin redirect.
+  tokens in URLs. Credentials never follow a cross-origin redirect. The only
+  non-Mattermost host is GitHub, for in-app updates (decision 0034); the embedded
+  `MatterMacUpdateInstaller` XPC service is the only unsandboxed code — keep its
+  checks in `MatterMacUpdateSupport`.
 - Every buffer, cache, queue, window, and task set is bounded by
   `MatterMacModels.ResourceBudget`. Unsent text (drafts + pending sends) is never
   evicted — refuse new input instead.

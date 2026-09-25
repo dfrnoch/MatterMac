@@ -57,6 +57,23 @@ requires pull requests, allow GitHub Actions to push, or change `MARKETING_VERSI
 by pull request after the release; the release itself is already published.
 Commits pushed with `GITHUB_TOKEN` do not trigger CI.
 
+## In-app updates
+
+Every release also carries the files MatterMac itself updates from (decision 0034):
+
+- **`MatterMac-<label>.zip`:** the notarized, stapled app, packed with `ditto`.
+- **`update.json`:** `schema`, `label`, `build`, `channel`, `zip`, `zipSHA256`,
+  `zipSize`, `dmg` and `minimumSystemVersion`. The app compares only `build`.
+
+Stable-channel users see production releases; the Nightly channel sees nightlies
+and production releases, whichever build is newer.
+
+To exercise updates locally with Debug builds, serve a GitHub-shaped
+`releases.json` and pass `-MatterMacUpdateFeed <url>` to the older build. Add
+`-MatterMacUpdateAutoInstall YES` to install without clicking the banner.
+Debug builds accept updates signed by the team's Apple Development certificate.
+Release builds require Developer ID and notarization.
+
 ## Secrets
 
 Same as the notarized build (see the README): `DEVELOPER_ID_CERTIFICATE_BASE64`,

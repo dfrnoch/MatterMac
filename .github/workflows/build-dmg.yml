@@ -32,6 +32,9 @@ on:
       dmg_name:
         description: File name of the DMG inside the artifact
         value: ${{ jobs.build.outputs.dmg_name }}
+      zip_name:
+        description: File name of the stapled app ZIP (used by in-app updates)
+        value: ${{ jobs.build.outputs.zip_name }}
 
 permissions:
   contents: read
@@ -42,6 +45,7 @@ jobs:
     timeout-minutes: 60
     outputs:
       dmg_name: ${{ steps.names.outputs.dmg_name }}
+      zip_name: ${{ steps.names.outputs.zip_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,6 +63,7 @@ jobs:
           [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]
           [[ "$VERSION_LABEL" =~ ^[0-9A-Za-z.-]+$ && "$VERSION_LABEL" == "$MARKETING_VERSION"* ]]
           echo "dmg_name=MatterMac-$VERSION_LABEL.dmg" >> "$GITHUB_OUTPUT"
+          echo "zip_name=MatterMac-$VERSION_LABEL.zip" >> "$GITHUB_OUTPUT"
       - name: Import Developer ID
         env:
           CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
@@ -99,12 +104,16 @@ jobs:
           [[ $(plutil -extract CFBundleVersion raw "$info") == "$BUILD_NUMBER" ]]
           [[ $(plutil -extract MatterMacVersionLabel raw "$info") == "$VERSION_LABEL" ]]
           codesign --verify --deep --strict "$app"
+          # The embedded update installer is signed by the same team.
+          codesign --verify --strict -R='identifier "dev.frnoch.mattermac.UpdateInstaller" and anchor apple generic and certificate leaf[subject.OU] = "ZJ37A69485"' \
+            "$app/Contents/XPCServices/MatterMacUpdateInstaller.xpc"
           codesign --verify -R='identifier "dev.frnoch.mattermac" and anchor apple generic and certificate leaf[subject.OU] = "ZJ37A69485" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "$app"
           architectures=$(lipo -archs "$app/Contents/MacOS/MatterMac")
           [[ " $architectures " == *" arm64 "* && " $architectures " == *" x86_64 "* ]]
       - name: Notarize app and create notarized DMG
         env:
           DMG_NAME: ${{ steps.names.outputs.dmg_name }}
+          ZIP_NAME: ${{ steps.names.outputs.zip_name }}
           VERSION_LABEL: ${{ inputs.version_label }}
         run: |
           set -euo pipefail
@@ -138,7 +147,11 @@ jobs:
           xcrun stapler validate "$dmg"
           spctl --assess --type open --context context:primary-signature --verbose "$dmg"
           (cd "$RUNNER_TEMP/dmg" && shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256")
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+
+          # The stapled app for in-app updates (ditto keeps the signed bundle intact).
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/dmg/$ZIP_NAME"
+          (cd "$RUNNER_TEMP/dmg" && shasum -a 256 "$ZIP_NAME" > "$ZIP_NAME.sha256")
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.artifact_name }}
           path: ${{ runner.temp }}/dmg/

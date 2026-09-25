@@ -139,6 +139,8 @@ jobs:
       NEXT_VERSION: ${{ needs.prepare.outputs.next_version }}
       SHA: ${{ needs.prepare.outputs.sha }}
       DMG_NAME: ${{ needs.build.outputs.dmg_name }}
+      ZIP_NAME: ${{ needs.build.outputs.zip_name }}
+      BUILD_NUMBER: ${{ needs.prepare.outputs.build_number }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -152,6 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f "dist/$DMG_NAME" && test -f "dist/$DMG_NAME.sha256"
+          test -f "dist/$ZIP_NAME" && test -f "dist/$ZIP_NAME.sha256"
           {
             if [[ "$CHANNEL" == nightly ]]; then
               echo "Nightly build of \`main\` at ${SHA:0:7}. Nightlies are signed and notarized but not release-tested."
@@ -173,12 +176,23 @@ jobs:
               git log --no-merges --max-count=50 --pretty='- %s (%h)' "$SHA"
             fi
           } > "$RUNNER_TEMP/notes.md"
+      - name: Write update manifest
+        run: |
+          set -euo pipefail
+          # Read by the app's updater (Packages/MatterMacKit/.../Updates/UpdateFeed.swift).
+          zip_sha=$(cut -d ' ' -f 1 "dist/$ZIP_NAME.sha256")
+          zip_size=$(stat -f %z "dist/$ZIP_NAME")
+          minimum=$(sed -n 's/^MACOSX_DEPLOYMENT_TARGET = //p' Apps/MatterMac/Configuration/Shared.xcconfig)
+          printf '{"schema":1,"label":"%s","build":%d,"channel":"%s","zip":"%s","zipSHA256":"%s","zipSize":%d,"dmg":"%s","minimumSystemVersion":"%s"}\n' \
+            "$LABEL" "$BUILD_NUMBER" "$CHANNEL" "$ZIP_NAME" "$zip_sha" "$zip_size" "$DMG_NAME" "$minimum" > dist/update.json
+          python3 -m json.tool dist/update.json > /dev/null
+          cat dist/update.json
       - name: Create GitHub release
         run: |
           set -euo pipefail
           flags=(--latest)
           if [[ "$CHANNEL" == nightly ]]; then flags=(--prerelease --latest=false); fi
-          gh release create "$TAG" "dist/$DMG_NAME" "dist/$DMG_NAME.sha256" \
+          gh release create "$TAG" "dist/$DMG_NAME" "dist/$DMG_NAME.sha256" "dist/$ZIP_NAME" "dist/update.json" \
             --target "$SHA" --title "MatterMac $LABEL" --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"
       - name: Start the next development version
         if: needs.prepare.outputs.channel == 'production'

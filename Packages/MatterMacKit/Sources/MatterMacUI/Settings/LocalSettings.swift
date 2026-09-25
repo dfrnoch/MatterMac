@@ -1,6 +1,6 @@
 public import AppKit
 public import Observation
-import MatterMacPlatform
+public import MatterMacPlatform
 
 /// Where "On This Mac" settings are saved between launches. The app passes
 /// `UserDefaults.standard`; tests and `-MatterMacUITesting` pass nothing (memory
@@ -49,6 +49,8 @@ public final class LocalSettings {
         case playSound = "MatterMac.playSound"
         case soundName = "MatterMac.soundName"
         case bounceDockIcon = "MatterMac.bounceDockIcon"
+        case checksForUpdates = "MatterMac.checksForUpdates"
+        case updateChannel = "MatterMac.updateChannel"
     }
 
     /// Return vs ⌘Return in the composer.
@@ -86,6 +88,15 @@ public final class LocalSettings {
         didSet { save(.bounceDockIcon, bounceDockIcon) }
     }
 
+    /// Check GitHub for new releases and download them in the background.
+    public var checksForUpdates = true {
+        didSet { save(.checksForUpdates, checksForUpdates) }
+    }
+    /// `nil`: follow the running build (nightly builds follow nightlies).
+    public var updateChannel: UpdateChannel? {
+        didSet { if let updateChannel { save(.updateChannel, updateChannel.rawValue) } }
+    }
+
     @ObservationIgnored private let storage: (any LocalSettingsStorage)?
     /// Set after loading so restoring values does not write them straight back.
     @ObservationIgnored private var isLoaded = false
@@ -103,6 +114,8 @@ public final class LocalSettings {
             playSound = read.bool(.playSound) ?? playSound
             soundName = read.string(.soundName).flatMap { SystemSounds.names.contains($0) ? $0 : nil } ?? soundName
             bounceDockIcon = read.bool(.bounceDockIcon) ?? bounceDockIcon
+            checksForUpdates = read.bool(.checksForUpdates) ?? checksForUpdates
+            updateChannel = read.value(.updateChannel)
         }
         isLoaded = true
         if appearance != .system { applyAppearance() }

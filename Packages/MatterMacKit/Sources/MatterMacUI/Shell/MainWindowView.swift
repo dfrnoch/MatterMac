@@ -113,6 +113,9 @@ struct MainWindowView: View {
 
     @ViewBuilder private var banners: some View {
         VStack(spacing: 8) {
+            if let updater = app.environment.updater {
+                UpdateBanner(updater: updater)
+            }
             if let notice = session.noticeText {
                 VStack(alignment: .leading, spacing: 8) {
                     FloatingBanner(tone: session.requiresAuthentication ? .error : .warning,

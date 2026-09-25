@@ -45,6 +45,7 @@ struct LocalSettingsPersistenceTests {
             #expect(settings.playSound && settings.bounceDockIcon)
             #expect(settings.soundName == SystemSounds.defaultName)
             #expect(settings.sendBehavior == .returnSends && settings.textSize == .standard && settings.appearance == .system)
+            #expect(settings.checksForUpdates && settings.updateChannel == nil)
         }
         // Loading defaults writes nothing.
         #expect(storage.writes == 0 && storage.values.isEmpty)
@@ -63,6 +64,8 @@ struct LocalSettingsPersistenceTests {
         first.sendBehavior = .commandReturnSends
         first.textSize = .extraLarge
         first.appearance = .dark
+        first.checksForUpdates = false
+        first.updateChannel = .nightly
         #expect(storage.values["MatterMac.notificationsEnabled"] as? Bool == false)
         #expect(storage.values["MatterMac.textSize"] as? String == "extraLarge")
         #expect(Set(storage.values.keys) == Set(LocalSettings.Key.allCases.map(\.rawValue)))
@@ -73,6 +76,7 @@ struct LocalSettingsPersistenceTests {
         #expect(!restored.playSound && !restored.bounceDockIcon && restored.soundName == sound)
         #expect(restored.sendBehavior == .commandReturnSends && restored.textSize == .extraLarge)
         #expect(restored.appearance == .dark)
+        #expect(!restored.checksForUpdates && restored.updateChannel == .nightly)
         // The saved appearance is applied at launch, not only on change.
         #expect(NSApplication.shared.appearance?.name == .darkAqua)
         #expect(environment(storage).sendBehavior == .commandReturnSends)

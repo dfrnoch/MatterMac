@@ -1863,3 +1863,40 @@ Checked locally:
 
 Not run: the workflows on GitHub. The first nightly or production run is the real
 check of runner `swift`, `gh release` permissions and pushing to `main`.
+
+## 2026-09-25 — in-app updates (decision 0034)
+
+Added:
+
+- `MatterMacUpdateSupport`: validation, archive install and relaunch, shared by
+  the app and the helper;
+- `MatterMacPlatform/Updates`: the GitHub feed, `update.json`, preparation, and
+  the XPC client;
+- `AppUpdater` with a banner, a Settings ▸ General ▸ Updates section, and
+  **Check for Updates…**;
+- the embedded unsandboxed XPC service `MatterMacUpdateInstaller`: a new Xcode
+  target, embedded via "Embed XPC Services";
+- release assets `MatterMac-<label>.zip` and `update.json`.
+
+Tests and checks:
+
+- `UpdateTests` (5): channel selection, drafts, and malformed manifests and feeds;
+  checksum, signature and bundle checks; `installArchive` from an open file,
+  including cleanup; the updater's states, banner and Later, install, quit,
+  up-to-date and failure notices, and the default channel.
+- `LocalSettingsPersistenceTests` cover the two new keys.
+- The Settings snapshot was inspected.
+- Local end to end with Debug builds 100 → 101: a local feed and the real embedded
+  service. Findings, in order:
+  - The container is unreadable by the helper (EPERM), so the app now passes a
+    `FileHandle`.
+  - A sandboxed write-access pre-check was wrong and was removed.
+  - `NSApp.terminate` called from the task deadlocked `.terminateLater`, so the
+    quit is now scheduled on the run loop.
+  - Final run: build 101 swapped in with its signature verified, the old process
+    exited, and a new process started with the same arguments.
+- `swift test` (after the settings-test update) and the Debug and ad-hoc Release
+  builds pass (`/tmp/mattermac-update-*.log`).
+
+Not verified: a real GitHub Developer ID and notarized release end to end (needs
+two published releases), and macOS 14/15.

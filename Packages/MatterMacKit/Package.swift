@@ -20,6 +20,8 @@ let package = Package(
         .library(name: "MatterMacUI", targets: ["MatterMacUI"]),
         .library(name: "MatterMacPlatform", targets: ["MatterMacPlatform"]),
         .library(name: "MatterMacCore", targets: ["MatterMacCore"]),
+        // Linked by the app's embedded update installer XPC service as well.
+        .library(name: "MatterMacUpdateSupport", targets: ["MatterMacUpdateSupport"]),
     ],
     targets: [
         .target(name: "MatterMacModels", swiftSettings: strict),
@@ -30,9 +32,12 @@ let package = Package(
             dependencies: ["MatterMacModels", "MattermostAPI", "MattermostRealtime"],
             swiftSettings: strict
         ),
+        // Update validation and installation shared with the installer XPC service:
+        // Foundation and Security only.
+        .target(name: "MatterMacUpdateSupport", swiftSettings: strict),
         .target(
             name: "MatterMacPlatform",
-            dependencies: ["MatterMacModels", "MatterMacCore"],
+            dependencies: ["MatterMacModels", "MatterMacCore", "MatterMacUpdateSupport"],
             swiftSettings: strict
         ),
         .target(

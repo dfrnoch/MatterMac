@@ -1,0 +1,14 @@
+// UpdateInstaller.xcconfig — the embedded update installer XPC service
+// (layered on top of the project-level Debug/Release.xcconfig; decision 0034).
+
+PRODUCT_NAME = MatterMacUpdateInstaller
+PRODUCT_BUNDLE_IDENTIFIER = dev.frnoch.mattermac.UpdateInstaller
+GENERATE_INFOPLIST_FILE = NO
+INFOPLIST_FILE = Configuration/UpdateInstaller-Info.plist
+SKIP_INSTALL = YES
+
+// Hardened runtime, no entitlements: this service is deliberately not sandboxed so
+// it can replace the app bundle; it accepts only MatterMac as its client.
+ENABLE_HARDENED_RUNTIME = YES
+ENABLE_APP_SANDBOX = NO
+CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO

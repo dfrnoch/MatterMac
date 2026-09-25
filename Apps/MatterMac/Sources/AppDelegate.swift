@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         events.start()
+        environment.updater?.start()
         // Without activity reports the server turns the account "away" after ~5 min.
         activity.onActivity = { [weak self] isActive in
             for model in self?.environment.appModel?.sessionModels.values ?? [:].values {
@@ -84,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminating = true
         events.stop()
         activity.stop()
+        environment.updater?.stop()
         Task {
             await environment.appModel?.shutdownAll(preservingSavedSignIns: true)
             sender.reply(toApplicationShouldTerminate: true)

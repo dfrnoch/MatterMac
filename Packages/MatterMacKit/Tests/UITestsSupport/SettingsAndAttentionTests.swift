@@ -300,6 +300,13 @@ struct SettingsAndAttentionTests {
         let previous = h.app.environment.appModel
         h.app.environment.appModel = h.app
         defer { h.app.environment.appModel = previous }
+        // General shows the Updates section when the build updates itself.
+        h.app.environment.updater = AppUpdater(settings: h.app.environment.settings, http: UpdateTests.FakeHTTP([:]),
+            configuration: .init(installedApp: URL(fileURLWithPath: "/Applications/MatterMac.app"), currentBuild: 45,
+                                 currentLabel: "1.0.0-nightly.20260923.45",
+                                 workDirectory: FileManager.default.temporaryDirectory.appendingPathComponent("mm-settings"),
+                                 relaunchArguments: []))
+        defer { h.app.environment.updater = nil }
         let tabs: [(String, AnyView)] = [
             ("settings-general.png", AnyView(GeneralSettingsTab(environment: h.app.environment))),
             ("settings-notifications.png", AnyView(NotificationSettingsTab(environment: h.app.environment))),
@@ -308,11 +315,12 @@ struct SettingsAndAttentionTests {
             ("settings-window.png", AnyView(MatterMacSettingsView(environment: h.app.environment))),
         ]
         for (name, view) in tabs {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 560), styleMask: [.titled],
+            let height: CGFloat = name == "settings-general.png" ? 860 : 560
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: height), styleMask: [.titled],
                                   backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.isRestorable = false
-            window.contentViewController = NSHostingController(rootView: view.frame(width: 540, height: 560))
+            window.contentViewController = NSHostingController(rootView: view.frame(width: 540, height: height))
             window.orderFrontRegardless()
             try await settle(window, iterations: 20)
             await snapshot(window, name)

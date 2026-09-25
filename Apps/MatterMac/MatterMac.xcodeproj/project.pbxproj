@@ -10,6 +10,9 @@
 		4D4D00000000000000000411 /* MatterMacUI in Frameworks */ = {isa = PBXBuildFile; productRef = 4D4D00000000000000000401 /* MatterMacUI */; };
 		4D4D00000000000000000412 /* MatterMacPlatform in Frameworks */ = {isa = PBXBuildFile; productRef = 4D4D00000000000000000402 /* MatterMacPlatform */; };
 		4D4D00000000000000000413 /* MatterMacCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4D4D00000000000000000403 /* MatterMacCore */; };
+		4D4D00000000000000000414 /* MatterMacUpdateSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 4D4D00000000000000000404 /* MatterMacUpdateSupport */; };
+		4D4D00000000000000000416 /* MatterMacUpdateSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 4D4D00000000000000000405 /* MatterMacUpdateSupport */; };
+		4D4D00000000000000000415 /* MatterMacUpdateInstaller.xpc in Embed XPC Services */ = {isa = PBXBuildFile; fileRef = 4D4D00000000000000000029 /* MatterMacUpdateInstaller.xpc */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -20,7 +23,28 @@
 			remoteGlobalIDString = 4D4D00000000000000000100;
 			remoteInfo = MatterMac;
 		};
+		4D4D00000000000000000502 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4D4D00000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4D4D00000000000000000600;
+			remoteInfo = MatterMacUpdateInstaller;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		4D4D00000000000000000104 /* Embed XPC Services */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/XPCServices";
+			dstSubfolderSpec = 16;
+			files = (
+				4D4D00000000000000000415 /* MatterMacUpdateInstaller.xpc in Embed XPC Services */,
+			);
+			name = "Embed XPC Services";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		4D4D00000000000000000020 /* MatterMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MatterMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -32,6 +56,9 @@
 		4D4D00000000000000000026 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		4D4D00000000000000000027 /* App.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = App.xcconfig; sourceTree = "<group>"; };
 		4D4D00000000000000000028 /* UITests.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = UITests.xcconfig; sourceTree = "<group>"; };
+		4D4D00000000000000000029 /* MatterMacUpdateInstaller.xpc */ = {isa = PBXFileReference; explicitFileType = "wrapper.xpc-service"; includeInIndex = 0; path = MatterMacUpdateInstaller.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
+		4D4D0000000000000000002A /* UpdateInstaller.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = UpdateInstaller.xcconfig; sourceTree = "<group>"; };
+		4D4D0000000000000000002B /* UpdateInstaller-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "UpdateInstaller-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -51,6 +78,11 @@
 			path = ../../Tests/MatterMacUITests;
 			sourceTree = "<group>";
 		};
+		4D4D00000000000000000013 /* UpdateInstaller */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = UpdateInstaller;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -61,6 +93,7 @@
 				4D4D00000000000000000411 /* MatterMacUI in Frameworks */,
 				4D4D00000000000000000412 /* MatterMacPlatform in Frameworks */,
 				4D4D00000000000000000413 /* MatterMacCore in Frameworks */,
+				4D4D00000000000000000416 /* MatterMacUpdateSupport in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -68,6 +101,14 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4D4D00000000000000000602 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4D4D00000000000000000414 /* MatterMacUpdateSupport in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -81,6 +122,7 @@
 				4D4D00000000000000000011 /* Resources */,
 				4D4D00000000000000000004 /* Configuration */,
 				4D4D00000000000000000012 /* MatterMacUITests */,
+				4D4D00000000000000000013 /* UpdateInstaller */,
 				4D4D00000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +132,7 @@
 			children = (
 				4D4D00000000000000000020 /* MatterMac.app */,
 				4D4D00000000000000000021 /* MatterMacUITests.xctest */,
+				4D4D00000000000000000029 /* MatterMacUpdateInstaller.xpc */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -104,6 +147,8 @@
 				4D4D00000000000000000026 /* Release.xcconfig */,
 				4D4D00000000000000000027 /* App.xcconfig */,
 				4D4D00000000000000000028 /* UITests.xcconfig */,
+				4D4D0000000000000000002A /* UpdateInstaller.xcconfig */,
+				4D4D0000000000000000002B /* UpdateInstaller-Info.plist */,
 			);
 			path = Configuration;
 			sourceTree = "<group>";
@@ -118,10 +163,12 @@
 				4D4D00000000000000000101 /* Sources */,
 				4D4D00000000000000000102 /* Frameworks */,
 				4D4D00000000000000000103 /* Resources */,
+				4D4D00000000000000000104 /* Embed XPC Services */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				4D4D00000000000000000503 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4D4D00000000000000000010 /* Sources */,
@@ -132,6 +179,7 @@
 				4D4D00000000000000000401 /* MatterMacUI */,
 				4D4D00000000000000000402 /* MatterMacPlatform */,
 				4D4D00000000000000000403 /* MatterMacCore */,
+				4D4D00000000000000000405 /* MatterMacUpdateSupport */,
 			);
 			productName = MatterMac;
 			productReference = 4D4D00000000000000000020 /* MatterMac.app */;
@@ -160,6 +208,28 @@
 			productReference = 4D4D00000000000000000021 /* MatterMacUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		4D4D00000000000000000600 /* MatterMacUpdateInstaller */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4D4D00000000000000000303 /* Build configuration list for PBXNativeTarget "MatterMacUpdateInstaller" */;
+			buildPhases = (
+				4D4D00000000000000000601 /* Sources */,
+				4D4D00000000000000000602 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4D4D00000000000000000013 /* UpdateInstaller */,
+			);
+			name = MatterMacUpdateInstaller;
+			packageProductDependencies = (
+				4D4D00000000000000000404 /* MatterMacUpdateSupport */,
+			);
+			productName = MatterMacUpdateInstaller;
+			productReference = 4D4D00000000000000000029 /* MatterMacUpdateInstaller.xpc */;
+			productType = "com.apple.product-type.xpc-service";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -176,6 +246,9 @@
 					4D4D00000000000000000200 = {
 						CreatedOnToolsVersion = 27.0;
 						TestTargetID = 4D4D00000000000000000100;
+					};
+					4D4D00000000000000000600 = {
+						CreatedOnToolsVersion = 27.0;
 					};
 				};
 			};
@@ -198,6 +271,7 @@
 			targets = (
 				4D4D00000000000000000100 /* MatterMac */,
 				4D4D00000000000000000200 /* MatterMacUITests */,
+				4D4D00000000000000000600 /* MatterMacUpdateInstaller */,
 			);
 		};
 /* End PBXProject section */
@@ -234,6 +308,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4D4D00000000000000000601 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -241,6 +322,11 @@
 			isa = PBXTargetDependency;
 			target = 4D4D00000000000000000100 /* MatterMac */;
 			targetProxy = 4D4D00000000000000000500 /* PBXContainerItemProxy */;
+		};
+		4D4D00000000000000000503 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4D4D00000000000000000600 /* MatterMacUpdateInstaller */;
+			targetProxy = 4D4D00000000000000000502 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -287,6 +373,20 @@
 			};
 			name = Release;
 		};
+		4D4D00000000000000000340 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4D4D0000000000000000002A /* UpdateInstaller.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		4D4D00000000000000000341 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4D4D0000000000000000002A /* UpdateInstaller.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -317,6 +417,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		4D4D00000000000000000303 /* Build configuration list for PBXNativeTarget "MatterMacUpdateInstaller" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4D4D00000000000000000340 /* Debug */,
+				4D4D00000000000000000341 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -338,6 +447,14 @@
 		4D4D00000000000000000403 /* MatterMacCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MatterMacCore;
+		};
+		4D4D00000000000000000404 /* MatterMacUpdateSupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MatterMacUpdateSupport;
+		};
+		4D4D00000000000000000405 /* MatterMacUpdateSupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MatterMacUpdateSupport;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

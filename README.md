@@ -65,6 +65,11 @@ DMGs as GitHub releases ([releasing](docs/releasing.md)):
   `MARKETING_VERSION` from `Shared.xcconfig` (or a given version) as `v1.0.0`,
   then commits the next development version to `main` (patch, minor or major).
 
+MatterMac updates itself from these releases (Settings ▸ General ▸ Updates). It
+checks GitHub at launch and every six hours, downloads a newer build on your
+channel (Stable or Nightly), and verifies it. It then offers **Restart to
+Update**; an embedded installer service swaps the app and reopens it.
+
 Both channels share `build-dmg.yml`, which builds the universal app, notarizes
 the app and a DMG with an Applications shortcut, and checks Apple's `Accepted`
 status and Gatekeeper. The manual **Notarized DMG** workflow makes the same DMG as

@@ -14,6 +14,8 @@ public final class AppEnvironment {
     /// Encrypted on-device cache (images, directory, recent channels); `nil` keeps
     /// everything in memory (tests, UI testing).
     public let contentCache: ContentCache?
+    /// Automatic updates from GitHub releases; `nil` for development and test builds.
+    public var updater: AppUpdater?
     public let budget: ResourceBudget
     public let diagnostics: DiagnosticRing
     public let unsentLedger: UnsentWorkLedger

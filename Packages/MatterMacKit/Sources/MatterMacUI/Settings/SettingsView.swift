@@ -174,6 +174,8 @@ struct GeneralSettingsTab: View {
                 .disabled(change.isSaving)
                 ServerChangeStatus(state: change)
             } header: { ServerSectionHeader(session: environment.appModel?.activeSession) }
+
+            UpdateSettingsSection(environment: environment)
         }
         .formStyle(.grouped)
     }
