@@ -36,20 +36,26 @@ public final class SystemNotifications: NSObject {
     /// Request identifiers posted per account, so sign-out can withdraw them (bounded).
     private var posted: [AccountScope: [String]] = [:]
     static let trackedPerAccount = 64
+    private let injectedCenter: (any NotificationCenterTransport)?
     private lazy var delegate = NotificationDelegate { [weak self] target in self?.onOpen?(target) }
-    private var center: UNUserNotificationCenter? {
-        Bundle.main.bundleIdentifier == nil ? nil : UNUserNotificationCenter.current()
+    private var center: (any NotificationCenterTransport)? {
+        injectedCenter ?? (Bundle.main.bundleIdentifier == nil ? nil : NativeNotificationCenter(delegate: delegate))
     }
 
     public override init() {
+        injectedCenter = nil
+        super.init()
+    }
+
+    init(center: any NotificationCenterTransport) {
+        injectedCenter = center
         super.init()
     }
 
     public func requestAuthorization() async -> Authorization {
         guard let center else { return .unavailable }
-        center.delegate = delegate
         do {
-            return try await center.requestAuthorization(options: [.alert, .sound, .badge]) ? .granted : .denied
+            return try await center.requestAuthorization() ? .granted : .denied
         } catch {
             return .denied
         }
@@ -71,19 +77,28 @@ public final class SystemNotifications: NSObject {
         content.userInfo = info
         let identifier = UUID().uuidString
         var ids = posted[target.scope, default: []]
-        if ids.count >= Self.trackedPerAccount { ids.removeFirst() }
+        if ids.count >= Self.trackedPerAccount { center.remove(identifiers: [ids.removeFirst()]) }
         ids.append(identifier)
         posted[target.scope] = ids
-        center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+        center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil)) { [weak self] in
+            Task { @MainActor in
+                // An add can complete after sign-out, disabling, or eviction. Remove
+                // it again so an in-flight request cannot resurrect private content.
+                guard self?.posted[target.scope]?.contains(identifier) == true else {
+                    center.remove(identifiers: [identifier])
+                    return
+                }
+            }
+        }
     }
 
     /// Removes delivered notifications for one account (sign-out) or all of them.
     public func removeDelivered(scope: AccountScope? = nil) {
         guard let center else { return }
         if let scope {
-            center.removeDeliveredNotifications(withIdentifiers: posted.removeValue(forKey: scope) ?? [])
+            center.remove(identifiers: posted.removeValue(forKey: scope) ?? [])
         } else {
-            center.removeAllDeliveredNotifications()
+            center.remove(identifiers: nil)
             posted.removeAll()
         }
     }
@@ -118,5 +133,35 @@ private final class NotificationDelegate: NSObject, UNUserNotificationCenterDele
         async -> UNNotificationPresentationOptions {
         // Core already suppresses the conversation the user is looking at.
         [.banner, .sound]
+    }
+}
+
+/// Narrow system boundary so delayed delivery and cleanup can be tested without
+/// asking for notification authorization or delivering anything to the desktop.
+@MainActor
+protocol NotificationCenterTransport: AnyObject, Sendable {
+    func requestAuthorization() async throws -> Bool
+    func add(_ request: UNNotificationRequest, completion: @escaping @Sendable () -> Void)
+    func remove(identifiers: [String]?)
+}
+
+@MainActor
+private final class NativeNotificationCenter: NotificationCenterTransport {
+    let center = UNUserNotificationCenter.current()
+    init(delegate: any UNUserNotificationCenterDelegate) { center.delegate = delegate }
+    func requestAuthorization() async throws -> Bool {
+        try await center.requestAuthorization(options: [.alert, .sound, .badge])
+    }
+    func add(_ request: UNNotificationRequest, completion: @escaping @Sendable () -> Void) {
+        center.add(request) { _ in completion() }
+    }
+    func remove(identifiers: [String]?) {
+        if let identifiers {
+            center.removePendingNotificationRequests(withIdentifiers: identifiers)
+            center.removeDeliveredNotifications(withIdentifiers: identifiers)
+        } else {
+            center.removeAllPendingNotificationRequests()
+            center.removeAllDeliveredNotifications()
+        }
     }
 }

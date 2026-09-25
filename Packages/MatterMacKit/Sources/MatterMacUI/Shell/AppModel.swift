@@ -46,7 +46,8 @@ public final class AppModel {
         get { environment.settings.playSound }
         set { environment.settings.playSound = newValue }
     }
-    @ObservationIgnored let notifications = SystemNotifications()
+    @ObservationIgnored var notifications = SystemNotifications()
+    @ObservationIgnored private var notificationAuthorizationGeneration: UInt64 = 0
     /// Sounds and Dock bounces; replaceable in tests.
     @ObservationIgnored var attention: any AttentionRequesting = SystemAttention()
 
@@ -65,13 +66,17 @@ public final class AppModel {
 
     /// Enabling asks macOS for permission the first time; nothing is requested at launch.
     public func setNotificationsEnabled(_ enabled: Bool) async {
+        notificationAuthorizationGeneration &+= 1
+        let generation = notificationAuthorizationGeneration
         defer { syncAlertPreviews() }
-        guard enabled else {
+        guard enabled, !isShuttingDown else {
             notificationsEnabled = false
             notifications.removeDelivered()
             return
         }
-        switch await notifications.requestAuthorization() {
+        let authorization = await notifications.requestAuthorization()
+        guard generation == notificationAuthorizationGeneration, !isShuttingDown, !Task.isCancelled else { return }
+        switch authorization {
         case .granted:
             notificationsEnabled = true
         case .denied:
@@ -313,13 +318,13 @@ public final class AppModel {
             guard alert.runModal() == .alertSecondButtonReturn else { return false }
         }
         guard await forgetSavedAccount(model) else { return false }
+        notifications.removeDelivered(scope: model.scope)
         model.prepareForSignOut()
         environment.drafts.discardAll(for: model.scope)
         layoutCaches.purge(scope: model.scope)
         await images.purge(scope: model.scope)
         let outcome = await registry.remove(slot, revokeServerSession: true)
         lastSignOutMessage = outcome.map(SignOutText.describe)
-        notifications.removeDelivered(scope: model.scope)
         updateDockBadge()
         return true
     }
@@ -340,6 +345,9 @@ public final class AppModel {
     /// Close all sessions. App termination keeps saved tokens valid on the server.
     public func shutdownAll(preservingSavedSignIns: Bool = false) async {
         isShuttingDown = true
+        notificationAuthorizationGeneration &+= 1
+        notificationsEnabled = false
+        notifications.removeDelivered()
         if case .login(let login) = phase { login.cancel() }
         for model in sessionModels.values {
             model.prepareForSignOut()
