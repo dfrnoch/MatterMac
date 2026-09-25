@@ -160,6 +160,7 @@ struct MainWindowView: View {
             }
             .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: bannerIdentity)
         }
+        .toolbarBackground(.ultraThinMaterial, for: .windowToolbar)
         .navigationTitle(session.isThreadsViewVisible ? String(localized: "Threads") : ChannelHeaderText.title(session.header))
         .navigationSubtitle(session.isThreadsViewVisible ? "" : ChannelHeaderText.subtitle(session.header))
         .toolbar {

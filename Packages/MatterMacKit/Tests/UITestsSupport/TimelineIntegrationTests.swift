@@ -38,6 +38,41 @@ struct TimelineIntegrationTests {
         #expect(c.imageDemand.isEmpty)
     }
 
+    @Test func floatingControlsPreserveAnchorAndExcludeCoveredMessages() throws {
+        let c = TimelineViewController()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.contentViewController = c
+        defer { c.removeAllContent(); window.close() }
+        let state = snapshot((1...100).map { item($0) }, generation: 1)
+        c.apply(state)
+        window.contentView?.layoutSubtreeIfNeeded()
+        c.setBottomOverlayInset(80)
+        #expect(c.visibleDocumentRect.maxY >= c.tableView.rect(ofRow: 99).maxY - 1)
+        #expect(c.distanceFromBottom() < 1)
+        c.setVisibleTop(c.tableView.rect(ofRow: 20).minY)
+        let anchor = try #require(c.captureAnchor())
+        c.setBottomOverlayInset(180)
+        #expect(c.captureAnchor()?.itemID == anchor.itemID)
+        #expect(abs((c.captureAnchor()?.offset ?? 0) - anchor.offset) < 1)
+        c.apply(snapshot((0...100).map { item($0) }, generation: 2))
+        #expect(c.captureAnchor()?.itemID == anchor.itemID)
+        #expect(abs((c.captureAnchor()?.offset ?? 0) - anchor.offset) < 1)
+        #expect(c.scrollView.contentView.bounds.height - c.visibleDocumentRect.height >= 180)
+        let report = c.currentVisibilityReport(state)
+        let coveredRange = c.tableView.rows(in: NSRect(x: 0, y: c.visibleDocumentRect.maxY + 1,
+            width: c.tableView.bounds.width, height: 150))
+        if coveredRange.length > 1 {
+            #expect(report.last != c.items[coveredRange.location + 1].post?.postID)
+        }
+        c.isPinnedToLiveEdge = true
+        c.setBottomOverlayInset(60)
+        #expect(c.distanceFromBottom() < 1)
+        #expect(c.currentVisibilityReport(state).last == state.items.last?.post?.postID)
+    }
+
     private func snapshot(_ items: [TimelineItem], generation: UInt64) -> TimelineSnapshot {
         TimelineSnapshot(scope: AccountScope(server: ServerSlotID(1), user: CoreFixtures.me.id),
                          target: .channel(CoreFixtures.channel(1).id), generation: generation,

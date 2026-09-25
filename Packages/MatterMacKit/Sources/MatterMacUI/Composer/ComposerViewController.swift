@@ -261,28 +261,27 @@ public final class ComposerViewController: NSViewController {
         inputRow.orientation = .horizontal
         inputRow.alignment = .bottom
         inputRow.spacing = 6
-        let field = Self.makeFieldChrome(containing: inputRow)
-
-        let stack = NSStackView(views: [bannerView, attachmentStrip, field, statusRow])
+        let stack = NSStackView(views: [bannerView, attachmentStrip, inputRow, statusRow])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = Self.stackSpacing
         stack.detachesHiddenViews = true
         stack.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(stack)
+        let field = Self.makeFieldChrome(containing: stack)
+        root.addSubview(field)
 
         let insets = Self.outerInsets
-        let top = stack.topAnchor.constraint(equalTo: root.topAnchor, constant: insets.top)
+        let top = field.topAnchor.constraint(equalTo: root.topAnchor, constant: insets.top)
         top.priority = .defaultLow
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: insets.left),
-            stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -insets.right),
-            stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -insets.bottom),
-            stack.topAnchor.constraint(greaterThanOrEqualTo: root.topAnchor),
+            field.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: insets.left),
+            field.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -insets.right),
+            field.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -insets.bottom),
+            field.topAnchor.constraint(greaterThanOrEqualTo: root.topAnchor),
             top,
             bannerView.widthAnchor.constraint(equalTo: stack.widthAnchor),
             attachmentStrip.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            field.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            inputRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
             statusRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
         root.frame = NSRect(x: 0, y: 0, width: 480, height: 60)
@@ -317,8 +316,9 @@ public final class ComposerViewController: NSViewController {
 
     // MARK: Layout construction
 
-    /// The rounded field that holds the attach button, text and send button: Liquid
-    /// Glass on macOS 26 and later, a filled rounded box before that.
+    /// One rounded surface for the input and its optional banners/status/attachments,
+    /// so every control remains readable over scrolling messages. Liquid Glass on
+    /// macOS 26 and later, a filled rounded box before that.
     private static func makeFieldChrome(containing row: NSView) -> NSView {
         let host = NSView()
         host.translatesAutoresizingMaskIntoConstraints = false

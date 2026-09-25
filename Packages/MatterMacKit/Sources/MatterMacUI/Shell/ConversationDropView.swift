@@ -7,6 +7,12 @@ final class ConversationDropView: NSView {
     /// Whether a drop would currently be accepted (attachments allowed here).
     var canAcceptFiles: () -> Bool = { false }
     var onFiles: ([URL]) -> Void = { _ in }
+    var onLayout: () -> Void = {}
+
+    override func layout() {
+        super.layout()
+        onLayout()
+    }
     private let overlay = DropOverlayView()
 
     override init(frame frameRect: NSRect) {
@@ -31,6 +37,8 @@ final class ConversationDropView: NSView {
                 overlay.topAnchor.constraint(equalTo: topAnchor, constant: 8),
                 overlay.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
             ])
+        } else {
+            addSubview(overlay, positioned: .above, relativeTo: subview)
         }
     }
 

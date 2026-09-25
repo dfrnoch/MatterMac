@@ -51,6 +51,7 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
     var filePanel: NSSavePanel?
     let downloadBar = NSStackView()
     private var composerHeight: NSLayoutConstraint?
+    private let bottomOverlay = NSStackView()
     private var reactionPicker: NSPopover?
     private var pendingUserScroll = false
 
@@ -91,31 +92,62 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         let drop = ConversationDropView()
         drop.canAcceptFiles = { [weak self] in self?.composer.isAttachmentSelectionAllowed == true }
         drop.onFiles = { [weak self] urls in self?.composerDidReceiveFiles(urls) }
+        drop.onLayout = { [weak self] in
+            guard let self else { return }
+            updateOverlayInset()
+        }
         view = drop
         addChild(timeline)
         addChild(composer)
         let cancel = NSButton(title: "Cancel Download", target: self, action: #selector(cancelDownload(_:)))
         downloadBar.addArrangedSubview(NSTextField(labelWithString: "Saving attachment…"))
         downloadBar.addArrangedSubview(cancel)
+        let downloadBackground = NSVisualEffectView()
+        downloadBackground.material = .hudWindow
+        downloadBackground.blendingMode = .withinWindow
+        downloadBackground.translatesAutoresizingMaskIntoConstraints = false
+        downloadBar.addSubview(downloadBackground, positioned: .below, relativeTo: nil)
+        NSLayoutConstraint.activate([
+            downloadBackground.leadingAnchor.constraint(equalTo: downloadBar.leadingAnchor),
+            downloadBackground.trailingAnchor.constraint(equalTo: downloadBar.trailingAnchor),
+            downloadBackground.topAnchor.constraint(equalTo: downloadBar.topAnchor),
+            downloadBackground.bottomAnchor.constraint(equalTo: downloadBar.bottomAnchor),
+        ])
         downloadBar.isHidden = true
-        let stack = NSStackView(views: [timeline.view, downloadBar, composer.view])
-        stack.detachesHiddenViews = true
-        stack.orientation = .vertical
-        stack.alignment = .width
-        stack.spacing = 0
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
+        timeline.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(timeline.view)
+        bottomOverlay.addArrangedSubview(downloadBar)
+        bottomOverlay.addArrangedSubview(composer.view)
+        bottomOverlay.detachesHiddenViews = true
+        bottomOverlay.orientation = .vertical
+        bottomOverlay.alignment = .width
+        bottomOverlay.spacing = 0
+        bottomOverlay.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bottomOverlay)
         let height = composer.view.heightAnchor.constraint(equalToConstant: max(60, composer.preferredHeight))
         composerHeight = height
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: view.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor), height,
-            // `.width` alignment only equalizes arranged views; pin the composer to the pane.
-            composer.view.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            timeline.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            timeline.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            timeline.view.topAnchor.constraint(equalTo: view.topAnchor),
+            timeline.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            bottomOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            bottomOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bottomOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor), height,
+            composer.view.widthAnchor.constraint(equalTo: bottomOverlay.widthAnchor),
         ])
-        composer.onPreferredHeightChange = { [weak self] in self?.composerHeight?.constant = max(60, $0) }
+        composer.onPreferredHeightChange = { [weak self] in
+            self?.composerHeight?.constant = max(60, $0)
+            self?.updateOverlayInset()
+            self?.view.needsLayout = true
+        }
+        updateOverlayInset()
+    }
+
+    private func updateOverlayInset() {
+        let controlsHeight = max(60, composer.preferredHeight)
+        let downloadHeight = downloadBar.isHidden ? 0 : downloadBar.fittingSize.height
+        timeline.setBottomOverlayInset(controlsHeight + downloadHeight)
     }
 
     override func viewDidAppear() {

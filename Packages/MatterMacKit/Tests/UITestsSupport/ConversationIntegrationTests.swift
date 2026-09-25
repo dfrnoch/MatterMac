@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import os
 import Testing
 import MatterMacModels
@@ -24,6 +25,84 @@ struct ConversationIntegrationTests {
         h.controller.discardEditingState()
         for _ in 0..<100 { await Task.yield() }
         #expect(h.service.calls.filter { $0 == "addReaction" } == before)
+        await h.close()
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["MM_GLASS_SNAPSHOTS"] != nil))
+    func captureFloatingChrome() async throws {
+        let h = try await Harness(seedMessages: true)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+            styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.contentViewController = NSHostingController(rootView: MainWindowView(app: h.app, session: h.model)
+            .frame(minWidth: 760, minHeight: 500))
+        window.setContentSize(NSSize(width: 1000, height: 700))
+        _ = NSApp.setActivationPolicy(.regular)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+        defer { window.close() }
+        let directory = ProcessInfo.processInfo.environment["MM_GLASS_SNAPSHOTS"]!
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            window.appearance = NSAppearance(named: appearance)
+            for _ in 0..<25 {
+                window.contentView?.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+                try await Task.sleep(for: .milliseconds(80))
+            }
+            if let pane = h.model.draftProvider as? ConversationController {
+                let timelineFrame = pane.timeline.view.convert(pane.timeline.view.bounds, to: nil)
+                #expect(timelineFrame.minX >= 199)
+                #expect(timelineFrame.maxY <= window.contentLayoutRect.maxY + 1)
+                #expect(pane.timeline.scrollView.contentInsets.bottom >= 60)
+            }
+            // Scroll away from the live edge to put real message pixels behind glass.
+            func scrollViews(_ view: NSView) -> [NSScrollView] {
+                (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+            }
+            if let scroll = window.contentView.flatMap({ scrollViews($0).first { $0.documentView is NSTableView } }) {
+                let clip = scroll.contentView
+                clip.scroll(to: NSPoint(x: 0, y: max(0, clip.bounds.minY - 160)))
+                scroll.reflectScrolledClipView(clip)
+            }
+            window.displayIfNeeded()
+            try await Task.sleep(for: .milliseconds(400))
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            process.arguments = ["-x", "-o", "-l", String(window.windowNumber), directory + "/glass-" + name + ".png"]
+            try process.run()
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0)
+        }
+        await h.close()
+    }
+
+    @Test func composerFloatsOverFullHeightTimelineAndTracksGrowth() async throws {
+        let h = try await Harness()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.contentViewController = h.controller
+        defer { window.close() }
+        window.contentView?.layoutSubtreeIfNeeded()
+        let pane = h.controller
+        #expect(pane.timeline.view.frame.height == pane.view.bounds.height)
+        let initial = pane.timeline.scrollView.contentInsets.bottom
+        #expect(initial >= 60)
+        pane.downloadBar.isHidden = false
+        window.contentView?.layoutSubtreeIfNeeded()
+        #expect(pane.timeline.scrollView.contentInsets.bottom > initial)
+        pane.downloadBar.isHidden = true
+        window.contentView?.layoutSubtreeIfNeeded()
+        #expect(pane.timeline.scrollView.contentInsets.bottom == initial)
+        pane.composer.load(draft: Draft(text: String(repeating: "line\n", count: 8)))
+        window.contentView?.layoutSubtreeIfNeeded()
+        #expect(pane.timeline.scrollView.contentInsets.bottom > initial)
+        #expect(pane.timeline.view.frame.height == pane.view.bounds.height)
+        window.setContentSize(NSSize(width: 460, height: 360))
+        window.contentView?.layoutSubtreeIfNeeded()
+        #expect(pane.timeline.scrollView.contentInsets.bottom >= pane.composer.view.frame.height)
         await h.close()
     }
 
@@ -476,12 +555,20 @@ struct ConversationIntegrationTests {
         let controller: ConversationController
         let realtime = FakeRealtimeConnection()
 
-        init(budget: ResourceBudget = .standard, posts: [Post] = []) async throws {
+        init(budget: ResourceBudget = .standard, posts: [Post] = [], seedMessages: Bool = false) async throws {
             let service = FakeMattermostService(endpoint: CoreFixtures.endpoint, me: CoreFixtures.me)
             let channels = [first, second]
             service.withState { state in
                 state.teams = [CoreFixtures.team]
                 for post in posts { state.posts[post.id] = post }
+                if seedMessages {
+                    for n in 0..<40 {
+                        let message = n % 3 == 0 ? "## Release review\n\nA clear, native conversation with **readable details** and @alice."
+                            : n % 3 == 1 ? "```swift\nlet client = MatterMac()\n```" : "A compact follow-up with a useful next step."
+                        let post = CoreFixtures.post(n, channel: channels[0].id, message: message)
+                        state.posts[post.id] = post
+                    }
+                }
                 for channel in channels {
                     state.channels[channel.id] = channel
                     state.memberships[channel.id] = ChannelMembership(channelID: channel.id, userID: CoreFixtures.me.id)

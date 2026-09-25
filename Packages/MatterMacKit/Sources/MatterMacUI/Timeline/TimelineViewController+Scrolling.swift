@@ -32,6 +32,30 @@ struct VisibilityReport: Equatable {
 extension TimelineViewController {
     // MARK: - Geometry
 
+    func setBottomOverlayInset(_ height: CGFloat) {
+        loadViewIfNeeded()
+        let height = max(0, height)
+        let top = max(0, view.safeAreaInsets.top)
+        guard abs(scrollView.contentInsets.bottom - height) > 0.5
+                || abs(scrollView.contentInsets.top - top) > 0.5 else { return }
+        let target: PositionTarget = isPinnedToLiveEdge ? .bottom : .anchor(captureAnchor())
+        performUpdate {
+            var content = scrollView.contentInsets
+            content.bottom = height
+            content.top = top
+            scrollView.automaticallyAdjustsContentInsets = false
+            scrollView.contentInsets = content
+            var scrollers = scrollView.scrollerInsets
+            scrollers.bottom = height
+            scrollers.top = top
+            scrollView.scrollerInsets = scrollers
+            scrollView.tile()
+            settle(target)
+            afterScrollPositionSettled()
+            layoutNewMessagesButton()
+        }
+    }
+
     func widthBucket() -> Int {
         let width = scrollView.contentView.bounds.width
         guard width.isFinite, width >= TimelineMetrics.widthBucket * 20 else { return 80 }
