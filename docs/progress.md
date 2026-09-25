@@ -1719,6 +1719,27 @@ the pipeline uses the native replacement `diskutil image create from` with UDZO.
 Workflow YAML and embedded shell syntax checks passed. No runtime code changed.
 The pre-existing Xcode project team overrides were left untouched.
 
-Next: run the pipeline, inspect Apple acceptance, download its DMG and independently
-verify tickets and Gatekeeper. Do not treat the local packaging-check DMGs as
-notarized distribution artifacts.
+[Notarized DMG run 36128025597](https://github.com/dfrnoch/MatterMac/actions/runs/36128025597)
+passed for commit `2d2dfc7`, including credential validation and cleanup:
+- App submission `79bfc653-c8d1-4ca0-bbfd-d939aea20171`: **Accepted**.
+- DMG submission `f2ecce03-49f4-45c6-a67a-c8634b6db049`: **Accepted**.
+- Downloaded artifact: `build/notarized/MatterMac.dmg`, 8,527,364 bytes.
+- SHA-256: `d5225f90a73417d6d4a13e70b6f65b350edbbe0c03600e60e7e37709059621a7`.
+- On this Mac, DMG strict signature verification and `stapler validate` passed;
+  `spctl --assess --type open --context context:primary-signature --verbose`
+  returned **accepted**, source **Notarized Developer ID**.
+- Mounted read-only, verified the embedded app's strict signature and explicit
+  bundle/team/Developer ID requirement, validated its stapled ticket and ran
+  `spctl --assess --type execute --verbose`: **accepted**, source
+  **Notarized Developer ID**. Confirmed x86_64 + arm64 and the `/Applications`
+  shortcut, then unmounted and ejected the check volume. No app was launched.
+- `diskutil image create from` packaging/signing check also passed locally.
+
+Separate CI attempt 1 of run 36128013549 failed the existing
+`SessionCacheTests.relaunchShowsCachedSidebarAndPostsBeforeTheServerAnswers`
+profile assertion at line 71. The failed job was rerun without code changes;
+[package tests and the universal ad-hoc build passed on attempt 2](https://github.com/dfrnoch/MatterMac/actions/runs/36128013549).
+This intermittent test was not altered by the packaging task.
+
+Next: clean-account drag-and-drop installation and first launch on macOS 14.
+Do not distribute the earlier local packaging-check DMGs as notarized artifacts.
