@@ -50,4 +50,31 @@ struct ProfileAndFileSearchTests {
         }
         #expect(window.attachedSheet == nil)
     }
+    @Test func removingFileClosesRetainedViewerAndReleasesDisplayedImage() async throws {
+        let h = try await SettingsAndAttentionTests.Harness()
+        ImageViewerWindowController.isPresentationSuppressedForTesting = true
+        defer { ImageViewerWindowController.isPresentationSuppressedForTesting = false }
+        let png = CoreFixtures.png(width: 32, height: 32)
+        h.service.withState { $0.imageHandler = { _, _ in png } }
+        let first = FileInfo(id: FileID(unchecked: CoreFixtures.id("file", 1)), channelID: h.channel.id,
+                             name: "preview.png", mimeType: "image/png")
+        let second = FileInfo(id: FileID(unchecked: CoreFixtures.id("file", 2)), channelID: h.channel.id,
+                              name: "other.txt")
+        let actions = FileSearchActions()
+        actions.preview(first, session: h.model)
+        let viewer = try #require(actions.viewer)
+        for _ in 0..<100 {
+            if viewer.lease != nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(viewer.lease != nil)
+        actions.retainFiles([first.id, second.id])
+        #expect(actions.viewer === viewer)
+        actions.retainFiles([second.id])
+        #expect(actions.viewer == nil)
+        #expect(viewer.lease == nil)
+        #expect(viewer.imageView.image == nil)
+        await h.close()
+    }
+
 }

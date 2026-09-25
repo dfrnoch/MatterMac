@@ -67,4 +67,37 @@ struct ProfileEditingTests {
         await #expect(throws: UserFacingError.fileUnavailable) { try await ProfilePicture.prepare(url, budget: budget) }
     }
 
+    @Test func revokedChannelCannotReturnThroughLateFilePage() async {
+        let h = await SessionHarness()
+        _ = await eventually { await h.session.directory.channels[h.channel.id] != nil }
+        let publicChannel = CoreFixtures.channel(2).id
+        let files = (0..<20).map { FileInfo(id: FileID(unchecked: CoreFixtures.id("file", $0)),
+            channelID: $0 == 0 ? h.channel.id : publicChannel, name: "report \($0)") }
+        let started = Gate(), response = Gate(), finished = Gate()
+        h.service.withProfile { state in
+            state.fileSearchHandler = { query in
+                if query.page == 0 { return FileSearchPage(files: files) }
+                await started.open()
+                await response.wait() // Deliberately ignores task cancellation.
+                await finished.open()
+                return FileSearchPage(files: [files[0]])
+            }
+        }
+        await h.session.searchFiles("report")
+        #expect(await eventually { await h.session.searchState.files.count == 20 })
+        await h.session.loadMoreSearchResults()
+        await started.wait()
+        await h.session.purgeChannel(h.channel.id, reason: nil)
+        await response.open()
+        await finished.wait()
+        #expect(await eventually { await !h.session.isRunning(.search) })
+        #expect(await h.session.searchState.files.map(\.id) == files.dropFirst().map(\.id))
+        #expect(await h.session.searchState.state == .results)
+        #expect(await h.session.searchState.canLoadMore == false)
+        // Public results need not belong to a joined channel. A fresh authorized
+        // search still accepts them; no blanket membership filter is introduced.
+        await h.session.searchFiles("report")
+        #expect(await eventually { await h.session.searchState.files.count == 20 })
+    }
+
 }

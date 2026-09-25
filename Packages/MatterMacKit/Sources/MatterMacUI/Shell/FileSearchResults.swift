@@ -44,6 +44,9 @@ struct FileSearchResults: View {
                 ContentUnavailableView("No Files", systemImage: "doc", description: Text("Try different words or fewer filters."))
             }
         }
+        .onChange(of: session.search?.files.map(\.id)) {
+            actions.retainFiles(Set(session.search?.files.map(\.id) ?? []))
+        }
         .onDisappear { actions.close() }
         .onChange(of: session.isDetached) { if session.isDetached { actions.close() } }
     }
@@ -71,12 +74,13 @@ private struct FileSearchThumbnail: View {
 }
 
 @MainActor @Observable
-private final class FileSearchActions {
+final class FileSearchActions {
     var saving = false
     var error: UserFacingError?
     private var task: Task<Void, Never>?
-    private var viewer: ImageViewerWindowController?
+    private(set) var viewer: ImageViewerWindowController?
     private var panel: NSSavePanel?
+    private var savingFile: FileID?
 
     func preview(_ file: FileInfo, session: SessionViewModel) {
         guard let channel = file.channelID, let app = session.app, !session.isDetached else { return }
@@ -98,6 +102,7 @@ private final class FileSearchActions {
         guard !saving, panel == nil, let channel = file.channelID, !session.isDetached else { return }
         let panel = NSSavePanel()
         self.panel = panel
+        savingFile = file.id
         panel.nameFieldStringValue = file.name
         panel.begin { [weak self, weak session] response in
             guard let self else { return }
@@ -110,6 +115,20 @@ private final class FileSearchActions {
                 do throws(UserFacingError) { try await session.session.downloadAttachment(file.id, channel: channel, to: url) }
                 catch { if error != .cancelled { self?.error = error } }
             }
+        }
+    }
+
+    /// A revocation can remove one row while the results pane stays mounted.
+    func retainFiles(_ ids: Set<FileID>) {
+        if let viewer, !ids.contains(viewer.file.id) {
+            viewer.close()
+            self.viewer = nil
+        }
+        if let savingFile, !ids.contains(savingFile) {
+            cancel()
+            panel?.cancel(nil)
+            panel = nil
+            self.savingFile = nil
         }
     }
 
