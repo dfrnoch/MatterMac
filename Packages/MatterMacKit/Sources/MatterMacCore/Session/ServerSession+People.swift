@@ -143,10 +143,11 @@ extension ServerSession {
         if let header, header.unicodeScalars.count > 1024 { throw .messageTooLong(limitCharacters: 1024) }
         if let purpose, purpose.unicodeScalars.count > 250 { throw .messageTooLong(limitCharacters: 250) }
         do {
+            let revision = membershipRevision
             let updated = try await service.patchChannel(id, displayName: displayName == channel.displayName ? nil : displayName,
                                                          header: header == channel.header ? nil : header,
                                                          purpose: purpose == channel.purpose ? nil : purpose)
-            guard isActiveSessionAlive else { throw UserFacingError.cancelled }
+            guard isActiveSessionAlive, membershipRevision == revision, !Task.isCancelled else { throw UserFacingError.cancelled }
             directory.upsertChannel(updated)
             markDirty([.sidebar, .header])
         } catch let error as UserFacingError {

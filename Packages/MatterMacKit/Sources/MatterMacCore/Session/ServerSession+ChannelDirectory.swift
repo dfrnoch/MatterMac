@@ -138,6 +138,7 @@ extension ServerSession {
     /// Reads one channel and the user's membership into the directory.
     func loadMemberChannel(_ id: ChannelID) async throws(APIError) {
         let epoch = epoch
+        let revision = membershipRevision
         let channel: Channel
         let membership: ChannelMembership
         do {
@@ -149,7 +150,7 @@ extension ServerSession {
         } catch {
             throw .cancelled
         }
-        guard self.epoch == epoch, isActiveSessionAlive else { throw .cancelled }
+        guard self.epoch == epoch, membershipRevision == revision, isActiveSessionAlive, !Task.isCancelled else { throw .cancelled }
         directory.upsertChannel(channel)
         directory.upsertMembership(membership)
         guard directory.memberships[id] != nil else { throw .overloaded }

@@ -104,6 +104,8 @@ public actor ServerSession {
     var tasks: [TaskKey: Task<Void, Never>] = [:]
     var downloads: [UUID: (channel: ChannelID, task: Task<Void, any Error>)] = [:]
     var epoch: UInt64 = 1
+    /// Invalidates membership snapshots that began before a channel was purged.
+    var membershipRevision: UInt64 = 0
     var isShutDown = false
     var authenticationEnded = false
     var missingUsers: Set<UserID> = []

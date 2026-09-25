@@ -42,6 +42,8 @@ public final class FakeMattermostService: MattermostService {
         public var downloadHandler: (@Sendable (FileID, URL) async throws -> Void)?
         public var createPostHandler: (@Sendable (OutgoingPost, Int) async throws -> Post)?
         public var editPostHandler: (@Sendable (PostID, String) async throws -> Post)?
+        public var channelHandler: (@Sendable (ChannelID) async throws -> Channel)?
+        public var channelsHandler: (@Sendable (TeamID) async throws -> [Channel])?
         public var searchPostsHandler: (@Sendable (SearchQuery) async throws -> PostPage)?
         public var postsHandler: (@Sendable (ChannelID, PostPageQuery) async throws -> PostPage)?
         public var unreadHandler: (@Sendable (ChannelID) async throws -> PostPage)?
@@ -149,6 +151,7 @@ public final class FakeMattermostService: MattermostService {
     public func teamMemberships() async throws(APIError) -> [TeamMemberWire] { [] }
 
     public func channels(team: TeamID) async throws(APIError) -> [Channel] {
+        if let handler = withState({ $0.channelsHandler }) { return try await Self.typed { try await handler(team) } }
         record("channels")
         return withState { state in state.channels.values.filter { $0.teamID == team || $0.teamID == nil } }
     }
@@ -164,6 +167,7 @@ public final class FakeMattermostService: MattermostService {
     }
 
     public func channel(_ id: ChannelID) async throws(APIError) -> Channel {
+        if let handler = withState({ $0.channelHandler }) { return try await Self.typed { try await handler(id) } }
         guard let channel = withState({ $0.channels[id] }) else { throw .notFound(ServerErrorInfo(id: "", statusCode: 404, requestID: nil)) }
         return channel
     }

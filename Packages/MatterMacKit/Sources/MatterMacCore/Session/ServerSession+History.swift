@@ -23,11 +23,12 @@ extension ServerSession {
 
     func loadChannels(team: TeamID) async {
         let epoch = epoch
+        let revision = membershipRevision
         do {
             async let channels = service.channels(team: team)
             async let members = service.channelMemberships(team: team)
             let (list, memberships) = try await (channels, members)
-            guard self.epoch == epoch else { return }
+            guard self.epoch == epoch, membershipRevision == revision, !Task.isCancelled else { return }
             let vanished = directory.replaceChannels(team: team, channels: list, memberships: memberships)
             for id in vanished { purgeChannel(id, reason: nil) }
             // DM partners must be resolvable for sidebar names.
@@ -37,7 +38,7 @@ extension ServerSession {
             refreshPresenceSoon()
             refreshSidebarOrganization(team: team)
         } catch {
-            guard self.epoch == epoch else { return }
+            guard self.epoch == epoch, membershipRevision == revision, !Task.isCancelled else { return }
             deps.diagnostics.record(.sync, .error, "channel list load failed")
             handleAuthenticationFailureIfNeeded(error)
         }
@@ -48,11 +49,12 @@ extension ServerSession {
         guard !isRunning(.channelFetch(id)) else { return }
         run(.channelFetch(id)) { session in
             let epoch = session.epoch
+            let revision = session.membershipRevision
             do {
                 async let channel = session.service.channel(id)
                 async let membership = session.service.channelMembership(id)
                 let (c, m) = try await (channel, membership)
-                guard session.epoch == epoch else { return }
+                guard session.epoch == epoch, session.membershipRevision == revision, !Task.isCancelled else { return }
                 switch c.type {
                 case .unknown: return
                 default: break
@@ -64,7 +66,7 @@ extension ServerSession {
                 }
                 session.markDirty([.sidebar, .header])
             } catch let error as APIError {
-                guard session.epoch == epoch else { return }
+                guard session.epoch == epoch, session.membershipRevision == revision, !Task.isCancelled else { return }
                 if case .forbidden = error { session.purgeChannel(id, reason: nil) }
                 if case .notFound = error { session.purgeChannel(id, reason: nil) }
             } catch {}
@@ -523,6 +525,9 @@ extension ServerSession {
     /// Removes a channel and everything derived from it (rows, windows, search hits,
     /// thread views, typing state). Unsent work stays charged until explicitly discarded.
     func purgeChannel(_ id: ChannelID, reason: SessionNotice?) {
+        membershipRevision &+= 1
+        tasks.removeValue(forKey: .channelFetch(id))?.cancel()
+        memberCounts[id] = nil
         let channel = directory.removeChannel(id)
         for target in windows.keys where target.channelID == id { closeWindow(target) }
         _ = store.purge(channel: id)

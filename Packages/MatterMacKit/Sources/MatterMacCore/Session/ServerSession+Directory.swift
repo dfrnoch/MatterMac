@@ -105,10 +105,11 @@ extension ServerSession {
             return existing.id
         }
         do {
+            let revision = membershipRevision
             let channel = try await service.createDirectChannel(with: user, me: me.id)
             guard isActiveSessionAlive, !Task.isCancelled else { throw UserFacingError.cancelled }
             let membership = try await service.channelMembership(channel.id)
-            guard isActiveSessionAlive else { throw UserFacingError.cancelled }
+            guard isActiveSessionAlive, membershipRevision == revision, !Task.isCancelled else { throw UserFacingError.cancelled }
             directory.upsertChannel(channel)
             directory.upsertMembership(membership)
             if directory.peekUser(user) == nil { missingUsers.insert(user) }

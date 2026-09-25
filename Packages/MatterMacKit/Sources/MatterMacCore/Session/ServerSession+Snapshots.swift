@@ -124,7 +124,8 @@ extension ServerSession {
         guard let type = directory.channels[id]?.type, type == .open || type == .private || type == .group else { return }
         run(.channelFetch(id)) { session in
             let epoch = session.epoch
-            guard let stats = try? await session.service.channelStats(id), session.epoch == epoch else { return }
+            guard let stats = try? await session.service.channelStats(id), session.epoch == epoch, !Task.isCancelled,
+                  session.directory.memberships[id] != nil else { return }
             if session.memberCounts.count > 256 { session.memberCounts.removeAll() }
             session.memberCounts[id] = stats.memberCount
             session.markDirty(.header)
