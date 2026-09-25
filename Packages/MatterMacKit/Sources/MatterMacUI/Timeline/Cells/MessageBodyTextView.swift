@@ -17,6 +17,7 @@ final class MessageBodyTextView: NSTextView {
     /// Configures a freshly created instance. Call once after
     /// `MessageBodyTextView(usingTextLayoutManager: false)`.
     func configureForTimeline() {
+        textContainer?.replaceLayoutManager(TimelineLayoutManager())
         isEditable = false
         isSelectable = true
         isRichText = true

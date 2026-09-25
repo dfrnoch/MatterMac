@@ -397,12 +397,14 @@ public struct MessageAttachment: Hashable, Sendable {
     public var text: String
     public var fields: [Field]
     public var footer: String
+    /// `image_url`: offered as an explicit link, never fetched automatically.
+    public var imageURL: String
     /// `true` when the attachment declared interactive actions we do not execute.
     public var hasUnsupportedActions: Bool
 
     public init(fallback: String = "", color: String = "", pretext: String = "", authorName: String = "",
                 title: String = "", titleLink: String = "", text: String = "", fields: [Field] = [],
-                footer: String = "", hasUnsupportedActions: Bool = false) {
+                footer: String = "", imageURL: String = "", hasUnsupportedActions: Bool = false) {
         self.fallback = fallback
         self.color = color
         self.pretext = pretext
@@ -412,6 +414,7 @@ public struct MessageAttachment: Hashable, Sendable {
         self.text = text
         self.fields = fields
         self.footer = footer
+        self.imageURL = imageURL
         self.hasUnsupportedActions = hasUnsupportedActions
     }
 }

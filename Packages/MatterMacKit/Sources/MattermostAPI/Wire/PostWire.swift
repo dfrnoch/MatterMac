@@ -323,7 +323,7 @@ struct AttachmentWire: Decodable, Sendable {
     let attachment: MessageAttachment
 
     enum Keys: String, CodingKey {
-        case fallback, color, pretext, author_name, title, title_link, text, fields, footer, actions
+        case fallback, color, pretext, author_name, title, title_link, text, fields, footer, image_url, actions
     }
 
     struct FieldWire: Decodable, Sendable {
@@ -355,6 +355,7 @@ struct AttachmentWire: Decodable, Sendable {
             text: c.lenientString(.text, maxBytes: 32 * 1_024) ?? "",
             fields: Array(fields.prefix(PostDecodingLimits.maximumAttachmentFields).map(\.field)),
             footer: c.lenientString(.footer, maxBytes: 1_024) ?? "",
+            imageURL: c.lenientString(.image_url, maxBytes: 2_048) ?? "",
             hasUnsupportedActions: hasActions)
     }
 }

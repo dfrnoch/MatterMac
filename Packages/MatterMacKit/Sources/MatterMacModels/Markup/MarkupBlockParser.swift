@@ -51,6 +51,7 @@ struct MarkupBlockTree {
         var headingEnd = 0
         // Tables.
         var tableHeader: [String] = []
+        var tableAlignments: [MarkupTable.Alignment] = []
         var tableRows: [[String]] = []
     }
 
@@ -334,10 +335,10 @@ struct MarkupBlockParser {
         // GFM table: a delimiter row directly below a paragraph line.
         if !indented && containerKind == .paragraph
             && (first == MarkupByte.pipe || first == MarkupByte.colon || first == MarkupByte.dash),
-            let delimiterCells = Self.delimiterRowCellCount(bytes, nextNonspace, lineEnd),
+            let alignments = Self.delimiterRowAlignments(bytes, nextNonspace, lineEnd),
             let headerLine = nodes[container].lines.last {
             let header = Self.splitCells(bytes, headerLine.start, headerLine.end)
-            if header.count == delimiterCells,
+            if header.count == alignments.count,
                Self.hasUnescapedPipe(bytes, headerLine.start, headerLine.end)
                 || Self.hasUnescapedPipe(bytes, nextNonspace, lineEnd) {
                 closeUnmatchedBlocks()
@@ -354,6 +355,7 @@ struct MarkupBlockParser {
                     table = container
                 }
                 nodes[table].tableHeader = header
+                nodes[table].tableAlignments = alignments
                 offset = lineEnd
                 lineConsumed = true
                 container = table
@@ -525,7 +527,9 @@ struct MarkupBlockParser {
         }
         var cells = Self.splitCells(bytes, offset, lineEnd)
         let columns = nodes[table].tableHeader.count
+        // GFM (and the official client): short rows are padded, excess cells ignored.
         if cells.count < columns { cells.append(contentsOf: repeatElement("", count: columns - cells.count)) }
+        if cells.count > columns { cells.removeLast(cells.count - columns) }
         nodes[table].tableRows.append(cells)
     }
 
@@ -680,15 +684,15 @@ struct MarkupBlockParser {
         return false
     }
 
-    /// Number of cells if `[start, end)` is a GFM delimiter row (`| :--- | ---: |`).
-    static func delimiterRowCellCount(_ bytes: [UInt8], _ start: Int, _ end: Int) -> Int? {
+    /// Column alignments if `[start, end)` is a GFM delimiter row (`| :--- | ---: |`).
+    static func delimiterRowAlignments(_ bytes: [UInt8], _ start: Int, _ end: Int) -> [MarkupTable.Alignment]? {
         var lower = start
         var upper = end
         while upper > lower, MarkupByte.isSpaceOrTab(bytes[upper - 1]) { upper -= 1 }
         if lower < upper, bytes[lower] == MarkupByte.pipe { lower += 1 }
         if upper > lower, bytes[upper - 1] == MarkupByte.pipe { upper -= 1 }
         guard lower < upper else { return nil }
-        var cells = 0
+        var alignments: [MarkupTable.Alignment] = []
         var index = lower
         while index <= upper {
             var cellEnd = index
@@ -697,14 +701,28 @@ struct MarkupBlockParser {
             var trimmedEnd = cellEnd
             while cellStart < trimmedEnd, MarkupByte.isSpaceOrTab(bytes[cellStart]) { cellStart += 1 }
             while trimmedEnd > cellStart, MarkupByte.isSpaceOrTab(bytes[trimmedEnd - 1]) { trimmedEnd -= 1 }
-            if cellStart < trimmedEnd, bytes[cellStart] == MarkupByte.colon { cellStart += 1 }
-            if trimmedEnd > cellStart, bytes[trimmedEnd - 1] == MarkupByte.colon { trimmedEnd -= 1 }
+            var leading = false
+            var trailing = false
+            if cellStart < trimmedEnd, bytes[cellStart] == MarkupByte.colon {
+                cellStart += 1
+                leading = true
+            }
+            if trimmedEnd > cellStart, bytes[trimmedEnd - 1] == MarkupByte.colon {
+                trimmedEnd -= 1
+                trailing = true
+            }
             guard trimmedEnd > cellStart else { return nil }
             for position in cellStart..<trimmedEnd where bytes[position] != MarkupByte.dash { return nil }
-            cells += 1
+            let alignment: MarkupTable.Alignment = switch (leading, trailing) {
+            case (true, true): .center
+            case (true, false): .left
+            case (false, true): .right
+            case (false, false): .none
+            }
+            alignments.append(alignment)
             index = cellEnd + 1
         }
-        return cells
+        return alignments
     }
 
     /// Splits a table row on unescaped pipes; `\|` becomes `|`, cells are trimmed. Cell

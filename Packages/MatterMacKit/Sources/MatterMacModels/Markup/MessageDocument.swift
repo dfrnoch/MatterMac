@@ -36,17 +36,19 @@ public indirect enum MarkupBlock: Hashable, Sendable {
     case heading(level: Int, [MarkupInline])
     case codeBlock(language: String?, code: String)
     case blockQuote([MarkupBlock])
-    case list(ordered: Bool, start: Int, items: [[MarkupBlock]])
-    /// A table rendered as aligned monospaced text (readable fallback, not a grid).
-    case table(header: [String], rows: [[String]])
+    case list(MarkupList)
+    /// A GFM pipe table: column alignments and inline-formatted cells.
+    case table(MarkupTable)
     case thematicBreak
+    /// A Slack-style message attachment (`props.attachments`), composed by Core.
+    case attachment(MarkupAttachment)
     /// Unsupported or over-limit content kept verbatim and shown monospaced.
     case plainFallback(String)
 
     func appendPlainText(to out: inout String) {
         switch self {
         case .paragraph(let inlines), .heading(_, let inlines):
-            for inline in inlines { inline.appendPlainText(to: &out) }
+            MarkupInline.appendPlainText(of: inlines, to: &out)
         case .codeBlock(_, let code):
             out += code
         case .blockQuote(let blocks):
@@ -55,23 +57,192 @@ public indirect enum MarkupBlock: Hashable, Sendable {
                 out += "> "
                 block.appendPlainText(to: &out)
             }
-        case .list(let ordered, let start, let items):
-            for (index, item) in items.enumerated() {
+        case .list(let list):
+            for (index, item) in list.items.enumerated() {
                 if index > 0 { out += "\n" }
-                out += ordered ? "\(start + index). " : "• "
-                for (blockIndex, block) in item.enumerated() {
+                out += list.isOrdered ? "\(list.start &+ index). " : "• "
+                switch item.task {
+                case .open?: out += "[ ] "
+                case .done?: out += "[x] "
+                case nil: break
+                }
+                for (blockIndex, block) in item.blocks.enumerated() {
                     if blockIndex > 0 { out += "\n" }
                     block.appendPlainText(to: &out)
                 }
             }
-        case .table(let header, let rows):
-            out += header.joined(separator: " | ")
-            for row in rows { out += "\n" + row.joined(separator: " | ") }
+        case .table(let table):
+            table.appendPlainText(to: &out)
         case .thematicBreak:
             out += "———"
+        case .attachment(let attachment):
+            attachment.appendPlainText(to: &out)
         case .plainFallback(let text):
             out += text
         }
+    }
+}
+
+/// A bullet or ordered list. Items may carry a GFM task marker (`- [ ]`, `- [x]`).
+public struct MarkupList: Hashable, Sendable {
+    public var isOrdered: Bool
+    /// First number of an ordered list (ignored for bullets).
+    public var start: Int
+    public var items: [MarkupListItem]
+
+    public init(isOrdered: Bool = false, start: Int = 1, items: [MarkupListItem]) {
+        self.isOrdered = isOrdered
+        self.start = start
+        self.items = items
+    }
+}
+
+public struct MarkupListItem: Hashable, Sendable {
+    public enum Task: Hashable, Sendable {
+        case open
+        case done
+    }
+
+    /// Task-list state when the item started with `[ ]` or `[x]` followed by a space;
+    /// the marker itself is not part of `blocks`.
+    public var task: Task?
+    public var blocks: [MarkupBlock]
+
+    public init(task: Task? = nil, blocks: [MarkupBlock]) {
+        self.task = task
+        self.blocks = blocks
+    }
+}
+
+/// A GFM pipe table. Every row has exactly `columnCount` cells: short rows are padded
+/// with empty cells and extra cells are dropped, as GFM specifies.
+public struct MarkupTable: Hashable, Sendable {
+    public enum Alignment: Hashable, Sendable {
+        /// No colon in the delimiter row: natural alignment.
+        case none
+        case left
+        case center
+        case right
+    }
+
+    public var alignments: [Alignment]
+    public var header: [[MarkupInline]]
+    public var rows: [[[MarkupInline]]]
+
+    public init(alignments: [Alignment], header: [[MarkupInline]], rows: [[[MarkupInline]]]) {
+        self.alignments = alignments
+        self.header = header
+        self.rows = rows
+    }
+
+    public var columnCount: Int { alignments.count }
+
+    func appendPlainText(to out: inout String) {
+        func appendRow(_ cells: [[MarkupInline]]) {
+            for (index, cell) in cells.enumerated() {
+                if index > 0 { out += " | " }
+                MarkupInline.appendPlainText(of: cell, to: &out)
+            }
+        }
+        appendRow(header)
+        for row in rows {
+            out += "\n"
+            appendRow(row)
+        }
+    }
+}
+
+/// A basic Slack-style message attachment in display form. The pretext is not part of
+/// the attachment: like the official client, it is rendered as ordinary blocks before it.
+public struct MarkupAttachment: Hashable, Sendable {
+    /// The attachment's accent color (`color`): a Slack keyword or `#RGB`/`#RRGGBB`.
+    public enum Accent: Hashable, Sendable {
+        case none
+        case good
+        case warning
+        case danger
+        /// 0xRRGGBB.
+        case rgb(UInt32)
+
+        public init(_ raw: String) {
+            let value = raw.trimmingCharacters(in: .whitespaces).lowercased()
+            switch value {
+            case "good": self = .good
+            case "warning": self = .warning
+            case "danger": self = .danger
+            default:
+                var hex = Substring(value)
+                if hex.hasPrefix("#") { hex = hex.dropFirst() }
+                guard hex.count == 3 || hex.count == 6, hex.allSatisfy(\.isHexDigit),
+                      var number = UInt32(hex, radix: 16) else {
+                    self = .none
+                    return
+                }
+                if hex.count == 3 {
+                    let red = (number >> 8) & 0xF, green = (number >> 4) & 0xF, blue = number & 0xF
+                    number = (red * 0x11) << 16 | (green * 0x11) << 8 | (blue * 0x11)
+                }
+                self = .rgb(number)
+            }
+        }
+    }
+
+    public struct Field: Hashable, Sendable {
+        public var title: String
+        public var value: [MarkupBlock]
+        /// Consecutive short fields are laid out two per row.
+        public var isShort: Bool
+
+        public init(title: String, value: [MarkupBlock], isShort: Bool) {
+            self.title = title
+            self.value = value
+            self.isShort = isShort
+        }
+    }
+
+    public var accent: Accent
+    public var author: String
+    public var title: String
+    /// Only a destination that passed the safe-link policy is kept.
+    public var titleLink: SafeLink?
+    public var text: [MarkupBlock]
+    public var fields: [Field]
+    /// The attachment image (`image_url`), offered as an explicit link; never fetched.
+    public var imageLink: SafeLink?
+    public var footer: String
+    /// The attachment declared interactive actions, which are not executed.
+    public var hasUnsupportedActions: Bool
+
+    public init(accent: Accent = .none, author: String = "", title: String = "", titleLink: SafeLink? = nil,
+                text: [MarkupBlock] = [], fields: [Field] = [], imageLink: SafeLink? = nil, footer: String = "",
+                hasUnsupportedActions: Bool = false) {
+        self.accent = accent
+        self.author = author
+        self.title = title
+        self.titleLink = titleLink
+        self.text = text
+        self.fields = fields
+        self.imageLink = imageLink
+        self.footer = footer
+        self.hasUnsupportedActions = hasUnsupportedActions
+    }
+
+    public var isEmpty: Bool {
+        author.isEmpty && title.isEmpty && text.isEmpty && fields.isEmpty && imageLink == nil && footer.isEmpty
+            && !hasUnsupportedActions
+    }
+
+    func appendPlainText(to out: inout String) {
+        var lines: [String] = []
+        if !author.isEmpty { lines.append(author) }
+        if !title.isEmpty { lines.append(title) }
+        if !text.isEmpty { lines.append(MessageDocument(blocks: text).plainText) }
+        for field in fields {
+            let value = MessageDocument(blocks: field.value).plainText
+            lines.append(field.title.isEmpty ? value : field.title + ": " + value)
+        }
+        if !footer.isEmpty { lines.append(footer) }
+        out += lines.joined(separator: "\n")
     }
 }
 
@@ -93,6 +264,10 @@ public indirect enum MarkupInline: Hashable, Sendable {
     case hashtag(String)
     case lineBreak
     case softBreak
+
+    static func appendPlainText(of inlines: [MarkupInline], to out: inout String) {
+        for inline in inlines { inline.appendPlainText(to: &out) }
+    }
 
     func appendPlainText(to out: inout String) {
         switch self {

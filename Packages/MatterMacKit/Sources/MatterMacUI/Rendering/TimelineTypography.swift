@@ -46,6 +46,43 @@ nonisolated enum TimelinePalette {
     static let quoteBar = dynamic { _, highContrast in
         highContrast ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor
     }
+    static let codeBorder = dynamic { isDark, highContrast in
+        highContrast ? NSColor.secondaryLabelColor : NSColor.labelColor.withAlphaComponent(isDark ? 0.14 : 0.10)
+    }
+    /// Text of a mention of the signed-in user (on `mentionHighlight`).
+    static let selfMentionText = dynamic { _, _ in NSColor.labelColor }
+    /// Row background of a message that mentions the signed-in user.
+    static let mentionRowHighlight = dynamic { isDark, highContrast in
+        NSColor.systemYellow.withAlphaComponent(highContrast ? 0.26 : (isDark ? 0.10 : 0.14))
+    }
+    static let mentionRowBar = dynamic { _, highContrast in
+        highContrast ? NSColor.systemOrange : NSColor.systemYellow
+    }
+    static let tableBorder = dynamic { isDark, highContrast in
+        highContrast ? NSColor.secondaryLabelColor : NSColor.labelColor.withAlphaComponent(isDark ? 0.18 : 0.14)
+    }
+    static let tableHeaderBackground = dynamic { isDark, highContrast in
+        NSColor.labelColor.withAlphaComponent(highContrast ? 0.14 : (isDark ? 0.08 : 0.05))
+    }
+    static let tableStripe = dynamic { isDark, highContrast in
+        NSColor.labelColor.withAlphaComponent(highContrast ? 0.06 : (isDark ? 0.03 : 0.02))
+    }
+    static let rule = dynamic { _, highContrast in
+        highContrast ? NSColor.secondaryLabelColor : NSColor.separatorColor
+    }
+    static let attachmentBorder = dynamic { isDark, highContrast in
+        highContrast ? NSColor.secondaryLabelColor : NSColor.labelColor.withAlphaComponent(isDark ? 0.16 : 0.12)
+    }
+    static let attachmentBackground = dynamic { isDark, highContrast in
+        highContrast ? NSColor.clear : NSColor.labelColor.withAlphaComponent(isDark ? 0.03 : 0.015)
+    }
+    static let attachmentDefaultAccent = dynamic { _, highContrast in
+        highContrast ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor
+    }
+    static let taskBorder = dynamic { _, highContrast in
+        highContrast ? NSColor.labelColor : NSColor.secondaryLabelColor
+    }
+    static let taskChecked = dynamic { _, _ in NSColor.controlAccentColor }
     static let hoverHighlight = dynamic { isDark, highContrast in
         NSColor.labelColor.withAlphaComponent(highContrast ? 0.08 : (isDark ? 0.05 : 0.035))
     }

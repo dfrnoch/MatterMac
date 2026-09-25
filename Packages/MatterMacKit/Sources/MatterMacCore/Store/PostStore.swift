@@ -214,7 +214,7 @@ public struct PostStore: Sendable {
         cost += post.fileIDs.count * 48 + post.reactions.count * 96
         for attachment in post.props.attachments {
             cost += 256 + attachment.text.utf8.count + attachment.pretext.utf8.count + attachment.fallback.utf8.count
-                + attachment.title.utf8.count
+                + attachment.title.utf8.count + attachment.imageURL.utf8.count
             for field in attachment.fields { cost += 64 + field.title.utf8.count + field.value.utf8.count }
         }
         for (key, value) in post.props.systemContext { cost += 64 + key.utf8.count + value.utf8.count }

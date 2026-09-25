@@ -129,24 +129,67 @@ struct MarkupTreeConverter {
             }
             return .blockQuote(children)
         case .list:
-            var items: [[MarkupBlock]] = []
+            var items: [MarkupListItem] = []
             items.reserveCapacity(node.children.count)
             for item in node.children {
                 var blocks: [MarkupBlock] = []
-                for child in tree.nodes[item].children {
+                var task: MarkupListItem.Task?
+                for (position, child) in tree.nodes[item].children.enumerated() {
+                    if position == 0, tree.nodes[child].kind == .paragraph {
+                        var content = paragraphBytes(tree.nodes[child].lines)
+                        task = Self.stripTaskMarker(&content)
+                        guard let inlines = MarkupInlineParser.parse(content, budget: &budget) else { return nil }
+                        blocks.append(.paragraph(inlines))
+                        continue
+                    }
                     guard let block = convert(child) else { return nil }
                     blocks.append(block)
                 }
-                items.append(blocks)
+                items.append(MarkupListItem(task: task, blocks: blocks))
             }
-            return .list(ordered: node.isOrdered, start: node.listStart, items: items)
+            return .list(MarkupList(isOrdered: node.isOrdered, start: node.listStart, items: items))
         case .thematicBreak:
             return .thematicBreak
         case .table:
-            return .table(header: node.tableHeader, rows: node.tableRows)
+            let columns = node.tableAlignments.count
+            func cells(_ texts: [String]) -> [[MarkupInline]]? {
+                var result: [[MarkupInline]] = []
+                result.reserveCapacity(columns)
+                for column in 0..<columns {
+                    let text = column < texts.count ? texts[column] : ""
+                    guard let inlines = MarkupInlineParser.parse(Array(text.utf8), budget: &budget) else { return nil }
+                    result.append(inlines)
+                }
+                return result
+            }
+            guard let header = cells(node.tableHeader) else { return nil }
+            var rows: [[[MarkupInline]]] = []
+            rows.reserveCapacity(node.tableRows.count)
+            for row in node.tableRows {
+                guard let converted = cells(row) else { return nil }
+                rows.append(converted)
+            }
+            return .table(MarkupTable(alignments: node.tableAlignments, header: header, rows: rows))
         case .document, .item:
             return nil
         }
+    }
+
+    /// Removes a GFM task-list marker (`[ ]`, `[x]` or `[X]` followed by a space or tab)
+    /// from the start of a list item's first paragraph and returns its state.
+    static func stripTaskMarker(_ content: inout [UInt8]) -> MarkupListItem.Task? {
+        guard content.count >= 4, content[0] == UInt8(ascii: "["), content[2] == UInt8(ascii: "]"),
+              MarkupByte.isSpaceOrTab(content[3]) else { return nil }
+        let task: MarkupListItem.Task
+        switch content[1] {
+        case UInt8(ascii: " "): task = .open
+        case UInt8(ascii: "x"), UInt8(ascii: "X"): task = .done
+        default: return nil
+        }
+        var start = 4
+        while start < content.count, MarkupByte.isSpaceOrTab(content[start]) { start += 1 }
+        content.removeFirst(start)
+        return task
     }
 
     /// Paragraph lines with surrounding spaces/tabs removed, joined by `\n` (every

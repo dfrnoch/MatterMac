@@ -65,3 +65,18 @@ Custom emoji and broader permission controls still need UI integration. VoiceOve
 privacy/filesystem audits, and performance acceptance measurements are incomplete.
 Existing SwiftUI sidebar reentrancy and AppIntents metadata-extraction warnings
 are recorded in the progress log; neither is claimed resolved here.
+
+## Native message formatting
+
+Headings, emphasis, code (wrapped in rounded blocks), quotes with leading bars,
+nested/numbered/task lists, rules, mention highlights and aligned pipe-table grids
+are rendered with TextKit 1. Tables retain inline formatting/alignment, show at most
+50 body rows and 10 columns, and abbreviate cells after 300 UTF-16 units; omitted
+rows/columns are labeled and Copy Text retains the parsed table. Overall message
+render/collapse limits still apply. This remains a safe Markdown subset, not full
+GFM parity. Hashtags are colored but do not initiate search.
+
+Bot attachment cards include pretext, accent bar, author, safe title link, text,
+paired short fields, footer and an unsupported-interactive-action note. Attachment
+image URLs are explicit external links; image-proxy thumbnails are not implemented
+for these cards. Third-party URLs are never fetched automatically by this renderer.

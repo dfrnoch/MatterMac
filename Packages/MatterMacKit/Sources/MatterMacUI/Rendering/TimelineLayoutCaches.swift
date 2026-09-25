@@ -106,7 +106,7 @@ public final class TimelineLayoutCaches {
 /// (line-fragment padding 0, no insets), so measured heights match display.
 final class TextMeasurer {
     private let storage = NSTextStorage()
-    private let layoutManager = NSLayoutManager()
+    private let layoutManager = TimelineLayoutManager()
     private let container = NSTextContainer(size: NSSize(width: 100, height: CGFloat.greatestFiniteMagnitude))
 
     init() {

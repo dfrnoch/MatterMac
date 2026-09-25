@@ -79,6 +79,9 @@ public struct ResourceBudget: Sendable, Hashable {
     public var collapsedMessageCharacters = 4_000
     /// Hard ceiling on characters parsed for one message's rich rendering.
     public var maximumRenderedCharacters = 70_000
+    public static let maximumRenderedTableRows = 50
+    public static let maximumRenderedTableColumns = 10
+    public static let maximumRenderedTableCellCharacters = 300
 
     public init() {}
 

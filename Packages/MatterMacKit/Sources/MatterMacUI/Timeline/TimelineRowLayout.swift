@@ -402,14 +402,19 @@ struct TimelineRowMetrics {
                 } else {
                     lines += 1
                 }
-            case .list(_, _, let items):
-                for item in items {
+            case .list(let list):
+                for entry in list.items {
+                    let item = entry.blocks
                     estimate(item, bodyPerLine: bodyPerLine * 0.92, monoPerLine: monoPerLine, lines: &lines,
                              extra: &extra, remaining: &remaining, depth: depth + 1)
                     if item.isEmpty { lines += 1 }
                 }
-            case .table(_, let rows):
-                lines += CGFloat(rows.count + 2)
+            case .table(let table):
+                lines += CGFloat(min(table.rows.count, MessageRenderer.maximumTableRows) + 2)
+            case .attachment(let attachment):
+                let length = MessageDocument(blocks: [.attachment(attachment)]).plainText.utf16.count
+                remaining -= length
+                lines += max(1, ceil(CGFloat(length) / bodyPerLine))
             case .thematicBreak:
                 lines += 1
             case .plainFallback(let text):

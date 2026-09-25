@@ -26,9 +26,13 @@ extension NSAttributedString.Key {
 /// - Dynamic system colors only (label, secondary label, link, control accent).
 /// - `.link` is set exclusively for `SafeLink` destinations; the label of a rejected link
 ///   is plain text.
-/// - Work is linear in document size: every block and inline node is visited once, the
-///   output is appended in place, and table padding is capped per cell. With a
-///   `characterLimit`, rendering stops as soon as the limit is reached.
+/// - Work is linear in document size: every block and inline node is visited once and
+///   the output is appended in place. Tables are bounded in rows, columns and cell text
+///   (the rest is reported, never silently dropped). With a `characterLimit`, rendering
+///   stops as soon as the limit is reached.
+/// - Blocks (code, quotes, tables, attachments, rules) are TextKit 1 text blocks whose
+///   padding and borders are fixed here; `TimelineTextBlock` only changes how their
+///   backgrounds are drawn. Measured height therefore equals drawn height.
 ///
 /// Main-actor only (uses AppKit text objects). Render only visible or near-visible rows;
 /// results are cached by `TimelineLayoutCaches`.
@@ -44,8 +48,11 @@ public final class MessageRenderer {
     /// (the parser already bounds nesting, this guards hand-built documents).
     static let maximumBlockDepth = 12
     static let maximumInlineDepth = 24
-    /// Table cells are padded to at most this many columns so output stays linear.
-    static let maximumTableColumnWidth = 40
+    /// Table bounds: rows and columns beyond these are summarized in a note; cell text
+    /// beyond `maximumTableCellCharacters` UTF-16 units ends with "…".
+    static let maximumTableRows = ResourceBudget.maximumRenderedTableRows
+    static let maximumTableColumns = ResourceBudget.maximumRenderedTableColumns
+    static let maximumTableCellCharacters = ResourceBudget.maximumRenderedTableCellCharacters
 
     public init(fontScale: CGFloat = 1, currentUsername: String? = nil, emojiLookup: TimelineEmojiLookup? = nil) {
         self.fonts = TimelineFonts.forScale(fontScale)
@@ -93,7 +100,7 @@ public final class MessageRenderer {
 
     /// Renders a document, stopping after `characterLimit` UTF-16 units (plus an ellipsis).
     public func render(_ document: MessageDocument, characterLimit: Int? = nil) -> NSAttributedString {
-        let state = RenderState(limit: characterLimit ?? Int.max)
+        let state = RenderState(limit: characterLimit ?? ResourceBudget.standard.maximumRenderedCharacters)
         renderBlocks(document.blocks, context: BlockContext(), state: state)
         let ellipsisStyle = state.lastParagraphStyle ?? baseParagraphStyle(indent: 0, blocks: [], spacingBefore: 0)
         return state.finish(ellipsisAttributes: [
@@ -133,9 +140,9 @@ public final class MessageRenderer {
     }
 
     var blockSpacing: CGFloat { (fonts.bodyLineHeight * 0.5).rounded() }
-    private var itemSpacing: CGFloat { max(2, (fonts.bodyLineHeight * 0.15).rounded()) }
+    var itemSpacing: CGFloat { max(2, (fonts.bodyLineHeight * 0.15).rounded()) }
 
-    private func renderBlocks(_ blocks: [MarkupBlock], context: BlockContext, state: RenderState) {
+    func renderBlocks(_ blocks: [MarkupBlock], context: BlockContext, state: RenderState) {
         for (index, block) in blocks.enumerated() {
             if state.isTruncated { return }
             let spacing: CGFloat
@@ -149,12 +156,12 @@ public final class MessageRenderer {
         }
     }
 
-    private func spacingBefore(_ block: MarkupBlock) -> CGFloat {
-        if case .heading = block { return fonts.bodyLineHeight.rounded() }
+    func spacingBefore(_ block: MarkupBlock) -> CGFloat {
+        if case .heading(let level, _) = block { return (fonts.bodyLineHeight * (level <= 2 ? 1 : 0.75)).rounded() }
         return blockSpacing
     }
 
-    private func renderBlock(_ block: MarkupBlock, context: BlockContext, spacingBefore: CGFloat, state: RenderState) {
+    func renderBlock(_ block: MarkupBlock, context: BlockContext, spacingBefore: CGFloat, state: RenderState) {
         if context.depth > Self.maximumBlockDepth {
             renderPlain(MessageDocument(blocks: [block]).plainText, context: context, spacingBefore: spacingBefore,
                         font: fonts.body, state: state)
@@ -171,7 +178,8 @@ public final class MessageRenderer {
             let first = baseParagraphStyle(indent: context.indent, blocks: context.textBlocks, spacingBefore: spacingBefore)
             let continuation = baseParagraphStyle(indent: context.indent, blocks: context.textBlocks, spacingBefore: 0)
             state.setParagraph(first: first, continuation: continuation)
-            var style = InlineStyle(size: fonts.headingSize(level: level), color: context.color)
+            var style = InlineStyle(size: fonts.headingSize(level: level),
+                                    color: level >= 6 ? NSColor.secondaryLabelColor : context.color)
             style.bold = true
             renderInlines(inlines, style: style, depth: 0, state: state)
 
@@ -179,178 +187,32 @@ public final class MessageRenderer {
             renderCodeBlock(code, context: context, spacingBefore: spacingBefore, state: state)
 
         case .blockQuote(let children):
-            let quote = NSTextBlock()
-            quote.setWidth(3, type: .absoluteValueType, for: .border, edge: .minX)
-            quote.setBorderColor(TimelinePalette.quoteBar, for: .minX)
-            quote.setWidth(10, type: .absoluteValueType, for: .padding, edge: .minX)
-            if spacingBefore > 0 {
-                quote.setWidth(spacingBefore, type: .absoluteValueType, for: .margin, edge: .minY)
-            }
-            if context.indent > 0 {
-                // Text blocks span their container; indentation becomes a block margin.
-                quote.setWidth(context.indent, type: .absoluteValueType, for: .margin, edge: .minX)
-            }
-            var inner = context
-            inner.textBlocks.append(quote)
-            inner.color = .secondaryLabelColor
-            inner.depth += 1
-            inner.indent = 0
-            if children.isEmpty {
-                renderPlain(" ", context: inner, spacingBefore: 0, font: fonts.body, state: state)
-            }
-            for (index, child) in children.enumerated() {
-                if state.isTruncated { return }
-                if index > 0 { state.appendParagraphBreak() }
-                renderBlock(child, context: inner, spacingBefore: index > 0 ? self.spacingBefore(child) : 0, state: state)
-            }
+            renderQuote(children, context: context, spacingBefore: spacingBefore, state: state)
 
-        case .list(let ordered, let start, let items):
-            renderList(ordered: ordered, start: start, items: items, context: context, spacingBefore: spacingBefore,
-                       state: state)
+        case .list(let list):
+            renderList(list, context: context, spacingBefore: spacingBefore, state: state)
 
-        case .table(let header, let rows):
-            renderTable(header: header, rows: rows, context: context, spacingBefore: spacingBefore, state: state)
+        case .table(let table):
+            renderTable(table, context: context, spacingBefore: spacingBefore, state: state)
 
         case .thematicBreak:
-            let style = baseParagraphStyle(indent: context.indent, blocks: context.textBlocks,
-                                           spacingBefore: spacingBefore, alignment: .center)
-            state.setParagraph(first: style, continuation: style)
-            state.append("———", attributes: [
-                .font: fonts.body, .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: style,
-            ])
+            renderRule(context: context, spacingBefore: spacingBefore, state: state)
+
+        case .attachment(let attachment):
+            renderAttachment(attachment, context: context, spacingBefore: spacingBefore, state: state)
 
         case .plainFallback(let text):
             renderPlain(text, context: context, spacingBefore: spacingBefore, font: fonts.mono, state: state)
         }
     }
 
-    private func renderPlain(_ text: String, context: BlockContext, spacingBefore: CGFloat, font: NSFont,
-                             state: RenderState) {
+    func renderPlain(_ text: String, context: BlockContext, spacingBefore: CGFloat, font: NSFont,
+                     state: RenderState) {
         let first = baseParagraphStyle(indent: context.indent, blocks: context.textBlocks, spacingBefore: spacingBefore)
         let continuation = baseParagraphStyle(indent: context.indent, blocks: context.textBlocks, spacingBefore: 0)
         state.setParagraph(first: first, continuation: continuation)
         state.appendMultiline(text, attributes: [.font: font, .foregroundColor: context.color, .paragraphStyle: first],
                               continuationStyle: continuation)
-    }
-
-    private func renderCodeBlock(_ code: String, context: BlockContext, spacingBefore: CGFloat, state: RenderState) {
-        let block = NSTextBlock()
-        block.backgroundColor = TimelinePalette.codeBackground
-        block.setWidth(6, type: .absoluteValueType, for: .padding)
-        block.setWidth(8, type: .absoluteValueType, for: .padding, edge: .minX)
-        block.setWidth(8, type: .absoluteValueType, for: .padding, edge: .maxX)
-        if spacingBefore > 0 {
-            block.setWidth(spacingBefore, type: .absoluteValueType, for: .margin, edge: .minY)
-        }
-        if context.indent > 0 {
-            block.setWidth(context.indent, type: .absoluteValueType, for: .margin, edge: .minX)
-        }
-        let style = NSMutableParagraphStyle()
-        style.textBlocks = context.textBlocks + [block]
-        style.lineBreakMode = .byWordWrapping
-        style.tabStops = []
-        style.defaultTabInterval = fonts.monoAdvance * 4
-        style.baseWritingDirection = .leftToRight
-        style.alignment = .left
-        state.setParagraph(first: style, continuation: style)
-        var text = code
-        if text.hasSuffix("\n") { text.removeLast() }
-        if text.isEmpty { text = " " }
-        state.appendMultiline(text, attributes: [
-            .font: fonts.mono, .foregroundColor: NSColor.labelColor, .paragraphStyle: style,
-        ], continuationStyle: style)
-    }
-
-    private func renderList(ordered: Bool, start: Int, items: [[MarkupBlock]], context: BlockContext,
-                            spacingBefore: CGFloat, state: RenderState) {
-        let markerFont = fonts.font(size: fonts.bodySize, bold: false, italic: false, mono: false)
-        let markerWidth: CGFloat
-        if ordered {
-            let widest = "\(start &+ max(items.count - 1, 0))."
-            markerWidth = ceil(NSAttributedString(string: widest, attributes: [.font: markerFont]).size().width) + 6
-        } else {
-            markerWidth = ceil(fonts.bodySize * 1.1)
-        }
-        let bullets = ["•", "◦", "▪"]
-        var contentContext = context
-        contentContext.indent = context.indent + markerWidth
-        contentContext.depth += 1
-        contentContext.listDepth += 1
-
-        for (index, item) in items.enumerated() {
-            if state.isTruncated { return }
-            if index > 0 { state.appendParagraphBreak() }
-            let marker = ordered ? "\(start &+ index)." : bullets[context.listDepth % bullets.count]
-            let first = listParagraphStyle(context: context, contentIndent: contentContext.indent,
-                                           spacingBefore: index == 0 ? spacingBefore : itemSpacing)
-            let continuation = baseParagraphStyle(indent: contentContext.indent, blocks: context.textBlocks,
-                                                  spacingBefore: 0)
-            state.setParagraph(first: first, continuation: continuation)
-            state.append(marker + "\t", attributes: [
-                .font: markerFont, .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: first,
-            ])
-            var remaining = item[...]
-            if case .paragraph(let inlines)? = remaining.first {
-                renderInlines(inlines, style: InlineStyle(size: fonts.bodySize, color: context.color), depth: 0,
-                              state: state)
-                remaining = remaining.dropFirst()
-            } else if remaining.isEmpty {
-                continue
-            }
-            for block in remaining {
-                if state.isTruncated { return }
-                state.appendParagraphBreak()
-                renderBlock(block, context: contentContext, spacingBefore: itemSpacing, state: state)
-            }
-        }
-    }
-
-    private func renderTable(header: [String], rows: [[String]], context: BlockContext, spacingBefore: CGFloat,
-                             state: RenderState) {
-        let columnCount = max(header.count, rows.reduce(0) { max($0, $1.count) })
-        guard columnCount > 0 else { return }
-        func clean(_ cell: String) -> String {
-            cell.contains(where: \.isNewline) ? cell.replacingOccurrences(of: "\n", with: " ") : cell
-        }
-        let header = header.map(clean)
-        let rows = rows.map { $0.map(clean) }
-        var widths = Array(repeating: 1, count: columnCount)
-        for (column, cell) in header.enumerated() { widths[column] = max(widths[column], cell.count) }
-        for row in rows {
-            for (column, cell) in row.enumerated() { widths[column] = max(widths[column], cell.count) }
-        }
-        widths = widths.map { min($0, Self.maximumTableColumnWidth) }
-
-        func line(_ cells: [String]) -> String {
-            var out = ""
-            for column in 0..<columnCount {
-                if column > 0 { out += " | " }
-                let cell = column < cells.count ? cells[column] : ""
-                out += cell
-                let pad = widths[column] - cell.count
-                if pad > 0, column < columnCount - 1 { out += String(repeating: " ", count: pad) }
-            }
-            return out
-        }
-
-        let first = tableParagraphStyle(context: context, spacingBefore: spacingBefore)
-        let continuation = tableParagraphStyle(context: context, spacingBefore: 0)
-        state.setParagraph(first: first, continuation: continuation)
-        let boldMono = fonts.font(size: fonts.monoSize, bold: true, italic: false, mono: true)
-        state.append(line(header), attributes: [.font: boldMono, .foregroundColor: context.color, .paragraphStyle: first])
-        let separator = widths.map { String(repeating: "-", count: $0) }.joined(separator: "-+-")
-        let rowAttributes: [NSAttributedString.Key: Any] = [
-            .font: fonts.mono, .foregroundColor: context.color, .paragraphStyle: continuation,
-        ]
-        state.appendParagraphBreak()
-        state.append(separator, attributes: [
-            .font: fonts.mono, .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: continuation,
-        ])
-        for row in rows {
-            if state.isTruncated { return }
-            state.appendParagraphBreak()
-            state.append(line(row), attributes: rowAttributes)
-        }
     }
 
     // MARK: - Paragraph styles
@@ -368,33 +230,7 @@ public final class MessageRenderer {
         return style
     }
 
-    private func listParagraphStyle(context: BlockContext, contentIndent: CGFloat, spacingBefore: CGFloat)
-        -> NSParagraphStyle {
-        let style = NSMutableParagraphStyle()
-        style.firstLineHeadIndent = context.indent
-        style.headIndent = contentIndent
-        style.tabStops = [NSTextTab(textAlignment: .natural, location: contentIndent)]
-        style.defaultTabInterval = 28
-        style.paragraphSpacingBefore = spacingBefore
-        style.lineBreakMode = .byWordWrapping
-        style.baseWritingDirection = .natural
-        style.textBlocks = context.textBlocks
-        return style
-    }
-
-    private func tableParagraphStyle(context: BlockContext, spacingBefore: CGFloat) -> NSParagraphStyle {
-        let style = NSMutableParagraphStyle()
-        style.firstLineHeadIndent = context.indent
-        style.headIndent = context.indent
-        style.paragraphSpacingBefore = spacingBefore
-        style.lineBreakMode = .byWordWrapping
-        style.alignment = .left
-        style.baseWritingDirection = .leftToRight
-        style.textBlocks = context.textBlocks
-        return style
-    }
-
-    private func noteAttributes(paragraph: NSParagraphStyle) -> [NSAttributedString.Key: Any] {
+    func noteAttributes(paragraph: NSParagraphStyle) -> [NSAttributedString.Key: Any] {
         [
             .font: fonts.font(size: fonts.bodySize, bold: false, italic: true, mono: false),
             .foregroundColor: NSColor.secondaryLabelColor,
@@ -427,7 +263,7 @@ public final class MessageRenderer {
         }
     }
 
-    private func attributes(_ style: InlineStyle, state: RenderState) -> [NSAttributedString.Key: Any] {
+    func attributes(_ style: InlineStyle, state: RenderState) -> [NSAttributedString.Key: Any] {
         var attributes: [NSAttributedString.Key: Any] = [
             .font: fonts.font(size: style.mono ? max(style.size - 1, 8) : style.size, bold: style.bold,
                               italic: style.italic, mono: style.mono),
@@ -435,12 +271,15 @@ public final class MessageRenderer {
             .paragraphStyle: state.currentParagraphStyle,
         ]
         if style.strike { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
-        if style.mono { attributes[.backgroundColor] = TimelinePalette.inlineCodeBackground }
+        if style.mono {
+            attributes[.backgroundColor] = TimelinePalette.inlineCodeBackground
+            attributes[.matterMacInlineCode] = true
+        }
         if let link = style.link { attributes[.link] = link }
         return attributes
     }
 
-    private func renderInlines(_ inlines: [MarkupInline], style: InlineStyle, depth: Int, state: RenderState) {
+    func renderInlines(_ inlines: [MarkupInline], style: InlineStyle, depth: Int, state: RenderState) {
         if depth > Self.maximumInlineDepth {
             var flat = ""
             for inline in inlines { flat += MessageDocument(blocks: [.paragraph([inline])]).plainText }
@@ -488,7 +327,7 @@ public final class MessageRenderer {
                 attributes[.toolTip] = ":" + name + ":"
                 state.append(emojiText(for: name), attributes: attributes)
             case .hashtag(let tag):
-                state.append("#" + tag, attributes: attributes(style, state: state))
+                state.append("#" + tag, attributes: hashtagAttributes(tag, style: style, state: state))
             case .lineBreak, .softBreak:
                 state.appendLineBreak()
             }
@@ -503,10 +342,14 @@ public final class MessageRenderer {
         let isCurrentUser = normalizedUsername.map { $0 == lower } ?? false
         attributes[.font] = fonts.font(size: style.size, bold: true, italic: style.italic, mono: false)
         if isSpecial || isCurrentUser {
+            // Like the official client: your own mentions and channel-wide mentions are
+            // highlighted; the message cell is tinted too.
             attributes[.backgroundColor] = TimelinePalette.mentionHighlight
-            attributes[.foregroundColor] = NSColor.labelColor
+            attributes[.foregroundColor] = TimelinePalette.selfMentionText
+            attributes[.matterMacSelfMention] = true
         } else {
-            attributes[.foregroundColor] = style.link != nil ? NSColor.linkColor : style.color
+            // Other people's mentions read as links (they open the profile).
+            attributes[.foregroundColor] = NSColor.linkColor
         }
         if !isSpecial {
             attributes[.matterMacMention] = name
@@ -518,7 +361,7 @@ public final class MessageRenderer {
 
 /// Mutable output buffer with a UTF-16 budget. Appends in place (amortized O(1) per
 /// unit) and snaps truncation to a grapheme boundary.
-private final class RenderState {
+final class RenderState {
     let output = NSMutableAttributedString()
     private var remaining: Int
     private(set) var isTruncated = false
@@ -605,6 +448,9 @@ private final class RenderState {
         attributes[.matterMacChannelMention] = nil
         attributes[.cursor] = nil
         attributes[.toolTip] = nil
+        attributes[.attachment] = nil
+        attributes[.matterMacSelfMention] = nil
+        attributes[.matterMacInlineCode] = nil
         attributes[.paragraphStyle] = currentParagraphStyle
         if attributes[.font] == nil { attributes[.font] = NSFont.preferredFont(forTextStyle: .body) }
         append("\n", attributes: attributes)

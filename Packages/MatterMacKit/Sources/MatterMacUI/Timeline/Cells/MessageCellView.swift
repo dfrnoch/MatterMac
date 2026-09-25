@@ -19,6 +19,15 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
     private(set) var itemID: TimelineItemID?
     private var post: PostPresentation?
     private var rowLayout = MessageRowLayout()
+    private var mentionsCurrentUser = false
+
+    override func draw(_ dirtyRect: NSRect) {
+        if mentionsCurrentUser {
+            TimelinePalette.mentionRowHighlight.setFill()
+            bounds.fill()
+        }
+        super.draw(dirtyRect)
+    }
     private var avatarRequest: TimelineImageRequest?
     private var thumbnailRequests: [TimelineImageRequest: Int] = [:]
     /// Requests registered with the host that have not been satisfied yet.
@@ -83,6 +92,11 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
         self.itemID = item.id
         self.post = post
         self.rowLayout = layout
+        mentionsCurrentUser = false
+        body.enumerateAttribute(.matterMacSelfMention, in: NSRange(location: 0, length: body.length)) { value, _, stop in
+            if value != nil { mentionsCurrentUser = true; stop.pointee = true }
+        }
+        needsDisplay = true
         bodyTextView.host = host
         let fonts = host.rowMetrics.fonts
 
@@ -432,6 +446,8 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
         metaLabel.toolTip = nil
         setAccessibilityCustomActions(nil)
         rowLayout = MessageRowLayout()
+        mentionsCurrentUser = false
+        needsDisplay = true
         avatarView.image = nil
         avatarView.initials = ""
         avatarView.setAccessibilityLabel(nil)
