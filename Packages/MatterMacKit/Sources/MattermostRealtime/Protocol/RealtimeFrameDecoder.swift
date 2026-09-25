@@ -244,12 +244,15 @@ private struct EnvelopeWire: Decodable {
             let post = try data.nestedJSON(PostWire.self, "post").post
             let mentions = try data.optionalNestedJSON([String].self, "mentions") ?? []
             let mentioned = currentUserID.map { me in mentions.prefix(10_000).contains(me.rawValue) } ?? false
+            let followers = try data.optionalNestedJSON([String].self, "followers") ?? []
+            let notifyFollower = currentUserID.map { me in followers.prefix(10_000).contains(me.rawValue) } ?? false
             return .posted(PostedEvent(
                 post: post,
                 channelType: ChannelType(wire: data.lenientString("channel_type") ?? ""),
                 teamID: try data.optionalID(TeamID.self, "team_id"),
                 mentionsCurrentUser: mentioned,
-                setOnline: data.lenientBool("set_online") ?? false))
+                setOnline: data.lenientBool("set_online") ?? false,
+                notifiesCurrentThreadFollower: notifyFollower))
         case .postEdited:
             return .postEdited(try data.nestedJSON(PostWire.self, "post").post)
         case .postDeleted:

@@ -191,6 +191,18 @@ struct FrameDecodingTests {
         #expect(posted.setOnline)
     }
 
+    @Test func postedRetainsOnlyCurrentFollowerEligibility() throws {
+        for (followers, expected) in [([F.aliceID], true), ([F.bobID], false), ([], false)] {
+            let (decoded, _) = try event(F.posted(followers: followers, seq: 4))
+            guard case .posted(let posted) = decoded else { throw DecodeFailure() }
+            #expect(posted.notifiesCurrentThreadFollower == expected)
+            #expect(!posted.mentionsCurrentUser)
+        }
+        let (decoded, _) = try event(F.posted(seq: 5))
+        guard case .posted(let posted) = decoded else { throw DecodeFailure() }
+        #expect(!posted.notifiesCurrentThreadFollower)
+    }
+
     @Test func postedInDirectChannelWithoutMention() throws {
         let (decoded, _) = try event(F.posted(teamID: "", channelType: "D", mentions: nil, setOnline: false, seq: 5))
         guard case .posted(let posted) = decoded else {

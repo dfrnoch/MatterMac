@@ -185,11 +185,12 @@ public enum RealtimeFixtures {
     // MARK: Events
 
     public static func posted(post: String = postJSON(), channelID: String = channelID, teamID: String = teamID,
-                              channelType: String = "O", mentions: [String]? = nil, setOnline: Bool = true,
+                              channelType: String = "O", mentions: [String]? = nil, followers: [String]? = nil, setOnline: Bool = true,
                               seq: Int64) -> String {
         var data = "{\"channel_display_name\":\"Interop\",\"channel_name\":\"interop\","
             + "\"channel_type\":\(quoted(channelType)),"
         if let mentions { data += "\"mentions\":\(quoted("[" + mentions.map(quoted).joined(separator: ",") + "]")),"}
+        if let followers { data += "\"followers\":\(quoted("[" + followers.map(quoted).joined(separator: ",") + "]"))," }
         data += "\"post\":\(quoted(post)),\"sender_name\":\"@bob\",\"set_online\":\(setOnline),"
             + "\"team_id\":\(quoted(teamID))}"
         return envelope(event: "posted", data: data, broadcast: Broadcast(channelID: channelID), seq: seq,

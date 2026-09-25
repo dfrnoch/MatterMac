@@ -13,7 +13,7 @@ struct NotificationPolicyTests {
     private func kind(_ message: String = "hello", type: ChannelType = .open, serverMentioned: Bool = false,
                       desktop: ChannelDesktopLevel = .default, muted: Bool = false,
                       ignore: IgnoreChannelMentions = .default, account: [String: String] = [:],
-                      crt: Bool = false, reply: Bool = false, postType: PostType = .normal) -> IncomingMessageAlert.Kind? {
+                      crt: Bool = false, reply: Bool = false, follower: Bool = false, postType: PostType = .normal) -> IncomingMessageAlert.Kind? {
         var post = CoreFixtures.post(1, channel: channel.id, message: message,
                                      rootID: reply ? PostID(unchecked: CoreFixtures.id("root", 1)) : nil)
         post.type = postType
@@ -23,7 +23,8 @@ struct NotificationPolicyTests {
         props.merge(account) { $1 }
         return NotificationPolicy.kind(for: .init(
             post: post, channelType: type, serverMentioned: serverMentioned, membership: member,
-            account: UserNotifyProps(values: props), username: "alice", firstName: "Alice", collapsedThreads: crt))
+            account: UserNotifyProps(values: props), username: "alice", firstName: "Alice", collapsedThreads: crt,
+            notifiesThreadFollower: follower))
     }
 
     @Test func directMessagesNotifyUnlessNothingOrMuted() {
@@ -69,6 +70,17 @@ struct NotificationPolicyTests {
         #expect(kind("@alice", account: ["desktop": "all"], crt: true, reply: true) == .mention)
         #expect(kind(account: ["desktop": "all"], crt: false, reply: true) == .channelMessage)
         #expect(kind(type: .direct, crt: true, reply: true) == .directMessage)
+    }
+
+    @Test func serverEligibleFollowersNotifyWithoutCreatingMentions() {
+        #expect(kind(crt: true, reply: true, follower: true) == .channelMessage)
+        #expect(kind(desktop: .all, crt: true, reply: true, follower: true) == .channelMessage)
+        #expect(kind(desktop: .nothing, crt: true, reply: true, follower: true) == nil)
+        #expect(kind(muted: true, crt: true, reply: true, follower: true) == nil)
+        #expect(kind(account: ["desktop": "none"], crt: true, reply: true, follower: true) == nil)
+        #expect(kind(crt: false, reply: true, follower: true) == nil)
+        #expect(kind(crt: true, reply: false, follower: true) == nil)
+        #expect(kind(serverMentioned: true, crt: true, reply: true, follower: true) == .mention)
     }
 
     @Test func previewsAreShortWhitespaceCollapsedPlainText() {
@@ -149,6 +161,24 @@ struct NotificationPreferenceSessionTests {
         let third = try #require(await alerts.next())
         #expect(third.preview == nil)
         _ = await h.session.shutdown(revokeServerSession: false)
+    }
+
+    @Test func followedReplyNotifiesInActiveChannelButNotOpenOrReadThread() async throws {
+        let h = await signedIn(collapsedThreads: "always_on")
+        await h.session.updateAppState(isActive: true, isWindowVisible: true)
+        var alerts = h.session.alerts.makeAsyncIterator()
+        let root = CoreFixtures.post(1, channel: h.channel.id).id
+        let reply = CoreFixtures.post(95, channel: h.channel.id, user: CoreFixtures.bob.id, rootID: root)
+        let event = PostedEvent(post: reply, channelType: .open, teamID: CoreFixtures.team.id,
+                                mentionsCurrentUser: false, setOnline: true, notifiesCurrentThreadFollower: true)
+        await h.session.testThreadAlert(event, open: true, read: false)
+        await h.session.testThreadAlert(event, open: false, read: true)
+        await h.session.testThreadAlert(event, open: false, read: false)
+        let alert = try #require(await alerts.next())
+        #expect(alert.rootID == root)
+        #expect(alert.kind == .channelMessage)
+        _ = await h.session.shutdown(revokeServerSession: false)
+        #expect(await alerts.next() == nil)
     }
 
     @Test func accountNotificationChangesSendTheCompleteMap() async throws {
@@ -252,5 +282,15 @@ struct NotificationPreferenceSessionTests {
             return !ids.contains(reply.id) && !ids.isEmpty
         })
         _ = await h.session.shutdown(revokeServerSession: false)
+    }
+}
+
+private extension ServerSession {
+    func testThreadAlert(_ event: PostedEvent, open: Bool, read: Bool) {
+        let root = event.post.rootID!
+        activeChannel = event.post.channelID
+        openThread = open ? .thread(root: root, channel: event.post.channelID) : nil
+        threadReadMark = read ? (root, event.post.createAt) : nil
+        alertIfNeeded(event)
     }
 }

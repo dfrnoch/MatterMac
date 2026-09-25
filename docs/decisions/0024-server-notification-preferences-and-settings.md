@@ -82,3 +82,25 @@ scene also opts out of restoration.
 **Channel sheet.** "Notification Preferences…" opens from the channel info pane and
 the sidebar row menu. It is an AppKit sheet hosting SwiftUI and attached to the key
 window, so neither view needs presentation state.
+
+## Followed replies (2026-09-25)
+
+The former mention-only CRT limitation is removed. `posted.followers` is not a
+complete following list: the server computes desktop notification recipients using
+account/channel `desktop_threads` and desktop settings, then sends it via the
+websocket follower hook. The decoder retains only whether the current user occurs
+in that list, under the existing frame-size limit. No new cache, queue or request
+is needed. `thread_updated` refreshes thread activity but never produces an alert,
+so one reply cannot notify twice through both events.
+
+Mentions keep their existing alert kind; an eligible plain followed reply is a
+channel-message alert and does not inflate mention badges. Muted/disabled channels
+and Do Not Disturb still suppress it. A visible open thread suppresses its replies;
+merely viewing the containing channel does not, since CRT hides replies there.
+A reply already covered by the local thread read watermark is also suppressed.
+
+Protocol sources: [server v11.11.1 notification policy](https://github.com/mattermost/mattermost/blob/v11.11.1/server/channels/app/notification.go)
+(`CRTNotifiers`, `shouldUserNotifyCRT`, `shouldChannelMemberNotifyCRT`, follower hook)
+and [official desktop policy](https://github.com/mattermost/mattermost/blob/v11.11.1/webapp/channels/src/actions/notification_actions.tsx).
+Servers omitting `followers` keep mention-only CRT reply notifications; incomplete
+locally paged follow lists are deliberately not used to guess eligibility.

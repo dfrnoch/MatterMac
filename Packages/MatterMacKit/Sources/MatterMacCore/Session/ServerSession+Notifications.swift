@@ -15,10 +15,9 @@ import MattermostRealtime
 ///   `@username`, custom keywords, the first name (when enabled) and @channel/@all/
 ///   @here when the account's `channel` setting is on and this channel's
 ///   `ignore_channel_mentions` is not `on` (the server's rule).
-/// - With collapsed reply threads, a reply in a channel notifies only when it
-///   mentions the user; in a direct or group message it notifies like any message.
-///   (The official client also notifies followers per `desktop_threads`; MatterMac
-///   does not track followed threads and documents this simplification.)
+/// - Collapsed channel replies also notify server-selected desktop followers. The
+///   posted event's `followers` list already resolves `desktop_threads` and channel
+///   overrides; local follow lists are incomplete and must not substitute for it.
 public enum NotificationPolicy {
     public struct Input: Sendable {
         public var post: Post
@@ -28,10 +27,12 @@ public enum NotificationPolicy {
         public var account: UserNotifyProps
         public var username: String
         public var firstName: String
+        public var notifiesThreadFollower: Bool
         public var collapsedThreads: Bool
 
         public init(post: Post, channelType: ChannelType, serverMentioned: Bool, membership: ChannelMembership?,
-                    account: UserNotifyProps, username: String, firstName: String, collapsedThreads: Bool) {
+                    account: UserNotifyProps, username: String, firstName: String, collapsedThreads: Bool,
+                    notifiesThreadFollower: Bool = false) {
             self.post = post
             self.channelType = channelType
             self.serverMentioned = serverMentioned
@@ -39,6 +40,7 @@ public enum NotificationPolicy {
             self.account = account
             self.username = username
             self.firstName = firstName
+            self.notifiesThreadFollower = notifiesThreadFollower
             self.collapsedThreads = collapsedThreads
         }
     }
@@ -62,7 +64,9 @@ public enum NotificationPolicy {
             // Direct messages always notify at "mentions"; group messages need "all".
             return input.channelType == .direct || level == .all ? .directMessage : nil
         }
-        if input.collapsedThreads, post.rootID != nil { return nil }
+        if input.collapsedThreads, post.rootID != nil {
+            return input.notifiesThreadFollower ? .channelMessage : nil
+        }
         return level == .all ? .channelMessage : nil
     }
 
@@ -96,10 +100,14 @@ extension ServerSession {
         let input = NotificationPolicy.Input(
             post: post, channelType: channel.type, serverMentioned: event.mentionsCurrentUser,
             membership: directory.memberships[channel.id], account: me.notifyProps ?? .serverDefault,
-            username: me.username, firstName: me.firstName, collapsedThreads: collapsedThreadsActive)
+            username: me.username, firstName: me.firstName, collapsedThreads: collapsedThreadsActive,
+            notifiesThreadFollower: event.notifiesCurrentThreadFollower)
         guard let kind = NotificationPolicy.kind(for: input) else { return }
         guard directory.status(of: me.id)?.silencesNotifications != true else { return }
-        if appIsActive, windowIsVisible, activeChannel == channel.id { return }
+        if collapsedThreadsActive, let root = post.rootID {
+            if let read = threadReadMark, read.root == root, read.at >= post.createAt { return }
+            if appIsActive, windowIsVisible, openThread == .thread(root: root, channel: channel.id) { return }
+        } else if appIsActive, windowIsVisible, activeChannel == channel.id { return }
         if post.props.overrideUsername == nil, directory.peekUser(post.userID) == nil {
             // First message from someone not yet in the directory: resolve the name.
             let epoch = epoch

@@ -58,6 +58,64 @@ struct LiveMessagingTests {
         await a.shutdown(); await b.shutdown()
     }
 
+    @Test(arguments: ["http://localhost:8066/company/chat", "http://localhost:8067"])
+    func followedReplyDesktopEligibility(base: String) async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let alicePassword = env["MM_TEST_ALICE_PASSWORD"], let bobPassword = env["MM_TEST_BOB_PASSWORD"]
+        else { throw Failure.missingCredentials }
+        let endpoint = try ServerURLNormalizer.normalize(base, allowInsecureLoopback: true)
+        let factory = DefaultMattermostServiceFactory()
+        let discovery = factory.discovery(for: endpoint)
+        let alice = try await discovery.login(LoginRequest(loginID: "alice", password: alicePassword))
+        let bob = try await discovery.login(LoginRequest(loginID: "bob", password: bobPassword))
+        await discovery.shutdown()
+        let a = factory.service(for: endpoint, credential: alice.credential)
+        let b = factory.service(for: endpoint, credential: bob.credential)
+        let socket = MattermostRealtimeClient(endpoint: endpoint, credential: alice.credential, currentUserID: alice.user.id)
+        let original = try #require(alice.user.notifyProps)
+        var created: [PostID] = []
+        do {
+            await socket.start()
+            try await wait(socket) { if case .state(.connected) = $0 { true } else { false } }
+            guard let team = try await a.teams().first(where: { $0.name == "qa" }),
+                  let channel = try await a.channels(team: team.id).first(where: { $0.name == "interop" })
+            else { throw Failure.missingChannel }
+            let root = try await b.createPost(OutgoingPost(channelID: channel.id, rootID: nil,
+                message: "MatterMac desktop follower check", fileIDs: [],
+                pendingPostID: PendingPostID(rawValue: "\(bob.user.id.rawValue):\(UUID().uuidString)")!))
+            created.append(root.id)
+            try await a.setThreadFollowing(root.id, following: true, team: team.id, me: alice.user.id)
+            for (setting, expected) in [("all", true), ("mention", false)] {
+                var values = original.values
+                values["desktop"] = "mention"
+                values["desktop_threads"] = setting
+                _ = try await a.patchNotifyProps(UserNotifyProps(values: values), me: alice.user.id)
+                let reply = try await b.createPost(OutgoingPost(channelID: channel.id, rootID: root.id,
+                    message: "MatterMac plain followed reply", fileIDs: [],
+                    pendingPostID: PendingPostID(rawValue: "\(bob.user.id.rawValue):\(UUID().uuidString)")!))
+                created.append(reply.id)
+                try await wait(socket) {
+                    guard case .event(.posted(let event)) = $0, event.post.id == reply.id else { return false }
+                    #expect(event.notifiesCurrentThreadFollower == expected)
+                    #expect(!event.mentionsCurrentUser)
+                    return true
+                }
+            }
+        } catch {
+            _ = try? await a.patchNotifyProps(original, me: alice.user.id)
+            for id in created.reversed() { try? await b.deletePost(id) }
+            await socket.stop()
+            try? await a.logout(); try? await b.logout()
+            await a.shutdown(); await b.shutdown()
+            throw error
+        }
+        _ = try await a.patchNotifyProps(original, me: alice.user.id)
+        for id in created.reversed() { try? await b.deletePost(id) }
+        await socket.stop()
+        try await a.logout(); try await b.logout()
+        await a.shutdown(); await b.shutdown()
+    }
+
     private func exchange(sender: any MattermostService, receiver: any MattermostService,
                           socket: MattermostRealtimeClient, user: UserID, channel: ChannelID) async throws {
         let pending = PendingPostID(rawValue: "\(user.rawValue):\(UUID().uuidString)")!

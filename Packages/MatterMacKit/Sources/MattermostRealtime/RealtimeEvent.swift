@@ -62,13 +62,17 @@ public struct PostedEvent: Sendable {
     public let teamID: TeamID?
     /// `true` when the current user is in the server-computed mention list.
     public let mentionsCurrentUser: Bool
+    /// Server-filtered desktop thread notification recipient, not general follow state.
+    public let notifiesCurrentThreadFollower: Bool
     public let setOnline: Bool
 
-    public init(post: Post, channelType: ChannelType, teamID: TeamID?, mentionsCurrentUser: Bool, setOnline: Bool) {
+    public init(post: Post, channelType: ChannelType, teamID: TeamID?, mentionsCurrentUser: Bool, setOnline: Bool,
+                notifiesCurrentThreadFollower: Bool = false) {
         self.post = post
         self.channelType = channelType
         self.teamID = teamID
         self.mentionsCurrentUser = mentionsCurrentUser
+        self.notifiesCurrentThreadFollower = notifiesCurrentThreadFollower
         self.setOnline = setOnline
     }
 }
