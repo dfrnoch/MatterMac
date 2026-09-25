@@ -52,6 +52,7 @@ final class LiveSoakUITests: XCTestCase {
             Thread.sleep(forTimeInterval: min(30, max(0, idleEnd - ProcessInfo.processInfo.systemUptime)))
             sample("idle")
         }
+        sample("active-start")
         let deadline = ProcessInfo.processInfo.systemUptime + duration
         var lastSample = ProcessInfo.processInfo.systemUptime
         while ProcessInfo.processInfo.systemUptime < deadline {

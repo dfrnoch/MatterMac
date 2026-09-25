@@ -33,7 +33,9 @@ For a smoke run, set duration to 120 and idle seconds to 5. A full five-minute i
 phase follows an additional 30-second settling pause. Duration defaults to two
 hours and is capped at six. At most 1,024 numeric samples are retained by the test.
 The `native-app-soak-numeric-samples` XCTest attachment records phase, uptime,
-elapsed time and cycle counts. Run the standalone Swift sampler in a second terminal
+elapsed time and cycle counts. The `active-start` marker separates the complete idle
+interval from the repeated workload, whose final cycle can finish after the requested
+deadline. Requested active duration includes the five-second pauses between cycles. Run the standalone Swift sampler in a second terminal
 before launching the test (the XCUITest runner itself receives EPERM when attempting
 cross-process resource sampling):
 
