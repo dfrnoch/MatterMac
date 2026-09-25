@@ -1,11 +1,49 @@
 // Development-only sampler for the real app, outside the XCUITest runner (which
 // receives EPERM from proc_pid_rusage). Redirect stdout to an explicit test artifact.
 import AppKit
+import CryptoKit
 import Darwin
 import Foundation
 
+// Only these native geometry values are inspected. No preference value or digest
+// is printed; historical OS-owned panel keys are outside this attribution check.
+let geometryKeys = ["NSSplitView Subview Frames main", "NSSplitView Subview Frames SidebarNavigationSplitView"]
+let maximumPreferenceBytes = 1_048_576
+
+func geometryFingerprints(_ data: Data?) throws -> [[UInt8]?] {
+    guard let data else { return geometryKeys.map { _ in nil } }
+    guard data.count <= maximumPreferenceBytes,
+          let values = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
+        throw CocoaError(.fileReadCorruptFile)
+    }
+    return try geometryKeys.map { key in
+        guard let value = values[key] else { return nil }
+        let canonical = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed])
+        return Array(SHA256.hash(data: canonical))
+    }
+}
+
+// Deterministic, no filesystem or preferences access. Run before using the sampler.
+if CommandLine.arguments.dropFirst() == ["--self-test"] {
+    func encoded(_ values: [String: Any]) throws -> Data {
+        try PropertyListSerialization.data(fromPropertyList: values, format: .binary, options: 0)
+    }
+    let before = try geometryFingerprints(encoded([geometryKeys[0]: ["fixture-a"], "unrelated": 1]))
+    let same = try geometryFingerprints(encoded(["unrelated": 2, geometryKeys[0]: ["fixture-a"]]))
+    let changed = try geometryFingerprints(encoded([geometryKeys[0]: ["fixture-b"], geometryKeys[1]: ["fixture-c"]]))
+    precondition(before == same && before[0] != changed[0] && before[1] != changed[1])
+    let absent = try geometryFingerprints(nil)
+    precondition(absent == [nil, nil])
+    do {
+        _ = try geometryFingerprints(Data(repeating: 0, count: maximumPreferenceBytes + 1))
+        fatalError("oversize input accepted")
+    } catch {}
+    print("# geometry_self_test,passed=1")
+    exit(0)
+}
+
 guard CommandLine.arguments.count == 3, let requested = Double(CommandLine.arguments[2]) else {
-    fatalError("Usage: swift Tools/NativeSoakSampler.swift /exact/MatterMac.app maximum-seconds")
+    fatalError("Usage: swift Tools/NativeSoakSampler.swift /exact/MatterMac.app maximum-seconds (or --self-test)")
 }
 let appURL = URL(fileURLWithPath: CommandLine.arguments[1]).standardizedFileURL
 let maximum = min(22_200, max(30, requested))
@@ -48,6 +86,31 @@ func persistenceMetadata(_ phase: String) {
                 }
             }
             print("# persistence,\(phase),root=\(rootIndex),path=\(pathIndex),exists=\(exists ? 1 : 0),files=\(files),bytes=\(bytes),modified=\(modified),errors=\(errors),truncated=\(truncated)")
+        }
+    }
+}
+
+func geometrySnapshots() -> [[[UInt8]?]?] {
+    ["Library", "Library/Containers/\(bundle)/Data/Library"].map { root in
+        let url = home.appendingPathComponent(root).appendingPathComponent("Preferences/\(bundle).plist")
+        guard FileManager.default.fileExists(atPath: url.path) else { return geometryKeys.map { _ in nil } }
+        do {
+            let file = try FileHandle(forReadingFrom: url)
+            defer { try? file.close() }
+            let data = try file.read(upToCount: maximumPreferenceBytes + 1) ?? Data()
+            return try geometryFingerprints(data)
+        } catch { return nil }
+    }
+}
+
+let geometryBefore = geometrySnapshots()
+defer {
+    let after = geometrySnapshots()
+    for root in geometryBefore.indices {
+        for key in geometryKeys.indices {
+            let valid = geometryBefore[root] != nil && after[root] != nil
+            let changed = valid && geometryBefore[root]![key] != after[root]![key]
+            print("# geometry,root=\(root),key=\(key),changed=\(changed ? 1 : 0),valid=\(valid ? 1 : 0)")
         }
     }
 }
