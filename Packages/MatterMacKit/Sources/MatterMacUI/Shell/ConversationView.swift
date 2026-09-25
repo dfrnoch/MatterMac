@@ -250,7 +250,10 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
                     if let edit { try await model.session.edit(edit, text: text) }
                     else if isCommand {
                         let result = try await model.session.executeCommand(text, channel: target.channelID, rootID: key.rootID)
-                        if result.isEphemeral, !result.text.isEmpty { model.commandFeedback = result.text }
+                        if !Task.isCancelled, self.generation == generation, !model.isDetached,
+                           model.selectedChannel == target.channelID, result.isEphemeral, !result.text.isEmpty {
+                            model.commandFeedback = result.text
+                        }
                     } else {
                         try await model.session.enqueueSend(text: text, channel: target.channelID, rootID: key.rootID,
                                                             attachments: attachments, reservation: reservation)

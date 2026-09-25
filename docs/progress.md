@@ -961,3 +961,48 @@ record the agents' work.
 Custom emoji rendering, own-profile editing and picture upload, slash-command
 autocomplete, file search, message-attachment polish, a large-account performance
 pass, and a manual Notification Center check in a signed build.
+
+## 2026-09-25 — recovered Claude session and continued parity work
+
+Recovered the Claude conversation corresponding to external thread
+`2869eabb-770a-4ce4-8999-4702ebdf0267` from local session
+`dca76cd8-d2e6-4075-828b-4d7be73b4616`. Its last turn stopped at the usage limit.
+Three interrupted worktrees still contained uncommitted changes; replacement
+agents are continuing the original custom-emoji/command-completion,
+profile/file-search, and rendering/performance tasks in those worktrees.
+The original agent processes were not resumed.
+
+The main checkout also retained a demo-content seed and unfinished live UI-test
+changes. Sidebar channel accessibility labels include unread/mention state and
+are combined elements, so the tests now query the element rather than assuming
+it is a static text field. The visual tour covers seeded messages, a thread,
+search and Settings; its multi-character search input now uses `typeText`.
+Screenshots explicitly activate the app and capture only its window.
+
+- `swift test --package-path Packages/MatterMacKit --filter LiveSeedDemoTests`:
+  compiled without warnings; seed test skipped because `MM_SEED_DEMO` was unset.
+  The seed is opt-in, targets only the repository-owned localhost server and
+  leaves demo content there deliberately. Existing content is not re-created.
+- Initial recovered visual-tour run reached all states through the thread, then
+  failed on the incorrect `typeKey("release")` call; fixed before the next run.
+- Full live XCUITest run (`TEST_RUNNER_MM_LIVE_TESTS=1`, password sourced from
+  the ignored environment; `xcodebuild -workspace MatterMac.xcworkspace -scheme
+  MatterMacUITests -configuration Debug -derivedDataPath build test`): **12 tests,
+  zero failures**. Evidence: `/tmp/mm-recovered-uitests.log`. The audit remains
+  a report, not a clean accessibility certification. Recovered feature branches
+  are still in progress. Official-client interoperability, real IMEs, Notification Center,
+  privacy audits, minimum-OS execution and the complete performance gates are
+  still unverified; this recovery is not a replacement-readiness claim.
+
+### Late command result after navigation
+
+A delayed slash-command response wrote its feedback into whichever channel was
+currently visible. The response now checks the composer generation, selected
+channel, cancellation and detached-session state before presenting feedback;
+completion still releases the original draft reservation. A gated regression
+covers both staying and navigating, including preservation of the new draft.
+`swift test --package-path Packages/MatterMacKit --filter
+ConversationIntegrationTests/commandFeedbackStaysInItsConversation` failed on the
+navigation case before the fix and passed both cases afterward, with zero
+compiler warnings (`/tmp/mm-command-feedback-before.log`,
+`/tmp/mm-command-feedback-after.log`).

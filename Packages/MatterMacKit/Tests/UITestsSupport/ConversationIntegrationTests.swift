@@ -85,6 +85,35 @@ struct ConversationIntegrationTests {
         await h.close()
     }
 
+    @Test(arguments: [false, true])
+    func commandFeedbackStaysInItsConversation(navigate: Bool) async throws {
+        let h = try await Harness()
+        let gate = Gate()
+        h.service.withState { state in
+            state.commandHandler = { _ in
+                await gate.wait()
+                return CommandResult(isEphemeral: true, text: "Command completed", gotoLocation: nil)
+            }
+        }
+        let key = h.controller.key
+        h.controller.composer.load(draft: Draft(text: "/example"))
+        h.controller.composerDidRequestSend(text: "/example")
+        #expect(await waitUntil { h.service.calls.contains("executeCommand") })
+        if navigate {
+            h.model.select(channel: h.second.id)
+            h.controller.update(target: .channel(h.second.id), snapshot: nil)
+            h.controller.composer.load(draft: Draft(text: "unrelated draft"))
+            h.controller.saveDraft()
+        }
+        await gate.open()
+        #expect(await waitUntil { !h.app.environment.drafts.isSubmitting(key) })
+        #expect(h.model.commandFeedback == (navigate ? nil : "Command completed"))
+        #expect(h.app.environment.drafts.draft(for: key) == nil)
+        #expect(h.app.environment.unsentLedger.usage.pendingOperations == 0)
+        if navigate { #expect(h.controller.composer.text == "unrelated draft") }
+        await h.close()
+    }
+
     @Test func historyRequestDoesNotSwallowSendAndPendingTextSurvivesNavigation() async throws {
         let h = try await Harness()
         let gate = Gate()
