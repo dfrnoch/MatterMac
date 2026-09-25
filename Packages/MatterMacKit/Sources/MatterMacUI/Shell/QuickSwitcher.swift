@@ -36,8 +36,8 @@ struct QuickSwitcherOverlay: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
-        .allowsHitTesting(session.isQuickSwitcherVisible)
         .background(ResponderRestorer(isPresented: session.isQuickSwitcherVisible))
+        .allowsHitTesting(session.isQuickSwitcherVisible)
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: session.isQuickSwitcherVisible)
         .onChange(of: session.isQuickSwitcherVisible) { _, visible in
             if !visible { presentation &+= 1 }
@@ -502,7 +502,13 @@ private struct ResponderRestorer: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
+    /// Spans the whole window as the overlay's background, so it must never take
+    /// clicks or scrolls from the conversation underneath.
+    final class PassthroughView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    func makeNSView(context: Context) -> NSView { PassthroughView(frame: .zero) }
 
     func updateNSView(_ view: NSView, context: Context) {
         let coordinator = context.coordinator

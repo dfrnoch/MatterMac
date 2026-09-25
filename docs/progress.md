@@ -2053,3 +2053,18 @@ merged here.
 
 Next: check the themed switcher and the sign-in screens in the running app, then
 publish a nightly.
+
+### Clicks and scrolls blocked after the switcher redesign (2026-09-25)
+
+- **Report:** in nightly 20260925.5, nothing in the window could be clicked or
+  scrolled, while keyboard shortcuts (⌘K, Settings) still worked.
+- **Cause:** the switcher overlay spans the whole window. Its focus helper
+  (`ResponderRestorer`, an `NSViewRepresentable`) was attached as a background
+  *after* `.allowsHitTesting(false)`, so its plain `NSView` stayed hit-testable
+  while the palette was closed and took every mouse event.
+- **Fix:** that view's `hitTest` now returns `nil`, and the hit-testing gate now
+  sits outside the background.
+- **Test:** `QuickSwitcherUITests.closedPaletteLetsClicksAndScrollsThrough` hit-tests
+  the conversation area before opening the palette, while it is open, and after it
+  closes. It failed on the old code and passes now.
+- `swift test` passes, and the Debug `xcodebuild` has no warnings.

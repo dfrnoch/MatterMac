@@ -103,6 +103,30 @@ struct QuickSwitcherUITests {
         #expect(f.model.selectedChannel == SwitcherData.group.id)
     }
 
+    /// While closed the palette takes no part in hit-testing, so clicks and scrolls
+    /// reach the conversation; while open its backdrop covers the window.
+    @Test func closedPaletteLetsClicksAndScrollsThrough() async throws {
+        let f = try await Fixture(onScreen: false)
+        defer { f.close() }
+        func hitsTimeline() -> Bool {
+            guard let frameView = f.window.contentView?.superview else { return false }
+            var view = frameView.hitTest(NSPoint(x: frameView.bounds.maxX - 200, y: frameView.bounds.midY))
+            while let current = view {
+                if current is NSTableView { return true }
+                view = current.superview
+            }
+            return false
+        }
+        #expect(hitsTimeline())
+        f.model.isQuickSwitcherVisible = true
+        _ = try await f.fieldEditor()
+        #expect(!hitsTimeline())
+        f.key(53, "\u{1B}")
+        try await f.settle { !f.model.isQuickSwitcherVisible }
+        try await f.settle(iterations: 20)
+        #expect(hitsTimeline())
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["MM_SWITCHER_SNAPSHOTS"] != nil))
     func captureSwitcher() async throws {
         let directory = ProcessInfo.processInfo.environment["MM_SWITCHER_SNAPSHOTS"]!
