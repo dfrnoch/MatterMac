@@ -38,6 +38,29 @@ struct TimelineIntegrationTests {
         #expect(c.imageDemand.isEmpty)
     }
 
+    @Test func repeatedReloadsReuseABoundedSetOfNativeRowViews() throws {
+        let c = TimelineViewController()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.contentViewController = c
+        defer { c.removeAllContent(); window.close() }
+        c.apply(snapshot((1...4).map { item($0) }, generation: 1))
+        // Hold observed objects so allocator address reuse cannot conceal a new
+        // row allocation. The table must retrieve its own recycled row objects.
+        var seen: [ObjectIdentifier: TimelineRowView] = [:]
+        for _ in 0..<20 {
+            c.tableView.reloadData()
+            window.contentView?.layoutSubtreeIfNeeded()
+            for index in 0..<4 {
+                let row = try #require(c.tableView.rowView(atRow: index, makeIfNecessary: true) as? TimelineRowView)
+                seen[ObjectIdentifier(row)] = row
+            }
+        }
+        #expect(seen.count <= 8, "Four visible rows must reuse a bounded pool across twenty reloads")
+    }
+
     @Test func floatingControlsPreserveAnchorAndExcludeCoveredMessages() throws {
         let c = TimelineViewController()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),

@@ -6,6 +6,14 @@ import MatterMacCore
 final class TimelineRowView: NSTableRowView {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("MatterMacTimelineRow")
 
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        identifier = Self.reuseIdentifier
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
     var isFlashing = false {
         didSet { if oldValue != isFlashing { needsDisplay = true } }
     }
