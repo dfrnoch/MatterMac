@@ -11,6 +11,7 @@ public struct DirectoryState: Sendable {
     public var categories: [TeamID: [SidebarCategory]] = [:]
     public var categoriesError: APIError?
     public var updateCategoryError: APIError?
+    public var beforeCategoryUpdate: (@Sendable (SidebarCategory) async throws -> Void)?
     public var updatedCategories: [SidebarCategory] = []
     public var teamUnreads: [TeamUnread] = []
     /// Public channels of a team that the user may or may not belong to.
@@ -83,6 +84,9 @@ extension FakeMattermostService {
 
     public func updateSidebarCategory(_ category: SidebarCategory) async throws(APIError) -> SidebarCategory {
         note("updateSidebarCategory")
+        if let handler = directory.withLock({ $0.beforeCategoryUpdate }) {
+            try await Self.typed { try await handler(category) }
+        }
         if let error = directory.withLock({ $0.updateCategoryError }) { throw error }
         var list = currentCategories(team: category.teamID)
         guard let index = list.firstIndex(where: { $0.id == category.id }) else {

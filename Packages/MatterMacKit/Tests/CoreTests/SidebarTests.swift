@@ -195,6 +195,50 @@ struct SidebarTests {
         _ = await h.session.shutdown(revokeServerSession: false)
     }
 
+    @Test(arguments: ["success", "refused", "cancelled"])
+    func rapidCollapseChangesKeepLatestIntentAndLastConfirmedState(completion: String) async throws {
+        let first = Gate(), second = Gate()
+        let h = await SidebarHarness(directory: { state in
+            state.beforeCategoryUpdate = { category in
+                if category.isCollapsed {
+                    await first.wait()
+                } else if completion == "refused" {
+                    throw APIError.forbidden(ServerErrorInfo(id: "refused", statusCode: 403, requestID: nil))
+                } else if completion == "cancelled" {
+                    await second.wait()
+                    try Task.checkCancellation()
+                }
+            }
+        })
+        await h.waitForCategories()
+        let id = h.categoryID("channels")
+        let worker = Task { () -> UserFacingError? in
+            do throws(UserFacingError) {
+                try await h.session.setCategoryCollapsed(id, collapsed: true)
+                return nil
+            } catch { return error }
+        }
+        #expect(await eventually { h.service.calls.filter { $0 == "updateSidebarCategory" }.count == 1 })
+        try await h.session.setCategoryCollapsed(id, collapsed: false)
+        #expect(await h.sections().first { $0.kind == .channels }?.isCollapsed == false)
+        await first.open()
+        if completion == "cancelled" {
+            #expect(await eventually { h.service.calls.filter { $0 == "updateSidebarCategory" }.count == 2 })
+            worker.cancel()
+            await second.open()
+        }
+        let error = await worker.value
+        let expectedError: UserFacingError? = completion == "success" ? nil
+            : completion == "refused" ? .permissionDenied : .cancelled
+        #expect(error == expectedError)
+        let expectedCollapsed = completion != "success"
+        #expect(h.service.currentCategories(team: h.team.id).first { $0.id == id }?.isCollapsed == expectedCollapsed)
+        #expect(await h.sections().first { $0.kind == .channels }?.isCollapsed == expectedCollapsed)
+        #expect(await h.session.directory.pendingCollapse.isEmpty)
+        #expect(h.service.calls.filter { $0 == "updateSidebarCategory" }.count == 2)
+        _ = await h.session.shutdown(revokeServerSession: false)
+    }
+
     @Test func refusedCollapseIsRevertedAndReported() async {
         let h = await SidebarHarness(directory: {
             $0.updateCategoryError = .forbidden(ServerErrorInfo(id: "api.context.permissions.app_error", statusCode: 403, requestID: nil))

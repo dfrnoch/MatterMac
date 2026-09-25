@@ -79,24 +79,38 @@ extension ServerSession {
               let current = directory.categories[team]?.first(where: { $0.id == id }) else {
             throw .notFoundOrInaccessible
         }
-        guard directory.pendingCollapse[id] == nil, current.isCollapsed != collapsed else { return }
-        let epoch = epoch
+        guard !Task.isCancelled else { throw .cancelled }
+        guard current.isCollapsed != collapsed else { return }
+        let alreadySaving = directory.pendingCollapse[id] != nil
         directory.pendingCollapse[id] = collapsed
         directory.updateCategory(id, team: team) { $0.isCollapsed = collapsed }
         markDirty(.sidebar)
+        // One worker per category; subsequent clicks replace its desired value.
+        guard !alreadySaving else { return }
+        let epoch = epoch
+        var confirmed = current.isCollapsed
         do {
-            var fresh = try await service.sidebarCategory(id, team: team, me: me.id)
-            guard self.epoch == epoch else { throw APIError.cancelled }
-            fresh.isCollapsed = collapsed
-            let saved = try await service.updateSidebarCategory(fresh)
-            guard self.epoch == epoch else { throw APIError.cancelled }
-            directory.pendingCollapse[id] = nil
-            directory.updateCategory(id, team: team) { $0.isCollapsed = saved.isCollapsed }
-            markDirty(.sidebar)
+            while directory.pendingCollapse[id] != nil {
+                var fresh = try await service.sidebarCategory(id, team: team, me: me.id)
+                guard self.epoch == epoch, !Task.isCancelled,
+                      let desired = directory.pendingCollapse[id] else { throw APIError.cancelled }
+                confirmed = fresh.isCollapsed
+                fresh.isCollapsed = desired
+                let saved = try await service.updateSidebarCategory(fresh)
+                guard self.epoch == epoch else { throw APIError.cancelled }
+                confirmed = saved.isCollapsed
+                guard !Task.isCancelled else { throw APIError.cancelled }
+                if directory.pendingCollapse[id] == desired {
+                    directory.pendingCollapse[id] = nil
+                    directory.updateCategory(id, team: team) { $0.isCollapsed = saved.isCollapsed }
+                    markDirty(.sidebar)
+                }
+            }
         } catch {
             guard self.epoch == epoch else { throw .cancelled }
             directory.pendingCollapse[id] = nil
-            directory.updateCategory(id, team: team) { $0.isCollapsed = current.isCollapsed }
+            // A later coalesced request can fail after an earlier one succeeded.
+            directory.updateCategory(id, team: team) { $0.isCollapsed = confirmed }
             markDirty(.sidebar)
             handleAuthenticationFailureIfNeeded(error)
             throw Self.userFacing(error)
