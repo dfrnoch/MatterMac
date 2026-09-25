@@ -10,7 +10,17 @@ Each holds the same two hand-written SVG layers (`Assets/ring.svg` and
 `Assets/drop.svg`) and an `icon.json` that sets the fills, glass and shadows. The
 drawing is original, written as SVG path coordinates for MatterMac, and covered by
 the repository's MIT license: an open ring with rounded ends, and a drop whose tip
-curves into the ring's gap. The build setting `MATTERMAC_APP_ICON` (`App.xcconfig`,
+points into the ring's gap. Both shapes share one axis through the centre,
+tilted 38° clockwise from vertical. The paths were computed from these values on
+the 1024-point canvas:
+
+- **Ring:** centred at (512, 512); centreline radius 300, thickness 88, round ends,
+  and a 48° gap centred on the axis.
+- **Drop:** symmetric about the axis, with straight sides tangent to its round base.
+  The base has radius 136 and its centre is 56 points from the ring centre, away
+  from the tip. The tip sits on the ring's centreline, in the middle of the gap.
+
+The build setting `MATTERMAC_APP_ICON` (`App.xcconfig`,
 default `AppIcon`) selects the icon; `build-dmg.yml` sets `AppIconNightly` for
 `-nightly.` labels and checks `CFBundleIconName`.
 

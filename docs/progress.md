@@ -1991,3 +1991,10 @@ Follow-up the same day: the blue default was replaced at the user's request.
 - Release builds without signing ran with each icon name; both succeeded with no
   warnings. `CFBundleIconName` matched each name, and each `.icns` fallback was
   checked visually.
+
+Redesign for alignment (user feedback: "it's not aligned"). The ring gap and the drop
+now share one axis through the centre, tilted 38°. The drop is symmetric with
+straight tangent sides, and its tip lies on the ring's centreline, in the middle of
+the gap. Construction values are in `docs/assets.md`. Both icons were rendered with
+`ictool` and checked visually (Default, Dark, ClearLight and TintedDark). The Debug
+build succeeds with no warnings.
