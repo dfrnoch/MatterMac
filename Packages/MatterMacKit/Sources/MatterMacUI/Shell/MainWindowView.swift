@@ -12,11 +12,16 @@ struct MainWindowView: View {
         [session.noticeText ?? "", session.commandFeedback ?? "", session.inlineError ?? ""]
     }
 
-    @ViewBuilder private var conversationArea: some View {
+    @ViewBuilder private func conversationArea(width: CGFloat) -> some View {
+        // Keep both panes readable; at narrow widths the selected trailing pane
+        // replaces the conversation until its existing Close action is used.
+        let showsBothPanes = width >= 800
         if session.isThreadsViewVisible {
             HSplitView {
-                ThreadsListView(session: session)
-                    .frame(minWidth: 300, idealWidth: 420, maxHeight: .infinity)
+                if showsBothPanes || session.thread == nil {
+                    ThreadsListView(session: session)
+                        .frame(minWidth: 300, idealWidth: 420, maxHeight: .infinity)
+                }
                 if let thread = session.thread {
                     TrailingPane(title: "Thread", systemImage: "bubble.left.and.text.bubble.right",
                                  close: { session.closeThread() },
@@ -24,7 +29,7 @@ struct MainWindowView: View {
                         ConversationView(session: session, target: thread.target, snapshot: thread)
                     }
                     .frame(minWidth: 300, idealWidth: 480)
-                } else {
+                } else if showsBothPanes {
                     ContentUnavailableView("Select a Thread", systemImage: "text.bubble",
                                            description: Text("Choose a thread to read and reply."))
                         .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
@@ -32,8 +37,10 @@ struct MainWindowView: View {
             }
         } else if let channel = session.selectedChannel {
             HSplitView {
-                ConversationView(session: session, target: .channel(channel), snapshot: session.timeline)
-                    .frame(minWidth: 300)
+                if showsBothPanes || (session.thread == nil && !session.isSearchVisible && !session.isChannelInfoVisible) {
+                    ConversationView(session: session, target: .channel(channel), snapshot: session.timeline)
+                        .frame(minWidth: 300)
+                }
                 // The single optional trailing panel (SPEC §4): thread or details.
                 if let thread = session.thread {
                     TrailingPane(title: "Thread", systemImage: "bubble.left.and.text.bubble.right",
@@ -43,8 +50,13 @@ struct MainWindowView: View {
                     }
                     .frame(minWidth: 240, idealWidth: 360)
                 } else if session.isSearchVisible {
-                    SearchPane(session: session)
-                        .frame(minWidth: 280, idealWidth: 380)
+                    GeometryReader { geometry in
+                        SearchPane(session: session) {
+                            if !showsBothPanes { session.isSearchVisible = false }
+                        }
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                    }
+                    .frame(minWidth: 280, idealWidth: 380)
                 } else if session.isChannelInfoVisible {
                     TrailingPane(title: "Channel Info", systemImage: "info.circle",
                                  close: { session.isChannelInfoVisible = false }) {
@@ -152,20 +164,26 @@ struct MainWindowView: View {
             SidebarView(app: app, session: session)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 200, max: 340)
         } detail: {
-            ZStack(alignment: .top) {
-                conversationArea
-                banners
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
+            GeometryReader { geometry in
+                ZStack(alignment: .top) {
+                    conversationArea(width: geometry.size.width)
+                    banners
+                        .padding(.horizontal, 16)
+                        .padding(.top, 10)
+                }
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: bannerIdentity)
             }
-            .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: bannerIdentity)
         }
         .toolbarBackground(.ultraThinMaterial, for: .windowToolbar)
         .navigationTitle(session.isThreadsViewVisible ? String(localized: "Threads") : ChannelHeaderText.title(session.header))
         .navigationSubtitle(session.isThreadsViewVisible ? "" : ChannelHeaderText.subtitle(session.header))
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                ChannelHeaderAccessories(header: session.header, session: session)
+            if let header = session.header,
+               header.memberCount != nil || header.isArchived || (header.type == .direct && header.partnerStatus != nil) {
+                ToolbarItem(placement: .primaryAction) {
+                    ChannelHeaderAccessories(header: header, session: session)
+                }
             }
             ToolbarItem(placement: .primaryAction) {
                 Toggle(isOn: $session.isThreadsViewVisible) {

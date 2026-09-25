@@ -6,6 +6,7 @@ import MattermostAPI
 
 struct FileSearchResults: View {
     let session: SessionViewModel
+    var onNavigate: () -> Void = {}
     @State private var actions = FileSearchActions()
 
     var body: some View {
@@ -31,7 +32,10 @@ struct FileSearchResults: View {
                                     if file.isImage { Button("Preview") { actions.preview(file, session: session) }.disabled(file.channelID == nil) }
                                     Button("Save…") { actions.save(file, session: session) }.disabled(actions.saving || file.channelID == nil)
                                     Button("Jump to Message") {
-                                        if let channel = file.channelID, let post = file.postID { session.select(channel: channel, focusing: post) }
+                                        if let channel = file.channelID, let post = file.postID {
+                                            session.select(channel: channel, focusing: post)
+                                            onNavigate()
+                                        }
                                     }.disabled(file.channelID == nil || file.postID == nil)
                                 }.buttonStyle(.borderless).font(.caption)
                             }

@@ -9,6 +9,7 @@ import MatterMacPlatform
 /// its real channel context (SPEC §12).
 struct SearchPane: View {
     let session: SessionViewModel
+    var onNavigate: () -> Void = {}
     @State private var terms = ""
     @State private var debounce: Task<Void, Never>?
     @FocusState private var fieldFocused: Bool
@@ -115,15 +116,15 @@ struct SearchPane: View {
             }
         case .results?:
             if kind == .files {
-                FileSearchResults(session: session)
+                FileSearchResults(session: session, onNavigate: onNavigate)
             } else if let search = session.search, !search.items.isEmpty {
                 List {
                     ForEach(search.items) { item in
                         SearchResultRow(session: session, item: item)
                             .contentShape(Rectangle())
-                            .onTapGesture { session.open(item) }
+                            .onTapGesture { openResult(item) }
                             .contextMenu {
-                                Button("Jump to Message") { session.open(item) }
+                                Button("Jump to Message") { openResult(item) }
                                 Button("Open Thread") { session.openThread(for: item) }
                                 Divider()
                                 Button("Copy Text") { Pasteboard.copy(item.preview) }
@@ -149,6 +150,11 @@ struct SearchPane: View {
                 Text("Search runs on your Mattermost server. MatterMac keeps no local search index.")
             }
         }
+    }
+
+    func openResult(_ item: SearchResultItem) {
+        session.open(item)
+        onNavigate()
     }
 
     private var emptyTitle: String {
