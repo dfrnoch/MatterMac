@@ -13,7 +13,7 @@ OS or hardware. Local builds are ad-hoc signed, not Developer ID signed or notar
 
 | Mattermost deployment | Evidence |
 | --- | --- |
-| 11.11.1 at origin root | Live REST/WebSocket peer and native conversation/attachment checks. |
+| 11.11.1 at origin root | Live REST/WebSocket peer and native conversation/attachment checks; actual-app channel/DM exchange with the official web client, including restart/refetch. |
 | 11.11.1 at `/company/chat` | Same checks with URL-subpath preservation. |
 | 10.11.24 at origin root | Same checks on the 10.11 release line. |
 
@@ -21,8 +21,11 @@ Live REST/WebSocket checks exercise bidirectional channel and DM messages, edits
 reactions, and deletions, plus pin/unpin, save/unsave, Mark as Unread and
 server-generated link previews (`LiveInteractionTests`). Native SwiftUI/AppKit checks exercise login, draft
 navigation, sending, edits, replies, DMs, selected-file/pasted-image upload,
-download, and thumbnail display. Both peers are native clients; communication
-with an official web or desktop client remains an unverified release gate.
+download, and thumbnail display. Those suites use two native peers. Separately,
+`OfficialClientInteropUITests` and an isolated official web client exchanged
+messages in a channel and DM on 11.11.1; MatterMac then restarted, signed in again,
+and fetched both conversations. Official-client edits, reactions, files and
+broader multi-version parity remain beyond that narrower interoperability proof.
 Exact commands and dated outcomes are in [progress.md](progress.md).
 
 ## Authentication and endpoint coverage

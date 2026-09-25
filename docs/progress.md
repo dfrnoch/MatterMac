@@ -1069,3 +1069,46 @@ all passed**, zero compiler warnings (`/tmp/mm-core-hardening.log`). Totals fail
 reproduction: `/tmp/mm-thread-refresh-before.log`. Full combined package, app,
 live and sustained-use checks are still in progress; no production-readiness or
 completed privacy-audit claim is made by this milestone.
+
+### Integrated verification and actual official-client exchange
+
+The floating composer now overlays the full timeline, with bounded bottom insets
+that preserve scroll anchors and exclude occluded rows from read tracking. Native
+toolbar material is enabled. An attempted header background extension was rejected
+because it expanded content under the sidebar; it is not part of the change.
+See decision 0028. Increased contrast for the login captions, status/footer and
+date separators addresses specific earlier audit reports; final audit pending.
+
+Further gated regressions fixed membership responses restoring revoked access,
+autocomplete clicks overwriting marked text, queued commands executing after pane
+disposal, and profile popovers retaining their content after session detachment.
+
+- `MM_LIVE_TESTS=1 MM_KEYCHAIN_TESTS=1 swift test --package-path Packages/MatterMacKit`
+  with local credentials sourced from the ignored environment: **396 tests
+  reported, all passed** (UI 147, Core 143, API 61, Models 18, Realtime 27),
+  no Swift compiler warnings. `/tmp/mm-integrated-live-full.log`. Benchmark,
+  optional fixture screenshots and demo seeding retain their separate opt-ins.
+- `xcodebuild -workspace MatterMac.xcworkspace -scheme MatterMac -configuration
+  Release -derivedDataPath build build`: passed (`/tmp/mm-release-build.log`).
+  Universal arm64/x86_64 bundle: 28,024 KiB allocated; `codesign --verify --deep
+  --strict` passed for the local ad-hoc signature. This is not Developer ID signing,
+  notarization, or an Intel execution test. `otool -L` shows system frameworks and
+  system Swift runtime libraries; no embedded web engine or third-party runtime.
+  Xcode still emits its AppIntents metadata-extraction warning (no dependency).
+- `OfficialClientInteropUITests/testOfficialPeerChannelAndDMAfterRestart`: actual
+  Debug app as Alice, official Mattermost 11.11.1 web UI as Bob in an isolated
+  headless browser context. Both exchanged a unique synthetic message and reply
+  in Interop and their DM. MatterMac terminated, relaunched with isolated sign-ins,
+  authenticated again and fetched both canonical conversations: **1 passed in
+  62.587 s**, `/tmp/mm-official-interop2.log`. Browser-side screenshot:
+  `/tmp/mm-official-dm.png`. This closes the basic official-peer messaging/restart
+  gate, not complete official-client feature parity. Four clearly marked QA posts
+  remain in the repository-owned test server. The harness requires an explicit
+  `TEST_RUNNER_MM_WEB_INTEROP_MARKER` and a coordinated web peer; normal runs skip it.
+  First attempt failed on XCTest's automatic text-view hit point; clicking the
+  observed composer's center exercised the normal mouse path and succeeded.
+
+The full syscall filesystem trace cannot run without administrator access:
+`fs_usage` requires root and `sudo -n` requires a password. No permission prompt was
+made. A scoped before/after app-storage inspection is being collected with the
+long-run sampler; it will not be represented as a full privacy audit.

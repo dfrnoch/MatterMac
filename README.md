@@ -42,8 +42,9 @@ been performed; there is no signed public release yet.
 
 Live tests cover REST/WebSocket messaging and native conversation/attachment flows
 on Mattermost **10.11.24**, **11.11.1**, and **11.11.1 under a URL subpath**. These
-checks use two native clients; official-client interoperability has not been
-verified. Browser SSO supports server-advertised routes, but individual identity
+checks use two native clients. A separate real-app check verifies bidirectional
+channel/DM exchange with the official web client on 11.11.1, including fetching
+both conversations after relaunch and reauthentication. Browser SSO supports server-advertised routes, but individual identity
 providers still require deployment testing. See [compatibility](docs/compatibility.md)
 and the dated [verification record](docs/progress.md).
 

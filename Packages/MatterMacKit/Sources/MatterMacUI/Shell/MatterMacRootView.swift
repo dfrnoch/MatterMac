@@ -231,12 +231,12 @@ struct LoginView: View {
                      ? "Mattermost \(version.description)"
                      : "Mattermost \(version.description) — not a release line MatterMac has been tested with.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
             }
             if login.discovery.endpoint.scheme == .http {
                 Text("Development mode: this local server uses unencrypted HTTP.")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.primary)
             }
 
             Picker("Sign in with", selection: $login.method) {

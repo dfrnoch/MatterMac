@@ -509,7 +509,7 @@ struct AccountBar: View {
                         .filter { !$0.isEmpty }.joined(separator: " "))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 } else if let status {
-                    Text(status.label).font(.caption).foregroundStyle(.secondary)
+                    Text(status.label).font(.caption).foregroundStyle(.primary)
                 }
             }
             Spacer(minLength: 4)
@@ -557,7 +557,7 @@ struct ConnectionFooter: View {
             Circle().fill(color).frame(width: 7, height: 7)
             Text(text)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
             Spacer()
             if !session.requiresAuthentication, showsRetry {

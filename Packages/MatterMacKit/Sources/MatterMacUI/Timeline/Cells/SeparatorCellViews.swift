@@ -55,7 +55,7 @@ final class DateSeparatorCellView: NSTableCellView {
 
     func configure(date: Date, layout: SeparatorRowLayout, fonts: TimelineFonts) {
         let text = NSAttributedString(string: TimelineStrings.date(date), attributes: [
-            .font: fonts.metaBold, .foregroundColor: NSColor.secondaryLabelColor,
+            .font: fonts.metaBold, .foregroundColor: NSColor.labelColor,
         ])
         label.attributedText = text
         textWidth = DrawnText.width(of: text)
