@@ -166,7 +166,7 @@ public final class TimelineViewController: NSViewController {
         tableView.usesAutomaticRowHeights = false
         tableView.rowSizeStyle = .custom
         tableView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
-        tableView.selectionHighlightStyle = .regular
+        tableView.selectionHighlightStyle = .none
         tableView.allowsMultipleSelection = true
         tableView.allowsEmptySelection = true
         tableView.allowsColumnReordering = false

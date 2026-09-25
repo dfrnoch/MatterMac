@@ -30,7 +30,8 @@ struct ConversationIntegrationTests {
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["MM_GLASS_SNAPSHOTS"] != nil))
     func captureFloatingChrome() async throws {
-        let h = try await Harness(seedMessages: true)
+        let h = try await Harness(seedMessages: true, extraTeam: Team(
+            id: TeamID(unchecked: CoreFixtures.id("team", 2)), name: "second", displayName: "Second"))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
             styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -53,7 +54,8 @@ struct ConversationIntegrationTests {
             if let pane = h.model.draftProvider as? ConversationController {
                 let timelineFrame = pane.timeline.view.convert(pane.timeline.view.bounds, to: nil)
                 #expect(timelineFrame.minX >= 199)
-                #expect(timelineFrame.maxY <= window.contentLayoutRect.maxY + 1)
+                #expect(timelineFrame.maxY > window.contentLayoutRect.maxY)
+                #expect(pane.timeline.scrollView.contentInsets.top >= 50)
                 #expect(pane.timeline.scrollView.contentInsets.bottom >= 60)
             }
             // Scroll away from the live edge to put real message pixels behind glass.

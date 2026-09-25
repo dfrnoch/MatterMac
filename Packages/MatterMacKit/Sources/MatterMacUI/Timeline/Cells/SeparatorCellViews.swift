@@ -28,7 +28,7 @@ final class TimelineRowView: NSTableRowView {
         if isFlashing {
             TimelinePalette.flashHighlight.setFill()
             bounds.fill()
-        } else if isHovered, !isSelected {
+        } else if isHovered {
             TimelinePalette.hoverHighlight.setFill()
             bounds.fill()
         }

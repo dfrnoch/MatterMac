@@ -1392,3 +1392,52 @@ footprint. Remaining release gates also include minimum-OS/Intel execution, real
 IME/VoiceOver coverage, a full filesystem audit, startup/input latency, broad IdP
 validation, and Developer ID/notarization. The built local candidate should not be
 described as a certified production release.
+
+## 2026-09-25 — morning UI corrections and sidebar polish
+
+- Removed the table's click-selection paint while retaining keyboard selection,
+  message actions, and pointer hover feedback.
+- Corrected reaction emoji drawing to use the same top-origin text layout as its
+  measured bounds. The light/dark bitmap regression failed before the change
+  (heart ink 9 pt above the pill, center displaced 12.5 pt) and passes afterward.
+- Let the main conversation extend behind the toolbar; native top content insets
+  keep its initial message visible. Added horizontal space around DM presence.
+- Added a native behind-window sidebar material, hid the List's opaque scroll
+  background, and kept that material active when the window loses focus.
+- Added a curved rail/channel divider and a padded Liquid Glass profile capsule
+  with a larger avatar and session gear menu. Raised the sidebar minimum when the
+  rail is present so account text does not wrap into single-word fragments.
+  Visual reference: https://github.com/SakuraCordApp/SakuraCord and the user's
+  screenshot. Reused MatterMac's glass helper; no SakuraCord code or private
+  WindowServer blur APIs were imported.
+- On macOS 26+, the toolbar title has a narrow AppKit drag region calling
+  `NSWindow.performDrag(with:)`. Its ungrouped principal placement keeps the title
+  readable and the action controls at the trailing edge. Earlier macOS versions
+  retain their existing native title. No timeline-wide dragging was enabled.
+
+Verification: `swift build --package-path Packages/MatterMacKit` and Debug app
+build passed. The focused `ConversationIntegrationTests|TimelineInteractionTests|
+MessageActionsTests|SidebarShellTests|ReactionPickerTests` run passed 43 tests in
+17.307 s. The follow-up layout run passed 22 tests in 16.902 s after eliminating
+an empty toolbar item's ambiguous-size warning. Final opt-in
+`MM_GLASS_SNAPSHOTS=/tmp/mm-polish-glass ... --filter captureFloatingChrome`
+passed; reviewed actual light/dark native window captures, including the rail,
+profile capsule, trailing toolbar controls, and messages blurred under the header.
+The fixture now asserts positive top insets and actual toolbar underlap.
+The existing SidebarShell sheet test still emits AppKit's reentrant-table-delegate
+runtime warning; no Swift compiler warnings were introduced.
+
+Drag verification limitation: XCUITest reported zero movement for both the chat
+header and a control drag of the untouched sign-in window. Direct automation did
+not establish movement either. Therefore actual pointer-driven window movement
+is not claimed as verified. Some live-tour screenshots also failed on the second
+monitor. Temporary diagnostic changes to the live tour were restored; no failing
+or skipped checks were hidden in committed test code. Next manual check: drag the
+conversation title in the packaged app on the user's normal desktop.
+
+Final universal Release build passed (`/tmp/mm-polish-release-verified.log`),
+with only Xcode's existing skipped-AppIntents-metadata tool warning. Staged
+`build/Distribution/MatterMac.app`; `codesign --verify --deep --strict` passed and
+`lipo -archs` reported `x86_64 arm64`. Refreshed `build/MatterMac-universal.zip`,
+SHA-256 `17f11bea7be43d83d16c0e620f9d4abd5da6338223018a8036b585728e177d2a`.
+The running `/Applications/MatterMac.app` was not replaced or terminated.

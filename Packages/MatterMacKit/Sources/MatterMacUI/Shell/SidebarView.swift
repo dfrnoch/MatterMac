@@ -12,7 +12,6 @@ struct SidebarView: View {
         HStack(spacing: 0) {
             if WorkspaceRail.isShown(app: app, sidebar: session.sidebar) {
                 WorkspaceRail(app: app, session: session)
-                Divider()
             }
             VStack(spacing: 0) {
                 SidebarHeader(app: app, session: session)
@@ -25,8 +24,25 @@ struct SidebarView: View {
             // The column may be narrower than the list's ideal width; never push the
             // rail out of the column.
             .frame(minWidth: 0, maxWidth: .infinity)
+            .overlay {
+                if WorkspaceRail.isShown(app: app, sidebar: session.sidebar) {
+                    GeometryReader { geometry in
+                        Path { path in
+                            path.move(to: CGPoint(x: 0.5, y: geometry.size.height))
+                            path.addLine(to: CGPoint(x: 0.5, y: 16))
+                            path.addQuadCurve(to: CGPoint(x: 16, y: 0.5),
+                                              control: CGPoint(x: 0.5, y: 0.5))
+                            path.addLine(to: CGPoint(x: geometry.size.width, y: 0.5))
+                        }
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SidebarMaterial().ignoresSafeArea().allowsHitTesting(false))
         .sheet(item: $session.directorySheet) { sheet in
             DirectorySheetView(session: session, sheet: sheet)
         }
@@ -80,6 +96,7 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
     }
 
     @ViewBuilder private func rowMenu(_ row: SidebarChannelRow) -> some View {
@@ -495,7 +512,7 @@ struct AccountBar: View {
         HStack(spacing: 8) {
             Button { isProfileVisible = true } label: {
                 ProfileAvatar(session: session, userID: user.id, revision: session.sidebar?.myPictureRevision ?? user.lastPictureUpdate.milliseconds,
-                              name: user.username, size: 26, status: status)
+                              name: user.username, size: 30, status: status)
             }
             .buttonStyle(.plain)
             .help("View your profile")
@@ -510,7 +527,7 @@ struct AccountBar: View {
                         .filter { !$0.isEmpty }.joined(separator: " "))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 } else if let status {
-                    Text(status.label).font(.caption).foregroundStyle(.primary)
+                    Text(status.label).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer(minLength: 4)
@@ -536,7 +553,8 @@ struct AccountBar: View {
                 Button("About MatterMac") { app.isCompatibilityVisible = true }
                 Button("Sign Out…") { Task { await app.signOut(session.slot.id) } }
             } label: {
-                Image(systemName: "ellipsis.circle")
+                Image(systemName: "gearshape.fill")
+                    .frame(width: 24, height: 28)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -547,6 +565,9 @@ struct AccountBar: View {
                 CustomStatusView(session: session, current: session.sidebar?.myCustomStatus)
             }
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .glassCapsule()
     }
 }
 
@@ -600,4 +621,16 @@ struct ConnectionFooter: View {
         case .authenticationRequired: String(localized: "Signed out by the server — sign in again")
         }
     }
+}
+
+private struct SidebarMaterial: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }

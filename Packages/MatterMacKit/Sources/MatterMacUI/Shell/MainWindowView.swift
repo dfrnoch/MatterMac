@@ -45,6 +45,7 @@ struct MainWindowView: View {
             HStack(spacing: 0) {
                 if showsBothPanes || (session.thread == nil && !session.isSearchVisible && !session.isChannelInfoVisible) {
                     ConversationView(session: session, target: .channel(channel), snapshot: session.timeline)
+                        .ignoresSafeArea(.container, edges: .top)
                         .frame(minWidth: 300)
                 }
                 // The single optional trailing panel (SPEC §4): thread or details.
@@ -171,7 +172,9 @@ struct MainWindowView: View {
     var body: some View {
         NavigationSplitView {
             SidebarView(app: app, session: session)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 200, max: 340)
+                .navigationSplitViewColumnWidth(
+                    min: WorkspaceRail.isShown(app: app, sidebar: session.sidebar) ? 260 : 200,
+                    ideal: 280, max: 340)
         } detail: {
             GeometryReader { geometry in
                 ZStack(alignment: .top) {
@@ -184,6 +187,9 @@ struct MainWindowView: View {
                 .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: bannerIdentity)
             }
         }
+        .modifier(DraggableConversationTitle(
+            title: session.isThreadsViewVisible ? String(localized: "Threads") : ChannelHeaderText.title(session.header),
+            subtitle: session.isThreadsViewVisible ? "" : ChannelHeaderText.subtitle(session.header)))
         .toolbarBackground(.ultraThinMaterial, for: .windowToolbar)
         .navigationTitle(session.isThreadsViewVisible ? String(localized: "Threads") : ChannelHeaderText.title(session.header))
         .navigationSubtitle(session.isThreadsViewVisible ? "" : ChannelHeaderText.subtitle(session.header))
@@ -310,6 +316,49 @@ private struct ThreadFollowButton: View {
         .task(id: root) {
             guard let root else { return }
             following = await session.isFollowingThread(root)
+        }
+    }
+}
+
+private struct DraggableConversationTitle: ViewModifier {
+    let title: String
+    let subtitle: String
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.toolbar(removing: .title)
+                .toolbar {
+                    if !title.isEmpty {
+                        ToolbarItem(placement: .principal) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(verbatim: title).font(.headline)
+                                if !subtitle.isEmpty {
+                                    Text(verbatim: subtitle).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .lineLimit(1)
+                            .overlay(WindowTitleDragRegion())
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("conversationWindowTitle")
+                        }
+                        .sharedBackgroundVisibility(.hidden)
+                    }
+                }
+        } else {
+            content
+        }
+    }
+}
+
+private struct WindowTitleDragRegion: NSViewRepresentable {
+    func makeNSView(context: Context) -> DragView { DragView() }
+    func updateNSView(_ view: DragView, context: Context) {}
+
+    final class DragView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+        override func mouseDown(with event: NSEvent) {
+            if event.clickCount == 1 { window?.performDrag(with: event) }
+            else { super.mouseDown(with: event) }
         }
     }
 }

@@ -38,6 +38,7 @@ struct ChannelHeaderAccessories: View {
                     HStack(spacing: 4) { StatusDot(status: status); Text(status.label) }
                         .foregroundStyle(.secondary)
                         .accessibilityElement(children: .combine)
+                        .padding(.horizontal, 8)
                 }
                 if header.isArchived {
                     Label("Archived", systemImage: "archivebox").labelStyle(.titleAndIcon).foregroundStyle(.secondary)
