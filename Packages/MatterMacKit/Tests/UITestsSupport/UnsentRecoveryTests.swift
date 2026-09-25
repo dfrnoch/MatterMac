@@ -352,14 +352,23 @@ struct UnsentRecoveryTests {
                 capabilities: ServerCapabilities())
             model = SessionViewModel(slot: slot, app: app)
             await slot.session.start()
-            model.select(channel: first.id)
-            controller = ConversationController(session: model, target: .channel(first.id))
+            // Registry startup is asynchronous. Wait for the directory before selecting;
+            // an earlier empty sidebar correctly retires any premature conversation.
+            let channelID = first.id
             let deadline = ContinuousClock.now + .seconds(3)
+            while model.sidebar?.sections.contains(where: { $0.rows.contains(where: { $0.channelID == channelID }) }) != true,
+                  ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            try #require(model.sidebar?.sections.contains(where: { $0.rows.contains(where: { $0.channelID == channelID }) }) == true)
+            model.select(channel: first.id)
             while model.header?.channelID != first.id, ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(5))
             }
             #expect(model.header?.fileAttachmentsEnabled == true)
+            controller = ConversationController(session: model, target: .channel(first.id))
             controller.updateComposerAvailability()
+            #expect(controller.composer.textView.isEditable, "Fixture controller was discarded during initial directory loading")
         }
 
         func close() async {
