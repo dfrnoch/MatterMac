@@ -79,7 +79,9 @@ jobs:
           if [[ "$channel" == nightly ]]; then
             marketing=$current
             label=$(swift Tools/ReleaseVersion.swift nightly "$RUN_NUMBER")
-            previous=$(git tag --list 'v*-nightly.*' --sort=-creatordate | head -n 1 || true)
+            # Newest by build number (the last field), which grows with every run.
+            nightly_tags=$(git tag --list 'v*-nightly.*' | sort -t . -k 5,5nr)
+            previous=${nightly_tags%%$'\n'*}
             if [[ "$EVENT" == schedule && -n "$previous" && $(git rev-list -n 1 "$previous") == "$sha" ]]; then
               echo "main has not changed since $previous; skipping the nightly."
               skip=true
@@ -89,7 +91,8 @@ jobs:
             # Validates the version and computes the next development version.
             next_version=$(swift Tools/ReleaseVersion.swift next "$NEXT_INPUT" "$marketing")
             label=$marketing
-            previous=$(git tag --list 'v*' --sort=-v:refname | grep -v -- '-nightly\.' | head -n 1 || true)
+            production_tags=$(git tag --list 'v*' --sort=-v:refname | grep -v -- '-nightly\.' || true)
+            previous=${production_tags%%$'\n'*}
           fi
           tag="v$label"
           if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
@@ -141,7 +144,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: MatterMac-release
           path: dist
@@ -163,11 +166,11 @@ jobs:
             if [[ -n "$PREVIOUS_TAG" ]]; then
               echo "## Changes since $PREVIOUS_TAG"
               echo
-              git log --no-merges --pretty='- %s (%h)' "$PREVIOUS_TAG..$SHA" | head -n 200
+              git log --no-merges --max-count=200 --pretty='- %s (%h)' "$PREVIOUS_TAG..$SHA"
             else
               echo "## Changes"
               echo
-              git log --no-merges --pretty='- %s (%h)' "$SHA" | head -n 50
+              git log --no-merges --max-count=50 --pretty='- %s (%h)' "$SHA"
             fi
           } > "$RUNNER_TEMP/notes.md"
       - name: Create GitHub release
