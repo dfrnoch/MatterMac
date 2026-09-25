@@ -11,6 +11,22 @@ import TestSupport
 @MainActor
 @Suite("Native conversation integration", .serialized)
 struct ConversationIntegrationTests {
+    @Test func discardedPaneDoesNotRunQueuedCommands() async throws {
+        let post = CoreFixtures.post(1, channel: CoreFixtures.channel(1).id)
+        let h = try await Harness(posts: [post])
+        for _ in 0..<100 {
+            if await h.model.session.post(post.id) != nil { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await h.model.session.post(post.id) != nil)
+        let before = h.service.calls.filter { $0 == "addReaction" }
+        h.controller.timeline(perform: .toggleReaction(post.id, emojiName: "smile"))
+        h.controller.discardEditingState()
+        for _ in 0..<100 { await Task.yield() }
+        #expect(h.service.calls.filter { $0 == "addReaction" } == before)
+        await h.close()
+    }
+
     @Test func draftsKeepSelectionAndEditModeAcrossNavigation() async throws {
         let h = try await Harness()
         let controller = h.controller
@@ -460,11 +476,12 @@ struct ConversationIntegrationTests {
         let controller: ConversationController
         let realtime = FakeRealtimeConnection()
 
-        init(budget: ResourceBudget = .standard) async throws {
+        init(budget: ResourceBudget = .standard, posts: [Post] = []) async throws {
             let service = FakeMattermostService(endpoint: CoreFixtures.endpoint, me: CoreFixtures.me)
             let channels = [first, second]
             service.withState { state in
                 state.teams = [CoreFixtures.team]
+                for post in posts { state.posts[post.id] = post }
                 for channel in channels {
                     state.channels[channel.id] = channel
                     state.memberships[channel.id] = ChannelMembership(channelID: channel.id, userID: CoreFixtures.me.id)

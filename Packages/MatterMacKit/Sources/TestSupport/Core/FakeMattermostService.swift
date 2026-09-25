@@ -330,7 +330,8 @@ public final class FakeMattermostService: MattermostService {
     }
 
     public func addReaction(post: PostID, emojiName: String, me: UserID) async throws(APIError) -> Reaction {
-        Reaction(userID: me, postID: post, emojiName: emojiName)
+        record("addReaction")
+        return Reaction(userID: me, postID: post, emojiName: emojiName)
     }
 
     public func removeReaction(post: PostID, emojiName: String, me: UserID) async throws(APIError) {}

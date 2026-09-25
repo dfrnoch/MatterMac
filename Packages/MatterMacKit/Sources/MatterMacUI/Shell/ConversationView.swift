@@ -341,7 +341,7 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
                 ExternalLinks.open(link)
             }
         case .copyLink(let url): Pasteboard.copy(url)
-        case .copyText(let id): run { session in if let post = await session.post(id) { Pasteboard.copy(post.message) } }
+        case .copyText(let id): run { session in if let post = await session.post(id), !Task.isCancelled { Pasteboard.copy(post.message) } }
         case .expand(let id): run { [target] in await $0.expand(id, in: target) }
         case .edit(let id): run { [weak self] session in if let post = await session.post(id), !Task.isCancelled { self?.beginEditing(post) } }
         case .delete(let id):
@@ -408,11 +408,19 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         return alert.runModal() == .alertSecondButtonReturn
     }
     private func run(_ operation: @escaping @MainActor (ServerSession) async throws -> Void) {
-        guard commandTask == nil, let model else { return }
+        guard commandTask == nil, !editingStateDiscarded, let model,
+              !model.isDetached, !model.requiresAuthentication else { return }
+        let generation = generation
         commandTask = Task { [weak self] in
             defer { self?.commandTask = nil }
+            guard !Task.isCancelled, self?.generation == generation,
+                  !model.isDetached, !model.requiresAuthentication else { return }
             do { try await operation(model.session) }
-            catch { model.inlineError = (error as? UserFacingError).map(UserFacingErrorText.describe) ?? "The operation failed." }
+            catch {
+                guard !Task.isCancelled, self?.generation == generation,
+                      !model.isDetached, !model.requiresAuthentication else { return }
+                model.inlineError = (error as? UserFacingError).map(UserFacingErrorText.describe) ?? "The operation failed."
+            }
         }
     }
 }
