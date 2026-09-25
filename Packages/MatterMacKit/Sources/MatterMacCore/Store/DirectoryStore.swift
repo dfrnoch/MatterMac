@@ -78,6 +78,9 @@ public struct DirectoryStore: Sendable {
     public var groupsUnreads = false
     /// The active channel stays in the Unreads group until the user leaves it.
     public var stickyUnread: ChannelID?
+    /// Emoji the user reacted with, most recent first (bounded; kept in the cache).
+    public private(set) var recentReactions: [String] = []
+    public static let recentReactionLimit = 24
     /// Collapse changes being written to the server (at most one per category).
     public var pendingCollapse: [SidebarCategoryID: Bool] = [:]
     public static let categoryTeamLimit = 8
@@ -109,6 +112,8 @@ public struct DirectoryStore: Sendable {
         var savedPostsTruncated: Bool
         var showsLinkPreviews: Bool
         var viewArchivedChannels: Bool
+        /// Optional so caches written before it existed still decode.
+        var recentReactions: [String]?
     }
 
     public func cacheSnapshot() -> CacheSnapshot {
@@ -126,7 +131,7 @@ public struct DirectoryStore: Sendable {
             hiddenGroups: hiddenGroups, collapsedThreadsPreference: collapsedThreadsPreference,
             militaryTime: militaryTime, militaryTimePreference: militaryTimePreference, savedPosts: savedPosts,
             savedPostsTruncated: savedPostsTruncated, showsLinkPreviews: showsLinkPreviews,
-            viewArchivedChannels: viewArchivedChannels)
+            viewArchivedChannels: viewArchivedChannels, recentReactions: recentReactions)
     }
 
     /// Restores a cached directory into an empty store. No team counts as loaded, so
@@ -159,6 +164,17 @@ public struct DirectoryStore: Sendable {
         savedPostsTruncated = snapshot.savedPostsTruncated || snapshot.savedPosts.count > savedPostLimit
         showsLinkPreviews = snapshot.showsLinkPreviews
         viewArchivedChannels = snapshot.viewArchivedChannels
+        recentReactions = []
+        for name in (snapshot.recentReactions ?? []).reversed() { noteReaction(name) }
+    }
+
+    /// Records a reaction the user added (moves it to the front).
+    public mutating func noteReaction(_ name: String) {
+        let name = name.lowercased()
+        guard Reaction.isValidEmojiName(name) else { return }
+        recentReactions.removeAll { $0 == name }
+        recentReactions.insert(name, at: 0)
+        if recentReactions.count > Self.recentReactionLimit { recentReactions.removeLast() }
     }
 
     public init(budget: ResourceBudget) {
@@ -422,5 +438,6 @@ public struct DirectoryStore: Sendable {
         categoriesUnavailable.removeAll()
         teamUnreads.removeAll()
         stickyUnread = nil
+        recentReactions.removeAll()
     }
 }

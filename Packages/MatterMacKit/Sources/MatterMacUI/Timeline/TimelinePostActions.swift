@@ -17,6 +17,13 @@ enum TimelinePostActions {
     /// defaults when there is no recent-emoji history).
     static let quickReactions = ["+1", "white_check_mark", "heart"]
 
+    /// Three quick reactions: the user's most recent, then the defaults.
+    static func quickReactions(recent: [String]) -> [String] {
+        var result: [String] = []
+        for name in recent + quickReactions where !result.contains(name) && result.count < 3 { result.append(name) }
+        return result
+    }
+
     static func entries(for post: PostPresentation) -> [Entry?] {
         guard let id = post.postID else { return [] }
         var sections: [[Entry]] = []
@@ -67,7 +74,7 @@ enum TimelinePostActions {
     }
 
     /// Accessibility custom actions: quick reactions first, then every menu entry.
-    static func accessibilityEntries(for post: PostPresentation) -> [Entry] {
+    static func accessibilityEntries(for post: PostPresentation, quickReactions: [String] = quickReactions) -> [Entry] {
         guard let id = post.postID else { return [] }
         var result: [Entry] = []
         if post.actions.canReact {

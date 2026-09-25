@@ -332,6 +332,8 @@ extension ServerSession {
                 guard self.epoch == epoch, !Task.isCancelled else { return }
                 journal.append(.reaction(reaction, added: true))
                 store.applyReaction(reaction, added: true)
+                directory.noteReaction(name)
+                scheduleCacheWrite(directory: true)
             }
             markDirty([.timeline, .thread])
         } catch {

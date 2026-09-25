@@ -70,6 +70,7 @@ public final class SessionViewModel {
     @ObservationIgnored private var subscriptions: [Task<Void, Never>] = []
     @ObservationIgnored private var navigationTask: Task<Void, Never>?
     @ObservationIgnored private var directMessageTask: Task<Void, Never>?
+    @ObservationIgnored private var activityTask: Task<Void, Never>?
     private(set) var isDetached = false
     @ObservationIgnored weak var draftProvider: (any DraftProviding)?
     @ObservationIgnored weak var threadDraftProvider: (any DraftProviding)?
@@ -87,6 +88,8 @@ public final class SessionViewModel {
         ProfilePopover.close(for: self)
         navigationTask?.cancel()
         directMessageTask?.cancel()
+        activityTask?.cancel()
+        activityTask = nil
         recoveryTask?.cancel()
         for task in subscriptions { task.cancel() }
         subscriptions.removeAll()
@@ -560,7 +563,12 @@ public final class SessionViewModel {
     /// their automatic online status.
     public func userActivity(isActive: Bool) {
         guard !isDetached, !requiresAuthentication else { return }
-        Task { await session.reportUserActivity(isActive: isActive) }
+        // Chained, so reports reach the server in the order they happened.
+        let previous = activityTask
+        activityTask = Task { [session] in
+            await previous?.value
+            await session.reportUserActivity(isActive: isActive)
+        }
     }
 }
 

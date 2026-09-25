@@ -3,7 +3,7 @@ import MatterMacModels
 import MatterMacCore
 
 /// Native system-emoji picker for "Add Reaction": a search field, a static
-/// "Frequently Used" row (usage is never recorded), and the catalog grid by
+/// "Frequently Used" row (the account's recent reactions, then defaults), and the catalog grid by
 /// category. The search field keeps focus: arrow keys move the grid selection,
 /// Return picks the selected emoji (the first one by default), Escape cancels.
 /// Custom emoji are loaded by page while browsing, or by the server autocomplete.
@@ -56,9 +56,14 @@ final class ReactionPickerViewController: NSViewController, NSSearchFieldDelegat
     private(set) var lastAnnouncement: String?
     private let browseSections: [Section]
 
-    init(catalog: EmojiCatalog = .system) {
+    /// `recent`: the user's reaction emoji, most recent first; the defaults fill the row.
+    init(catalog: EmojiCatalog = .system, recent: [String] = []) {
         self.catalog = catalog
-        let frequent = EmojiCatalog.defaultQuickReactions.compactMap(catalog.emoji(named:))
+        var names: [String] = []
+        for name in recent + EmojiCatalog.defaultQuickReactions where !names.contains(name) && names.count < 16 {
+            names.append(name)
+        }
+        let frequent = names.compactMap(catalog.emoji(named:))
         browseSections = [Section(title: String(localized: "Frequently Used"), emoji: frequent.map(Entry.init))]
             + EmojiCategory.allCases.filter(\.isShownInPicker).map {
                 Section(title: $0.displayName, emoji: catalog.pickerEmoji(in: $0).map(Entry.init))
@@ -463,7 +468,7 @@ enum ReactionPickerPresenter {
     static func present(for post: PostID, in timeline: TimelineViewController,
                         model: SessionViewModel? = nil, channel: ChannelID? = nil,
                         pick: @escaping (String) -> Void) -> NSPopover {
-        let picker = ReactionPickerViewController()
+        let picker = ReactionPickerViewController(recent: timeline.snapshot?.recentReactions ?? [])
         if let model, let channel {
             picker.customLimit = model.app?.environment.budget.customEmojiPickerEntries ?? ResourceBudget.standard.customEmojiPickerEntries
             picker.customPage = { [weak model] page, query in

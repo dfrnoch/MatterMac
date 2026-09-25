@@ -8,7 +8,8 @@ import MatterMacCore
 /// view, so it never changes row heights or allocates per row.
 ///
 /// Appearance: Liquid Glass (`NSGlassEffectView`) on macOS 26 and later, otherwise a
-/// rounded `NSVisualEffectView` in the menu material. Buttons are ordinary `NSButton`s:
+/// rounded `NSVisualEffectView` in the menu material. Buttons are `NSButton`s with a
+/// capsule hover highlight (`CapsuleHoverButton`):
 /// they reach VoiceOver and Full Keyboard Access; the same actions are also exposed as
 /// accessibility custom actions on the row itself.
 final class HoverActionBar: NSView {
@@ -81,7 +82,9 @@ final class HoverActionBar: NSView {
     /// Rebuilds the buttons for `post`. Returns `false` (and hides) when the post offers
     /// no hover actions (pending, deleted, system).
     @discardableResult
-    func configure(item: TimelineItemID, post: PostPresentation, emojiText: (String) -> String) -> Bool {
+    func configure(item: TimelineItemID, post: PostPresentation,
+                   quickReactions: [String] = TimelinePostActions.quickReactions,
+                   emojiText: (String) -> String) -> Bool {
         guard let id = post.postID, post.sendState == nil else { return false }
         switch post.body {
         case .deleted, .system: return false
@@ -89,7 +92,7 @@ final class HoverActionBar: NSView {
         }
         var kinds: [Button] = []
         if post.actions.canReact {
-            kinds += TimelinePostActions.quickReactions.map { Button.quickReaction($0) }
+            kinds += quickReactions.map { Button.quickReaction($0) }
             kinds.append(.addReaction)
         }
         if post.actions.canReply { kinds.append(.reply) }
@@ -113,10 +116,7 @@ final class HoverActionBar: NSView {
     private func rebuild(_ kinds: [Button], emojiText: (String) -> String) {
         for (_, button) in buttons { button.removeFromSuperview() }
         buttons = kinds.map { kind in
-            let button = NSButton(frame: .zero)
-            button.bezelStyle = .accessoryBarAction
-            button.showsBorderOnlyWhileMouseInside = true
-            button.setButtonType(.momentaryPushIn)
+            let button = CapsuleHoverButton(frame: .zero)
             button.imagePosition = .imageOnly
             button.target = self
             button.action = #selector(buttonPressed(_:))

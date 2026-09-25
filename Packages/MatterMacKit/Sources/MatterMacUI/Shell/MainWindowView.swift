@@ -187,20 +187,23 @@ struct MainWindowView: View {
                 .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: bannerIdentity)
             }
         }
-        .modifier(DraggableConversationTitle(
+        .modifier(ConversationTitleToolbar(
             title: session.isThreadsViewVisible ? String(localized: "Threads") : ChannelHeaderText.title(session.header),
-            subtitle: session.isThreadsViewVisible ? "" : ChannelHeaderText.subtitle(session.header)))
+            subtitle: session.isThreadsViewVisible ? "" : ChannelHeaderText.subtitle(session.header, parse: app.environment.markupParse),
+            header: session.isThreadsViewVisible ? nil : session.header, session: session))
         .toolbarBackground(.ultraThinMaterial, for: .windowToolbar)
         .navigationTitle(session.isThreadsViewVisible ? String(localized: "Threads") : ChannelHeaderText.title(session.header))
-        .navigationSubtitle(session.isThreadsViewVisible ? "" : ChannelHeaderText.subtitle(session.header))
+        .navigationSubtitle(session.isThreadsViewVisible ? "" : ChannelHeaderText.subtitle(session.header, parse: app.environment.markupParse))
         .toolbar {
-            if let header = session.header,
+            // macOS 26 shows these beside the title (ConversationTitleToolbar), so the
+            // trailing controls keep their place when switching conversations.
+            if !ConversationTitleToolbar.showsAccessoriesInTitle, let header = session.header,
                header.memberCount != nil || header.isArchived || (header.type == .direct && header.partnerStatus != nil) {
                 ToolbarItem(placement: .primaryAction) {
                     ChannelHeaderAccessories(header: header, session: session)
                 }
             }
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItem(placement: .automatic) {
                 Toggle(isOn: $session.isThreadsViewVisible) {
                     Label("Threads", systemImage: "bubble.left.and.text.bubble.right")
                 }
@@ -208,7 +211,7 @@ struct MainWindowView: View {
                 .help("Followed threads (⇧⌘T)")
                 .accessibilityValue(threadsAccessibilityValue)
             }
-            ToolbarItemGroup(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .automatic) {
                 Button { session.isQuickSwitcherVisible = true } label: {
                     Label("Quick Switcher", systemImage: "arrow.left.arrow.right.square")
                 }
@@ -320,32 +323,82 @@ private struct ThreadFollowButton: View {
     }
 }
 
-private struct DraggableConversationTitle: ViewModifier {
+/// The conversation's name at the leading edge of its part of the toolbar (after the
+/// sidebar toggle), with one secondary line: presence or member count, archived
+/// state, then the channel header or who is typing. It replaces the centered title.
+private struct ConversationTitleToolbar: ViewModifier {
     let title: String
     let subtitle: String
+    let header: ChannelHeaderPresentation?
+    let session: SessionViewModel
+
+    static var showsAccessoriesInTitle: Bool {
+        if #available(macOS 26.0, *) { return true }
+        return false
+    }
 
     func body(content: Content) -> some View {
         if #available(macOS 26.0, *) {
             content.toolbar(removing: .title)
                 .toolbar {
-                    if !title.isEmpty {
-                        ToolbarItem(placement: .principal) {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(verbatim: title).font(.headline)
-                                if !subtitle.isEmpty {
-                                    Text(verbatim: subtitle).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                            .lineLimit(1)
-                            .overlay(WindowTitleDragRegion())
-                            .accessibilityElement(children: .combine)
-                            .accessibilityIdentifier("conversationWindowTitle")
-                        }
-                        .sharedBackgroundVisibility(.hidden)
+                    ToolbarItem(placement: .navigation) {
+                        titleView
                     }
+                    .sharedBackgroundVisibility(.hidden)
+                    // An empty centre item: its flexible space keeps the conversation
+                    // controls at the trailing edge.
+                    ToolbarItem(placement: .principal) {
+                        Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
+                    }
+                    .sharedBackgroundVisibility(.hidden)
                 }
         } else {
             content
+        }
+    }
+
+    @ViewBuilder private var titleView: some View {
+        if !title.isEmpty {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(verbatim: title)
+                    .font(.headline)
+                    .overlay(WindowTitleDragRegion())
+                HStack(spacing: 6) {
+                    if let header {
+                        if header.type == .direct, let status = header.partnerStatus {
+                            HStack(spacing: 4) { StatusDot(status: status); Text(status.label) }
+                                .accessibilityElement(children: .combine)
+                        }
+                        if header.isArchived {
+                            Label("Archived", systemImage: "archivebox").labelStyle(.titleAndIcon)
+                        }
+                        if let count = header.memberCount {
+                            Button { session.isChannelInfoVisible = true } label: {
+                                Label("\(count)", systemImage: "person.2").labelStyle(.titleAndIcon)
+                            }
+                            .buttonStyle(.plain)
+                            .help("\(count) members — show channel details")
+                            .accessibilityLabel("\(count) members, show channel details")
+                        }
+                    }
+                    if !subtitle.isEmpty {
+                        if header?.memberCount != nil || header?.partnerStatus != nil || header?.isArchived == true {
+                            Text(verbatim: "·").accessibilityHidden(true)
+                        }
+                        Text(verbatim: subtitle)
+                            .truncationMode(.tail)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            .lineLimit(1)
+            // Narrow enough that the conversation controls fit beside it in small windows.
+            .frame(maxWidth: 300, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("conversationWindowTitle")
+            .transaction { $0.animation = nil }
         }
     }
 }

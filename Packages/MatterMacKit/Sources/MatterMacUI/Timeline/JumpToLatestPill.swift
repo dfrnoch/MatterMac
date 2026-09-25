@@ -81,9 +81,8 @@ final class JumpToLatestPill: NSView {
         super.layout()
         background.frame = bounds
         content.frame = background.bounds
-        let size = button.intrinsicContentSize
-        button.frame = NSRect(x: floor((bounds.width - size.width) / 2), y: floor((bounds.height - size.height) / 2),
-                              width: ceil(size.width), height: ceil(size.height))
+        // The whole capsule is the button, icon included.
+        button.frame = content.bounds
     }
 
     override func viewDidChangeEffectiveAppearance() {

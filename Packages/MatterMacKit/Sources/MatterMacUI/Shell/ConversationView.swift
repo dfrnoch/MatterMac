@@ -203,6 +203,21 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         composer.textView.isEditable = !editingStateDiscarded && !busy && model?.isDetached == false && model?.requiresAuthentication == false
         composer.isSendAllowed = composer.textView.isEditable && sendTask == nil && selectionTask == nil && model?.header?.canPost != false
         composer.isAttachmentSelectionAllowed = composer.isSendAllowed && editingPost == nil && model?.header?.fileAttachmentsEnabled == true
+        let placeholder = Self.placeholder(for: target, header: model?.header)
+        if composer.placeholder != placeholder { composer.placeholder = placeholder }
+    }
+
+    /// Names the conversation the composer writes to (also its accessibility label).
+    static func placeholder(for target: TimelineTarget, header: ChannelHeaderPresentation?) -> String {
+        if case .thread = target { return String(localized: "Reply in thread") }
+        guard let header, header.channelID == target.channelID, !header.displayName.isEmpty else {
+            return String(localized: "Message")
+        }
+        if header.canPost == false { return String(localized: "This channel is read-only") }
+        switch header.type {
+        case .direct, .group: return String(localized: "Message \(header.displayName)")
+        default: return String(localized: "Message #\(header.displayName)")
+        }
     }
     func refreshDraft(for key: DraftKey) {
         if self.key == key, !editingStateDiscarded { loadDraft() }

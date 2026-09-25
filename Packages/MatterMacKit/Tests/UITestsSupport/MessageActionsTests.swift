@@ -126,6 +126,65 @@ struct MessageActionsTests {
         #expect(bar.isHidden)
     }
 
+    /// Views drawn over the timeline (composer, jump-to-latest pill, toasts) take the
+    /// hover: the message underneath is not highlighted.
+    @Test func overlaysAboveTheTimelineBlockTheHover() throws {
+        let f = makeTimeline([post(1), post(2), post(3)].map { presentation($0) })
+        defer { f.close() }
+        try hover(f, row: 1)
+        #expect(!f.controller.hoverBar.isHidden)
+        let rect = f.controller.view.convert(f.controller.tableView.rect(ofRow: 1), from: f.controller.tableView)
+        let cover = NSView(frame: rect)
+        f.controller.view.addSubview(cover, positioned: .above, relativeTo: nil)
+        try hover(f, row: 1)
+        #expect(f.controller.hoverBar.isHidden, "Covered row is not hovered")
+        let rowView = try #require(f.controller.tableView.rowView(atRow: 1, makeIfNecessary: false) as? TimelineRowView)
+        #expect(!rowView.isHovered)
+        cover.removeFromSuperview()
+        try hover(f, row: 1)
+        #expect(!f.controller.hoverBar.isHidden)
+        // The action bar's buttons highlight as capsules, not the square bezel.
+        #expect(f.controller.hoverBar.buttons.allSatisfy { $0.view is CapsuleHoverButton && !$0.view.isBordered })
+    }
+
+    /// Quick reactions follow the account's recent reactions (system emoji only; custom
+    /// emoji need images the bar does not load), then the defaults.
+    @Test func quickReactionsFollowRecentReactions() throws {
+        let rows = [post(1), post(2)].map { presentation($0) }
+        let f = makeTimeline(rows)
+        defer { f.close() }
+        let items = rows.enumerated().map { index, post in
+            TimelineItem(id: TimelineItemID(.post(post.postID!)), revision: UInt64(index + 1), content: .post(post))
+        }
+        f.controller.apply(TimelineSnapshot(scope: AccountScope(server: ServerSlotID(1), user: CoreFixtures.me.id),
+                                            target: .channel(CoreFixtures.channel(1).id), generation: 2, items: items,
+                                            isAtLiveEdge: true, isStale: false, scrollRequest: nil,
+                                            recentReactions: ["rocket", "partyparrot", "+1"]))
+        try hover(f, row: 1)
+        #expect(f.controller.hoverBar.buttons.map(\.kind).prefix(3) == [.quickReaction("rocket"), .quickReaction("+1"),
+                                                                        .quickReaction("white_check_mark")])
+        #expect(f.controller.quickReactions == ["rocket", "+1", "white_check_mark"])
+        let picker = ReactionPickerViewController(recent: ["rocket"])
+        picker.loadViewIfNeeded()
+        #expect(picker.sections.first?.emoji.first?.name == "rocket", "Frequently Used starts with recent reactions")
+    }
+
+    @Test func composerPlaceholderNamesTheConversation() {
+        let channel = CoreFixtures.channel(1).id
+        func header(_ type: ChannelType, canPost: Bool? = nil) -> ChannelHeaderPresentation {
+            ChannelHeaderPresentation(channelID: channel, displayName: "Design Demo", type: type, header: "", purpose: "",
+                                      memberCount: nil, isArchived: false, partnerStatus: nil, typingNames: [],
+                                      canPost: canPost, fileAttachmentsEnabled: true)
+        }
+        #expect(ConversationController.placeholder(for: .channel(channel), header: header(.open)) == "Message #Design Demo")
+        #expect(ConversationController.placeholder(for: .channel(channel), header: header(.direct)) == "Message Design Demo")
+        #expect(ConversationController.placeholder(for: .channel(channel), header: header(.open, canPost: false))
+                == "This channel is read-only")
+        #expect(ConversationController.placeholder(for: .channel(channel), header: nil) == "Message")
+        #expect(ConversationController.placeholder(for: .channel(CoreFixtures.channel(2).id), header: header(.open)) == "Message",
+                "Another channel's header is not used")
+    }
+
     @Test func hoverBarButtonsPerformActions() throws {
         let posts = [post(1)]
         let f = makeTimeline(posts.map { presentation($0) })
@@ -309,6 +368,12 @@ struct MessageActionsTests {
         f.window.orderFrontRegardless()
         f.window.contentView?.layoutSubtreeIfNeeded()
         try hover(f, row: 1)
+        // Show one button's hover capsule in the capture.
+        if let reply = f.controller.hoverBar.button(.reply), let event = NSEvent.enterExitEvent(
+            with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: f.window.windowNumber,
+            context: nil, eventNumber: 0, trackingNumber: 0, userData: nil) {
+            reply.mouseEntered(with: event)
+        }
         f.window.displayIfNeeded()
         try? await Task.sleep(for: .milliseconds(300))
         f.window.displayIfNeeded()

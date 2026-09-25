@@ -10,12 +10,16 @@ enum ChannelHeaderText {
         header?.displayName ?? ""
     }
 
-    static func subtitle(_ header: ChannelHeaderPresentation?) -> String {
+    /// `parse` renders the header's Markdown to plain text (`[staging](https://…)`
+    /// shows as "staging"); without it the source line is shown.
+    static func subtitle(_ header: ChannelHeaderPresentation?,
+                         parse: (@Sendable (String, MarkupLimits) -> MessageDocument)? = nil) -> String {
         guard let header else { return "" }
         if !header.typingNames.isEmpty { return typingText(header.typingNames) }
         let text = header.header.isEmpty ? header.purpose : header.header
-        // One line: the subtitle is not a place for a multi-line Markdown header.
-        return text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        let plain = parse.map { $0(text, ChannelHeaderMarkup.limits).plainText } ?? text
+        // One line: the subtitle is not a place for a multi-line header.
+        return plain.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
     }
 
     static func typingText(_ names: [String]) -> String {

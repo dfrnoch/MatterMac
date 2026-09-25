@@ -79,6 +79,13 @@ final class TimelineTableAdapter: NSObject, NSTableViewDataSource, NSTableViewDe
 }
 
 extension TimelineViewController: TimelineCellHost {
+    /// The user's recent reactions that are system emoji (custom emoji need images the
+    /// bar does not load), then the defaults.
+    var quickReactions: [String] {
+        let recent = (snapshot?.recentReactions ?? []).filter { EmojiCatalog.system.glyph(for: $0) != nil }
+        return TimelinePostActions.quickReactions(recent: recent)
+    }
+
     var renderer: MessageRenderer { layouter.renderer }
     var rowMetrics: TimelineRowMetrics { layouter.metrics }
     func perform(_ action: TimelineAction) { delegate?.timeline(perform: action) }

@@ -270,9 +270,13 @@ public struct TimelineSnapshot: Sendable {
     /// Content may be outdated (offline, reconnecting, or awaiting reconciliation).
     public let isStale: Bool
     public let scrollRequest: TimelineScrollRequest?
+    /// The user's reaction emoji, most used recently first (empty: use the defaults).
+    public let recentReactions: [String]
 
     public init(scope: AccountScope, target: TimelineTarget, generation: UInt64, items: [TimelineItem],
-                isAtLiveEdge: Bool, isStale: Bool, scrollRequest: TimelineScrollRequest?) {
+                isAtLiveEdge: Bool, isStale: Bool, scrollRequest: TimelineScrollRequest?,
+                recentReactions: [String] = []) {
+        self.recentReactions = recentReactions
         self.scope = scope
         self.target = target
         self.generation = generation

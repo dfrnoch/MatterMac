@@ -47,7 +47,7 @@ extension TimelineViewController {
                 return (row, true)
             }
             let clip = scrollView.contentView
-            if clip.bounds.contains(clip.convert(location, from: nil)) {
+            if clip.bounds.contains(clip.convert(location, from: nil)), !isPointerOccluded(at: location) {
                 let row = tableView.row(at: tableView.convert(location, from: nil))
                 if items.indices.contains(row), items[row].post?.postID != nil { return (row, true) }
             }
@@ -59,13 +59,23 @@ extension TimelineViewController {
         return nil
     }
 
+    /// Whether something drawn over the timeline is under the pointer: the floating
+    /// composer, the jump-to-latest pill, toasts and banners, the image viewer.
+    /// The rows beneath them are not hovered.
+    func isPointerOccluded(at location: NSPoint) -> Bool {
+        guard let window = view.window, let frame = window.contentView?.superview ?? window.contentView,
+              let hit = frame.hitTest(frame.convert(location, from: nil)) else { return false }
+        return !hit.isDescendant(of: tableView)
+    }
+
     func updateHover() {
         let target = hoverTargetRow()
         let pointerID = target.flatMap { $0.isPointer ? items[$0.row].id : nil }
         setHoverHighlight(pointerID)
         setHoverTimestamp(target.map { items[$0.row].id })
         guard let target, let post = items[target.row].post,
-              hoverBar.configure(item: items[target.row].id, post: post, emojiText: { [renderer] in renderer.emojiText(for: $0) })
+              hoverBar.configure(item: items[target.row].id, post: post, quickReactions: quickReactions,
+                                 emojiText: { [renderer] in renderer.emojiText(for: $0) })
         else {
             hoverBar.reset()
             return

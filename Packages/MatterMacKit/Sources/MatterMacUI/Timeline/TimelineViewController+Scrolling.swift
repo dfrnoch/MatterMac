@@ -107,6 +107,10 @@ extension TimelineViewController {
         var row = tableView.row(at: NSPoint(x: 1, y: max(top, 0)))
         if row < 0 { row = top <= 0 ? 0 : items.count - 1 }
         row = min(max(row, 0), items.count - 1)
+        // Never anchor on the older-history gap: it stays first when a page is
+        // prepended, so keeping it in place would leave the viewport at the top and
+        // request page after page. The row after it keeps the reader where they were.
+        if items[row].id == TimelineItemID(.olderGap), row + 1 < items.count { row += 1 }
         let rect = tableView.rect(ofRow: row)
         let fallbackEnd = min(items.count, row + 9)
         let fallbacks = row + 1 < fallbackEnd ? items[(row + 1)..<fallbackEnd].map(\.id) : []

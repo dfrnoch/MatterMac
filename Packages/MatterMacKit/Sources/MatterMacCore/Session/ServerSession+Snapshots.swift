@@ -98,7 +98,7 @@ extension ServerSession {
         let snapshot = TimelineSnapshot(scope: scope, target: target, generation: generation, items: items,
                                         isAtLiveEdge: !window.hasNewer,
                                         isStale: window.isStale || connection != .connected,
-                                        scrollRequest: scroll)
+                                        scrollRequest: scroll, recentReactions: directory.recentReactions)
         switch target {
         case .channel: timelineContinuation.yield(snapshot)
         case .thread: threadContinuation.yield(snapshot)

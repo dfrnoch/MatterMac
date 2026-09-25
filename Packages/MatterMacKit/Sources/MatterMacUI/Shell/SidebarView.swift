@@ -16,7 +16,6 @@ struct SidebarView: View {
             }
             VStack(spacing: 0) {
                 channelList
-                    .contentMargins(.bottom, session.connection == .connected ? 64 : 100, for: .scrollContent)
                     .overlay(alignment: .bottom) {
                         VStack(spacing: 8) {
                             if session.connection != .connected {
@@ -96,6 +95,12 @@ struct SidebarView: View {
                         .foregroundStyle(.secondary)
                         .help("This session keeps a bounded channel list; find other channels with the quick switcher (⌘K).")
                 }
+                // The account pill floats over the list; the last row scrolls clear of it.
+                Color.clear
+                    .frame(height: session.connection == .connected ? 66 : 106)
+                    .listRowSeparator(.hidden)
+                    .selectionDisabled()
+                    .accessibilityHidden(true)
             } else if session.requiresAuthentication {
                 Text("Sign in again to load channels.").foregroundStyle(.secondary)
             } else {

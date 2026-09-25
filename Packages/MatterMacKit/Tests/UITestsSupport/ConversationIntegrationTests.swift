@@ -70,11 +70,20 @@ struct ConversationIntegrationTests {
                 clip.scroll(to: NSPoint(x: 0, y: max(0, clip.bounds.minY - 160)))
                 scroll.reflectScrolledClipView(clip)
             }
-            // The channel list too, so rows pass under the sidebar's top edge.
+            // The channel list too: all the way down, so the last row must clear the
+            // floating account pill.
             if let sidebar = tables.first(where: { $0.convert($0.bounds, to: nil).minX < 100 }) {
                 let clip = sidebar.contentView
-                clip.scroll(to: NSPoint(x: 0, y: clip.bounds.minY + 90))
-                sidebar.reflectScrolledClipView(clip)
+                // Lazily sized: scroll until the document stops growing.
+                for _ in 0..<6 {
+                    var bottom = clip.bounds
+                    bottom.origin.y = (sidebar.documentView?.frame.height ?? 0)
+                    clip.scroll(to: clip.constrainBoundsRect(bottom).origin)
+                    sidebar.reflectScrolledClipView(clip)
+                    window.contentView?.layoutSubtreeIfNeeded()
+                    window.displayIfNeeded()
+                    try await Task.sleep(for: .milliseconds(60))
+                }
             }
             window.displayIfNeeded()
             try await Task.sleep(for: .milliseconds(400))

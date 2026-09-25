@@ -112,6 +112,49 @@ struct TimelineIntegrationTests {
         #expect(c.currentVisibilityReport(state).last == state.items.last?.post?.postID)
     }
 
+    /// Scrolled to the top, a prepended page keeps the previously first post in place
+    /// instead of leaving the viewport at the top (which requested page after page).
+    @Test func prependedOlderPageKeepsThePositionAndDoesNotRequestAgain() throws {
+        let c = TimelineViewController()
+        let delegate = RecordingDelegate()
+        c.delegate = delegate
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.contentViewController = c
+        defer { c.removeAllContent(); window.close() }
+        func gap(_ state: GapPresentation.State, revision: UInt64) -> TimelineItem {
+            TimelineItem(id: TimelineItemID(.olderGap), revision: revision,
+                         content: .gap(GapPresentation(direction: .older, state: state)))
+        }
+        c.apply(snapshot([gap(.idle, revision: 1)] + (100...160).map { item($0) }, generation: 1))
+        window.contentView?.layoutSubtreeIfNeeded()
+        c.setVisibleTop(0)
+        c.afterScrollPositionSettled()
+        #expect(delegate.olderRequests == 1)
+        c.apply(snapshot([gap(.loading, revision: 2)] + (100...160).map { item($0) }, generation: 2))
+        let firstPost = TimelineItemID(.post(CoreFixtures.post(100, channel: CoreFixtures.channel(1).id).id))
+        let before = c.tableView.rect(ofRow: try #require(c.rowIndex[firstPost])).minY - c.visibleDocumentRect.minY
+        c.apply(snapshot([gap(.idle, revision: 3)] + (40...160).map { item($0) }, generation: 3))
+        window.contentView?.layoutSubtreeIfNeeded()
+        let after = c.tableView.rect(ofRow: try #require(c.rowIndex[firstPost])).minY - c.visibleDocumentRect.minY
+        #expect(abs(after - before) < 1, "The first post of the old page stays where it was")
+        #expect(c.visibleDocumentRect.minY > c.visibleDocumentRect.height * 1.5)
+        c.afterScrollPositionSettled()
+        #expect(delegate.olderRequests == 1, "No further page until the user scrolls up again")
+    }
+
+    private final class RecordingDelegate: TimelineViewControllerDelegate {
+        var olderRequests = 0
+        func timelineRequestsOlder() { olderRequests += 1 }
+        func timelineRequestsNewer() {}
+        func timelineVisibleRangeDidChange(first: PostID?, last: PostID?, isAtLiveEdge: Bool) {}
+        func timeline(perform action: TimelineAction) {}
+        func timelineImage(for request: TimelineImageRequest) -> NSImage? { nil }
+        func timelineNeedsImage(_ request: TimelineImageRequest) {}
+    }
+
     /// `MM_SNAPSHOT_DIR` optionally captures only this test's window in both appearances.
     @Test(arguments: [NSAppearance.Name.darkAqua, .aqua])
     func jumpToLatestPillFollowsTheLiveEdge(appearance: NSAppearance.Name) async throws {

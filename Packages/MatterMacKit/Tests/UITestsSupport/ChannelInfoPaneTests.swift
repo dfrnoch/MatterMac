@@ -96,6 +96,73 @@ struct ChannelInfoPaneTests {
         await app.registry.removeAll()
     }
 
+    /// The pane with a Markdown header, presence and a bot member row on screen (a
+    /// bot row once crashed the list), in both appearances at the minimum and default
+    /// widths. With `MM_SNAPSHOT_DIR` set (development review only), it also captures
+    /// this test's own window, never the screen.
+    @Test(arguments: [NSAppearance.Name.darkAqua, .aqua], [760.0, 1100.0])
+    func paneRendersHeaderPresenceAndBotMembers(appearance: NSAppearance.Name, width: Double) async throws {
+        let base = CoreFixtures.channel(1)
+        let channel = Channel(id: base.id, teamID: base.teamID, type: .open, name: "dev-regioapp-lite",
+                              displayName: "dev-regioapp-lite",
+                              header: "[staging-web](https://staging.example.com), [prod-web](https://www.example.com) · **Docs:** https://docs.example.com/app",
+                              purpose: "Development of the RegioApp Lite mobile app: builds, releases and QA.")
+        let service = FakeMattermostService(endpoint: CoreFixtures.endpoint, me: CoreFixtures.me)
+        service.withState { state in
+            state.teams = [CoreFixtures.team]
+            state.channels[channel.id] = channel
+            state.memberships[channel.id] = ChannelMembership(channelID: channel.id, userID: CoreFixtures.me.id)
+            let people: [(String, String, String, PresenceStatus, Bool)] = [
+                ("alice", "Alice", "Nováková", .online, false), ("bob", "Bob", "Dvořák", .away, false),
+                ("carol", "Carol", "Svobodová", .doNotDisturb, false), ("dan", "Dan", "Horák", .offline, false),
+                ("deploy-bot", "Deploy", "Bot", .online, true),
+            ]
+            for (n, person) in people.enumerated() {
+                let user = User(id: UserID(unchecked: CoreFixtures.id("member", n)), username: person.0,
+                                firstName: person.1, lastName: person.2, isBot: person.4)
+                state.users[user.id] = user
+                state.statuses[user.id] = person.3
+            }
+        }
+        let app = AppModel(environment: AppEnvironment(serviceFactory: Factory(fake: service),
+            makeRealtime: { _, _, _ in FakeRealtimeConnection() }, markupParse: { text, limits in MarkupParser.parse(text, limits: limits) }))
+        let slot = try app.registry.add(endpoint: CoreFixtures.endpoint,
+            login: LoginResult(credential: BearerCredential(token: "fixture-token", kind: .session)!, user: CoreFixtures.me),
+            capabilities: ServerCapabilities())
+        let model = SessionViewModel(slot: slot, app: app)
+        await slot.session.start()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 1080),
+                              styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.appearance = NSAppearance(named: appearance)
+        let host = NSHostingController(rootView: MainWindowView(app: app, session: model)
+            .frame(minWidth: 760, minHeight: 500))
+        host.sizingOptions = [.minSize]
+        window.contentViewController = host
+        window.setContentSize(NSSize(width: width, height: 1080))
+        window.orderFrontRegardless()
+        defer { window.close() }
+
+        try await settle(window) { model.selectedChannel == channel.id && model.header != nil }
+        model.isChannelInfoVisible = true
+        try await settle(window) { service.calls.contains("channelMembers") }
+        try await settle(window, iterations: 40)
+        #expect(model.isChannelInfoVisible)
+        #expect(service.calls.filter { $0 == "channelMembers" }.count == 1)
+        if let directory = ProcessInfo.processInfo.environment["MM_SNAPSHOT_DIR"] {
+            let name = "channel-info-\(Int(width))-\(appearance == .darkAqua ? "dark" : "light").png"
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            process.arguments = ["-x", "-o", "-l", String(window.windowNumber),
+                                 URL(fileURLWithPath: directory).appendingPathComponent(name).path]
+            try process.run()
+            process.waitUntilExit()
+        }
+        model.prepareForSignOut()
+        await app.registry.removeAll()
+    }
+
     private struct PopoverPresenter: View {
         let session: SessionViewModel
         let user: UserID

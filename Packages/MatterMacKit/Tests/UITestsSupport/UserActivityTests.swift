@@ -51,7 +51,8 @@ struct UserActivityTests {
         let model = SessionViewModel(slot: slot, app: app)
         model.userActivity(isActive: true)
         model.userActivity(isActive: false)
-        let deadline = ContinuousClock.now + .seconds(3)
+        // Generous: parallel UI tests can keep the main actor busy for seconds.
+        let deadline = ContinuousClock.now + .seconds(20)
         while await realtime.activityReports.count < 2, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(5))
         }

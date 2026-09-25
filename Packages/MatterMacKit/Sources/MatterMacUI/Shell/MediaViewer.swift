@@ -286,12 +286,12 @@ final class MediaViewerOverlayView: NSView, NSMenuItemValidation {
     var imageView: NSImageView { stage.imageView }
     let spinner = NSProgressIndicator()
     let messageLabel = NSTextField(wrappingLabelWithString: "")
-    let saveButton = NSButton()
-    let copyButton = NSButton()
-    let zoomButton = NSButton()
-    let closeButton = NSButton()
-    let previousButton = NSButton()
-    let nextButton = NSButton()
+    let saveButton = CapsuleHoverButton(frame: .zero)
+    let copyButton = CapsuleHoverButton(frame: .zero)
+    let zoomButton = CapsuleHoverButton(frame: .zero)
+    let closeButton = CapsuleHoverButton(frame: .zero)
+    let previousButton = CapsuleHoverButton(frame: .zero)
+    let nextButton = CapsuleHoverButton(frame: .zero)
     private let avatarView = NSImageView()
     private let initialsLabel = NSTextField(labelWithString: "")
     private let nameLabel = NSTextField(labelWithString: "")
@@ -358,10 +358,9 @@ final class MediaViewerOverlayView: NSView, NSMenuItemValidation {
         return glass
     }
 
-    private func configure(_ button: NSButton, symbol: String, label: String, action: Selector, pointSize: CGFloat = 15) {
-        button.bezelStyle = .accessoryBarAction
-        button.showsBorderOnlyWhileMouseInside = true
-        button.setButtonType(.momentaryPushIn)
+    private func configure(_ button: CapsuleHoverButton, symbol: String, label: String, action: Selector,
+                           pointSize: CGFloat = 15) {
+        button.highlightColor = .white
         button.imagePosition = .imageOnly
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
             .withSymbolConfiguration(.init(pointSize: pointSize, weight: .semibold))
@@ -497,8 +496,9 @@ final class MediaViewerOverlayView: NSView, NSMenuItemValidation {
         NSLayoutConstraint.activate([
             button.centerXAnchor.constraint(equalTo: content.centerXAnchor),
             button.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            // Square, so the hover highlight is a circle inside the circular glass.
             button.widthAnchor.constraint(equalToConstant: 30),
-            button.heightAnchor.constraint(equalToConstant: 28),
+            button.heightAnchor.constraint(equalToConstant: 30),
         ])
     }
 
