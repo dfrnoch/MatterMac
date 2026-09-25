@@ -1696,3 +1696,29 @@ GitHub validation of commit `db2bdd4`:
 Next: configure notarization credentials and submit/staple a distribution build.
 Notarization, clean-account installation, and migration from an old ad-hoc sign-in
 are untested.
+
+## 2026-09-25 — notarization and DMG distribution
+
+User requested notarization to satisfy Gatekeeper and a DMG release artifact.
+The manual `sign.yml` workflow now notarizes and staples the universal app, then
+packages it with an Applications symlink into a signed UDZO DMG, notarizes and
+staples the DMG, and uploads `MatterMac.dmg`. Both submissions require Apple's
+`Accepted` result; both tickets and Gatekeeper assessments must pass before upload.
+The job timeout is 60 minutes, with each notarization wait bounded to 20 minutes.
+
+The user created the dedicated “MatterMac notarization” app-specific password in
+Apple Account. Saved it directly from the browser into the repository Actions
+secret `APPLE_APP_SPECIFIC_PASSWORD`, without printing it; also added `APPLE_ID`.
+The existing Developer ID certificate secrets are reused. The workflow validates
+and stores notarization credentials in its temporary Keychain, removed at exit.
+
+Local packaging checks: copied the existing Developer ID app, added an
+Applications symlink, built a DMG and verified its signature and image checksum.
+The first `hdiutil create` check passed but macOS 27 emitted a deprecation warning;
+the pipeline uses the native replacement `diskutil image create from` with UDZO.
+Workflow YAML and embedded shell syntax checks passed. No runtime code changed.
+The pre-existing Xcode project team overrides were left untouched.
+
+Next: run the pipeline, inspect Apple acceptance, download its DMG and independently
+verify tickets and Gatekeeper. Do not treat the local packaging-check DMGs as
+notarized distribution artifacts.

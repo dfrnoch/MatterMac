@@ -72,6 +72,7 @@ Development for Debug and Developer ID Application for Release. CI tests overrid
 the identity to ad-hoc; the manual signing workflow imports the Developer ID from
 GitHub secrets into a temporary Keychain. The three sandbox entitlements are outgoing
 network, user-selected file access, and App Sandbox. Release does not inject
-`get-task-allow`. No updater or notarization is configured. Existing Keychain
+`get-task-allow`. The manual release workflow notarizes and staples both the app
+and its signed DMG and verifies Gatekeeper acceptance. No updater is configured. Existing Keychain
 service names are retained; changing the bundle ID creates a new sandbox container.
 Asset source and reproduction are documented in [assets.md](assets.md).

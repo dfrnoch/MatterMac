@@ -55,12 +55,22 @@ Release uses David Frnoch’s Developer ID (team `ZJ37A69485`). To build without
 that certificate, append `CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= OTHER_CODE_SIGN_FLAGS=`
 to the build command. Pull-request CI uses this ad-hoc override.
 
-The manual **Signed app** GitHub Actions workflow builds a universal signed ZIP
-from `main`. It requires `DEVELOPER_ID_CERTIFICATE_BASE64` (the exported Developer
-ID identity in PKCS#12 format, base64 encoded) and `DEVELOPER_ID_CERTIFICATE_PASSWORD`
-as repository secrets. It imports the identity into a temporary runner Keychain
-and deletes it afterwards. The ZIP is signed, **not notarized**; no public release
-is published by this workflow. See [GitHub’s certificate setup](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)
+The manual **Notarized DMG** GitHub Actions workflow builds a universal app from
+`main`, notarizes and staples the app, then creates a signed, notarized and stapled
+`MatterMac.dmg` with an Applications shortcut for drag-and-drop installation.
+It checks Apple's `Accepted` status and Gatekeeper before uploading the DMG artifact.
+No public GitHub release is published automatically.
+
+Required repository secrets:
+
+- `DEVELOPER_ID_CERTIFICATE_BASE64`: exported Developer ID identity, PKCS#12, base64 encoded.
+- `DEVELOPER_ID_CERTIFICATE_PASSWORD`: PKCS#12 export password.
+- `APPLE_ID`: the developer Apple Account email.
+- `APPLE_APP_SPECIFIC_PASSWORD`: a dedicated app-specific password for notarization.
+
+The workflow validates notarization credentials, keeps them and the signing identity
+in a temporary runner Keychain, and deletes it afterwards. Never put the account's
+normal password in GitHub. See [GitHub’s certificate setup](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)
 and [Apple’s notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
 
 The bundle ID change gives the app a new sandbox container. Existing content

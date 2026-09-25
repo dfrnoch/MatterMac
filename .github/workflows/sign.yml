@@ -1,4 +1,4 @@
-name: Signed app
+name: Notarized DMG
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ jobs:
   sign:
     if: github.ref == 'refs/heads/main'
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -19,6 +19,8 @@ jobs:
         env:
           CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
           set -euo pipefail
           umask 077
@@ -34,6 +36,8 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
           security list-keychains -d user -s "$keychain" login.keychain-db
           rm "$certificate"
+          xcrun notarytool store-credentials MatterMac --keychain "$keychain" \
+            --apple-id "$APPLE_ID" --team-id ZJ37A69485 --password "$APPLE_APP_SPECIFIC_PASSWORD"
       - name: Build and verify universal signed app
         run: |
           set -euo pipefail
@@ -44,11 +48,41 @@ jobs:
           codesign --verify -R='identifier "dev.frnoch.mattermac" and anchor apple generic and certificate leaf[subject.OU] = "ZJ37A69485" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "$app"
           architectures=$(lipo -archs "$app/Contents/MacOS/MatterMac")
           [[ " $architectures " == *" arm64 "* && " $architectures " == *" x86_64 "* ]]
-          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/MatterMac-signed.zip"
+      - name: Notarize app and create notarized DMG
+        run: |
+          set -euo pipefail
+          app=build/Build/Products/Release/MatterMac.app
+          keychain="$RUNNER_TEMP/mattermac-signing.keychain-db"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/MatterMac.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/MatterMac.zip" \
+            --keychain-profile MatterMac --keychain "$keychain" --wait --timeout 20m \
+            --output-format json > "$RUNNER_TEMP/app-notarization.json"
+          cat "$RUNNER_TEMP/app-notarization.json"
+          [[ $(plutil -extract status raw "$RUNNER_TEMP/app-notarization.json") == Accepted ]]
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose "$app"
+
+          staging="$RUNNER_TEMP/dmg-staging"
+          mkdir "$staging"
+          ditto "$app" "$staging/MatterMac.app"
+          ln -s /Applications "$staging/Applications"
+          dmg="$RUNNER_TEMP/MatterMac.dmg"
+          diskutil image create from --volumeName MatterMac --format UDZO "$staging" "$dmg"
+          codesign --sign 'Developer ID Application: David Frnoch (ZJ37A69485)' --timestamp "$dmg"
+          codesign --verify --strict "$dmg"
+          xcrun notarytool submit "$dmg" \
+            --keychain-profile MatterMac --keychain "$keychain" --wait --timeout 20m \
+            --output-format json > "$RUNNER_TEMP/dmg-notarization.json"
+          cat "$RUNNER_TEMP/dmg-notarization.json"
+          [[ $(plutil -extract status raw "$RUNNER_TEMP/dmg-notarization.json") == Accepted ]]
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl --assess --type open --context context:primary-signature --verbose "$dmg"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: MatterMac-signed
-          path: ${{ runner.temp }}/MatterMac-signed.zip
+          name: MatterMac-dmg
+          path: ${{ runner.temp }}/MatterMac.dmg
           if-no-files-found: error
           retention-days: 7
       - name: Remove signing material
