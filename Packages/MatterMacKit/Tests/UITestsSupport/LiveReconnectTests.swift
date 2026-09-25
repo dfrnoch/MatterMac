@@ -74,11 +74,17 @@ struct LiveReconnectTests {
             guard let channel = channels.first(where: { $0.name == "interop" })?.id else { throw Failure.channel }
             try await wait(2) { model.sidebar?.sections.flatMap(\.rows).contains(where: { $0.channelID == channel }) == true }
             model.select(channel: channel)
-            try await wait(3) { await model.session.windows[.channel(channel)]?.isLoaded == true }
+            do {
+                try await wait(3) { await model.session.windows[.channel(channel)]?.isLoaded == true }
+            } catch {
+                let window = await model.session.windows[.channel(channel)]
+                Issue.record("Initial history timeout: window=\(window != nil), selected=\(model.selectedChannel == channel), active=\(await model.session.activeChannel == channel), task=\(await model.session.isRunning(.initialLoad(.channel(channel))))")
+                throw error
+            }
             // Existing local QA accounts may open at an old unread boundary.
             // New posts are intentionally not retained until that window reaches live.
             await model.session.jumpToLiveEdge(.channel(channel))
-            try await wait(3) {
+            try await wait(7) {
                 guard let window = await model.session.windows[.channel(channel)] else { return false }
                 return window.isLoaded && !window.hasNewer
             }

@@ -1193,3 +1193,69 @@ The scoped actual-app metadata comparison after login/search/settings reported n
 changes to either native split geometry key, but the attempted XCTest edge drag did
 not resize the window, so it does not establish resize persistence behavior
 (`/tmp/mm-layout-persistence2.csv`).
+
+### Integrated hardening candidate
+
+- Fresh launch and close/quit/relaunch now explicitly open the unique main scene
+  once, without restoring geometry. The no-persistence-override regression passed,
+  as did the existing close/reopen paths. A process-lifetime native split observer
+  clears autosave names before resize; a native fixture and five standalone scene
+  phases passed. This does not replace minimum-OS execution.
+- The sampler's first geometry comparison mistakenly split a **single comma-containing
+  preference key** into two keys. Its earlier `changed=0` results did not measure the
+  actual native key. Commit `6baf5e1` corrects this and its self-test; the subsequent
+  actual-app login/thread/search/settings capture reported `changed=0, valid=1` for
+  the correct key in both roots (`/tmp/mm-layout-persistence4.csv`). Three XCTest
+  edge/corner drag attempts did not resize the app; those unreliable gestures are
+  not retained as a passing resize test. Native programmatic resizing and pane
+  geometry are covered separately.
+- The actual 1100-point window's 276-point sidebar reproduced a nested split that
+  extended to 1116.5 points. Replacing the inner split with a horizontal stack and
+  divider fixes the overflow; the outer sidebar remains resizable. Tests cover
+  760/976/1000/1100 widths and draft restoration. The actual search close-button
+  margin assertion passed, and the captured layout no longer clips its right edge.
+  Category heading contrast also improved. Final UI recapture is pending below.
+- Cancelled/replaced server discovery no longer reopens login or surfaces old
+  errors. Eight noncooperative success/failure scenarios reproduced before the fix
+  and passed afterward. One owned Connect probe is cancelled on Cancel/disappear.
+- Superseded history successes and failures now check cancellation and the current
+  load generation. Three gated cases reproduced nine failed assertions before the
+  fix and passed afterward; 50 focused tests passed. Initial live reconnect checks
+  intermittently timed out before loading history, including one isolated run;
+  this exact live failure has not been conclusively attributed to the deterministic
+  race. A subsequent isolated three-endpoint run passed in 29.392 seconds.
+
+The first integrated run exposed two test-fixture errors as well: the fake read
+endpoint returned a timestamp of one millisecond after the epoch, and conversation
+fixtures created controllers before initial sidebar loading completed. The latter
+let the initial empty snapshot retire the controller before the test started; it
+was not evidence of a production unsent-image ledger loss. Corrected readiness
+ordering passed 30 repeated image-recovery cases and the related combined suite.
+
+`MM_LIVE_TESTS=1 MM_KEYCHAIN_TESTS=1 swift test --package-path Packages/MatterMacKit`
+now reports **417 tests, no failures**: UI 151, Core 158, realtime 29, models 18,
+API 61 (`/tmp/mm-hardening-full2.log`). Separate opt-in browser-SSO, benchmark,
+process-restart, visual-capture and seed cases remain skipped in this command.
+No Swift compiler or SwiftUI runtime warnings appeared. The unmodified universal
+Release build succeeded (`/tmp/mm-release-final.log`); strict deep signature
+verification passed, architectures are arm64+x86_64, and dependencies are Apple
+frameworks/Swift libraries. Allocated bundle size: 28,180 KiB. This is ad-hoc local
+signing, not Developer ID/notarization. The standard AppIntents metadata-extraction
+warning remains. Final actual-app UI and sustained-run results follow separately.
+
+The final actual-app suite passed **13 enabled tests + 2 opt-in skips**, zero
+failures, in 188.853 seconds (`/tmp/mm-hardening-uitests.log`). It includes the
+ordinary launch regression and explicit search-field/value/right-margin checks;
+visual attachments are exported under `/tmp/mm-hardening-tour`. The accessibility
+audit still reports native/date/title/placeholder findings, so its reporting test
+passing is not accessibility certification. Two further isolated reconnect runs
+passed all three endpoints each (29.335 s and 23.256 s), in addition to the latest
+combined run: `/tmp/mm-reconnect-final-1.log`, `/tmp/mm-reconnect-final-2.log`.
+The live test now distinguishes initial-history from live-edge deadlines and
+reports only scalar state flags on an initial-history timeout.
+
+Runtime candidate: `5af680b`; later changes through this checkpoint are test and
+documentation only. Host: Apple M1 Pro, 16 GiB RAM, MacBookPro18,3, macOS 27.0.
+The optimized test variant's two-hour active workload plus settling/five-minute
+idle sampling is the remaining local sustained-run gate; no duration result is
+claimed before it completes.

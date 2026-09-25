@@ -15,7 +15,7 @@ final class LiveVisualTourUITests: XCTestCase {
             throw XCTSkip("Set TEST_RUNNER_MM_LIVE_TESTS=1 and TEST_RUNNER_MM_TEST_ALICE_PASSWORD to run.")
         }
         let app = XCUIApplication()
-        app.launchArguments += ["-ApplePersistenceIgnoreState", "YES", "-MatterMacUITesting", "YES",
+        app.launchArguments += ["-MatterMacUITesting", "YES",
                                 "-MatterMacAllowInsecureLoopback", "YES"]
         app.launch()
         defer { app.terminate() }
@@ -69,9 +69,15 @@ final class LiveVisualTourUITests: XCTestCase {
                 capture("07-thread")
             }
             app.typeKey("f", modifierFlags: .command)
-            app.typeText("release")
-            app.typeKey(.return, modifierFlags: [])
+            let search = app.textFields["Search messages"]
+            XCTAssertTrue(search.waitForExistence(timeout: 5))
+            search.click()
+            search.typeText("release\r")
             capture("08-search")
+            XCTAssertEqual(search.value as? String, "release")
+            let close = app.buttons["Close results"]
+            XCTAssertTrue(close.exists)
+            XCTAssertLessThanOrEqual(close.frame.maxX, window.frame.maxX - 12)
         }
         app.typeKey(",", modifierFlags: .command)
         sleep(2)
