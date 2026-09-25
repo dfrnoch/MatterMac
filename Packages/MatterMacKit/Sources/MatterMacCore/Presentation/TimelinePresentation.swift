@@ -130,15 +130,20 @@ public struct ReactionGroup: Hashable, Sendable, Identifiable {
     /// user first as "You" when included), for "who reacted" tooltips. Reactors whose
     /// profiles are not retained yet are omitted and counted in `count` only.
     public let reactorNames: [String]
+    /// Server id of the custom emoji with this name, once resolved (drawn as an image);
+    /// `nil` for system emoji and unresolved names (drawn as the glyph or `:name:`).
+    public var customEmojiID: String?
     public var id: String { emojiName }
 
     public static let maximumReactorNames = 10
 
-    public init(emojiName: String, count: Int, includesCurrentUser: Bool, reactorNames: [String] = []) {
+    public init(emojiName: String, count: Int, includesCurrentUser: Bool, reactorNames: [String] = [],
+                customEmojiID: String? = nil) {
         self.emojiName = emojiName
         self.count = count
         self.includesCurrentUser = includesCurrentUser
         self.reactorNames = Array(reactorNames.prefix(Self.maximumReactorNames))
+        self.customEmojiID = customEmojiID
     }
 }
 
@@ -198,7 +203,7 @@ public struct PostPresentation: Hashable, Sendable {
     public let isEdited: Bool
     public let isPinned: Bool
     public let files: [FileInfo]
-    public let reactions: [ReactionGroup]
+    public var reactions: [ReactionGroup]
     public let replyCount: Int
     /// In a channel timeline, a reply shows a small "replied to a thread" context.
     public let showsThreadContext: Bool
@@ -213,6 +218,9 @@ public struct PostPresentation: Hashable, Sendable {
     /// Server-provided link preview. `image` is `nil` unless it can be fetched through
     /// the server's image proxy.
     public let linkPreview: LinkPreview?
+    /// Resolved custom emoji used in `body`: lowercase name → server emoji id. Names
+    /// absent here render as `:name:` (unknown, not yet resolved, or disabled).
+    public var customEmoji: [String: String] = [:]
 
     public init(postID: PostID?, pendingID: PendingPostID?, channelID: ChannelID, rootID: PostID?,
                 author: AuthorPresentation, createdAt: MattermostTimestamp, isContinuation: Bool,

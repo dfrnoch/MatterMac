@@ -290,6 +290,96 @@ public final class MattermostHTTPClient: MattermostService {
             .elements.map(\.user)
     }
 
+    // MARK: Custom emoji and slash commands
+
+    public func customEmoji(names: [String]) async throws(APIError) -> [CustomEmoji] {
+        let valid = names.map { $0.lowercased() }.filter {
+            $0.utf8.count <= CustomEmoji.maximumNameLength && Reaction.isValidEmojiName($0)
+        }
+        var result: [CustomEmoji] = []
+        for chunk in Self.uniqueChunks(valid) {
+            result += try await send(.post, ["emoji", "names"], body: chunk, decode: LossyArray<CustomEmojiWire>.self,
+                                     limit: large, priority: .background).elements.map(\.emoji)
+        }
+        return result
+    }
+
+    public func customEmoji(named name: String) async throws(APIError) -> CustomEmoji? {
+        let lower = name.lowercased()
+        guard lower.utf8.count <= CustomEmoji.maximumNameLength, Reaction.isValidEmojiName(lower) else {
+            throw .badRequest(Self.clientError("mattermac.client.invalid_emoji_name"))
+        }
+        do {
+            return try await get(CustomEmojiWire.self, ["emoji", "name", lower], limit: small, priority: .background).emoji
+        } catch {
+            if case .notFound = error { return nil }
+            throw error
+        }
+    }
+
+    public func customEmojiList(page: Int, perPage: Int) async throws(APIError) -> [CustomEmoji] {
+        // Without `sort=name` the server query has no ORDER BY and pages are unstable.
+        try await get(LossyArray<CustomEmojiWire>.self, ["emoji"],
+                      query: Self.pageQuery(page: page, perPage: perPage) + [URLQueryItem(name: "sort", value: "name")],
+                      limit: large, priority: .interactive).elements.map(\.emoji)
+    }
+
+    public func autocompleteCustomEmoji(name: String) async throws(APIError) -> [CustomEmoji] {
+        let term = String(name.lowercased().prefix(CustomEmoji.maximumNameLength))
+        guard !term.isEmpty, Reaction.isValidEmojiName(term) else { return [] }
+        return try await get(LossyArray<CustomEmojiWire>.self, ["emoji", "autocomplete"],
+                             query: [URLQueryItem(name: "name", value: term)], limit: large, priority: .interactive)
+            .elements.prefix(100).map(\.emoji)
+    }
+
+    /// Longest command input sent for suggestions.
+    static let maximumCommandInputBytes = 1_024
+
+    public func commandSuggestions(userInput: String, team: TeamID, channel: ChannelID, rootID: PostID?)
+        async throws(APIError) -> [CommandSuggestion] {
+        guard userInput.hasPrefix("/"), userInput.utf8.count <= Self.maximumCommandInputBytes,
+              !userInput.contains(where: \.isNewline) else { return [] }
+        return try await get(LossyArray<CommandSuggestionWire>.self,
+                             ["teams", team.rawValue, "commands", "autocomplete_suggestions"], query: [
+                                 URLQueryItem(name: "user_input", value: userInput),
+                                 URLQueryItem(name: "team_id", value: team.rawValue),
+                                 URLQueryItem(name: "channel_id", value: channel.rawValue),
+                                 URLQueryItem(name: "root_id", value: rootID?.rawValue ?? ""),
+                             ], limit: large, priority: .interactive).elements.prefix(200).map(\.suggestion)
+    }
+
+    public func autocompleteCommands(team: TeamID) async throws(APIError) -> [CommandSuggestion] {
+        try await get(LossyArray<AutocompleteCommandWire>.self, ["teams", team.rawValue, "commands", "autocomplete"],
+                      limit: large, priority: .interactive).elements.prefix(500).map(\.suggestion)
+    }
+
+    /// `POST /emoji` (multipart `image` and `emoji` JSON). Not exposed in the app;
+    /// live-test fixtures only. Needs the `create_emojis` permission.
+    func createCustomEmoji(name: String, png: Data, creator: UserID) async throws(APIError) -> CustomEmoji {
+        let boundary = "MatterMacBoundary" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        let json = String(decoding: try RequestBodyEncoding.encode(["name": name, "creator_id": creator.rawValue]),
+                          as: UTF8.self)
+        var body = Data()
+        body.append(Data(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"emoji\"\r\n\r\n" + json
+            + "\r\n--" + boundary
+            + "\r\nContent-Disposition: form-data; name=\"image\"; filename=\"emoji.png\"\r\nContent-Type: image/png\r\n\r\n").utf8))
+        body.append(png)
+        body.append(Data(("\r\n--" + boundary + "--\r\n").utf8))
+        let request = HTTPRequest(method: .post, url: apiURL(["emoji"]),
+                                  headers: ["Content-Type": "multipart/form-data; boundary=" + boundary], body: body,
+                                  credential: credential)
+        let response = try await pipeline.execute(request, priority: .interactive,
+                                                  limits: ResponseLimits(maximumBodyBytes: small))
+        let wire: CustomEmojiWire = try Self.decode(response.body)
+        return wire.emoji
+    }
+
+    /// `DELETE /emoji/{id}`. Live-test cleanup only.
+    func deleteCustomEmoji(id: String) async throws(APIError) {
+        guard IdentifierValidation.isValid(id) else { throw .badRequest(Self.clientError("mattermac.client.invalid_emoji_id")) }
+        _ = try await perform(.delete, ["emoji", id], limit: small, priority: .interactive)
+    }
+
     // MARK: Posts
 
     public func posts(channel: ChannelID, query: PostPageQuery, collapsedThreads: Bool, priority: RequestPriority)

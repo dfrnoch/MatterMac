@@ -57,6 +57,7 @@ nonisolated public enum TimelineImageRequest: Hashable, Sendable {
     case preview(FileID)
     /// A link-preview image, fetched only through the server's image proxy.
     case linkPreview(url: String)
+    case customEmoji(String)
 
     /// The rendition for an image attachment's timeline thumbnail: the server preview
     /// when one exists (the ~120 px thumbnail is blurry at 360 pt on Retina).

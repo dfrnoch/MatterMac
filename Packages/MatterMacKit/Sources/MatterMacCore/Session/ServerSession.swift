@@ -106,6 +106,8 @@ public actor ServerSession {
     var isShutDown = false
     var authenticationEnded = false
     var missingUsers: Set<UserID> = []
+    /// Custom emoji name → id, misses and queued lookups (ServerSession+CustomEmoji.swift).
+    var customEmoji: CustomEmojiStore
 
     enum TaskKey: Hashable {
         case realtimeConsumer
@@ -129,6 +131,7 @@ public actor ServerSession {
         case sidebarCategories(TeamID)
         case categoryUpdate(SidebarCategoryID)
         case teamUnreads
+        case emojiFetch
     }
 
     struct VisibleRange: Equatable {
@@ -148,6 +151,7 @@ public actor ServerSession {
         self.deps = dependencies
         self.realtime = dependencies.makeRealtime(endpoint, credential, me.id)
         self.directory = DirectoryStore(budget: dependencies.budget)
+        self.customEmoji = CustomEmojiStore(budget: dependencies.budget)
         let documents = dependencies.documents
         self.store = PostStore(render: { documents.document(for: $0) })
         (sidebarUpdates, sidebarContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
@@ -229,6 +233,7 @@ public actor ServerSession {
         windows.removeAll()
         store.removeAll()
         directory.removeAll()
+        customEmoji.removeAll()
         journal.removeAll()
         typing.removeAll()
         searchState = SearchModel()
@@ -311,6 +316,7 @@ public actor ServerSession {
         if flags.contains(.search) { publishSearch() }
         if flags.contains(.settings) { publishAccountSettings() }
         if !missingUsers.isEmpty { scheduleUserFetch() }
+        if !customEmoji.wanted.isEmpty { scheduleEmojiFetch() }
     }
 
     func setConnection(_ status: ConnectionStatus) {
@@ -336,6 +342,7 @@ public actor ServerSession {
             windows.removeAll()
             store.removeAll()
             directory.removeAll()
+            customEmoji.removeAll()
             journal.removeAll()
             typing.removeAll()
             missingUsers.removeAll()

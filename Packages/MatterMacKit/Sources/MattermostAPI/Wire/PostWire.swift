@@ -15,6 +15,8 @@ public enum PostDecodingLimits {
     public static let maximumSystemContextEntries = 16
     public static let maximumSystemContextValueBytes = 1_024
     public static let maximumMiniPreviewBytes = 4 * 1_024
+    /// `metadata.emojis` entries kept (custom emoji of the message and reactions).
+    public static let maximumCustomEmojis = 50
 }
 
 /// `Post` as sent by the server. Decodes directly into the domain value; nothing else
@@ -63,7 +65,7 @@ public struct PostWire: Decodable, Sendable {
             $0.isEmpty ? nil : PendingPostID(rawValue: $0)
         }
 
-        self.post = Post(
+        var post = Post(
             id: id,
             channelID: channelID,
             userID: userID,
@@ -86,6 +88,8 @@ public struct PostWire: Decodable, Sendable {
             props: props,
             linkPreview: props.attachments.isEmpty ? metadata?.linkPreview : nil
         )
+        post.customEmojis = metadata?.emojis ?? []
+        self.post = post
         self.isEditHistoryRow = !((try? c.decodeIfPresent(String.self, forKey: .original_id)) ?? "").isEmpty
         self.messageTruncated = truncated
     }
@@ -95,13 +99,16 @@ struct PostMetadataWire: Decodable, Sendable {
     var files: LossyArray<FileInfoWireElement>
     var reactions: LossyArray<ReactionWire>
     var linkPreview: LinkPreview?
+    var emojis: [CustomEmoji]
 
-    enum Keys: String, CodingKey { case files, reactions, embeds, images }
+    enum Keys: String, CodingKey { case files, reactions, embeds, images, emojis }
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         files = (try? c.decodeIfPresent(LossyArray<FileInfoWireElement>.self, forKey: .files)) ?? LossyArray(elements: [])
         reactions = (try? c.decodeIfPresent(LossyArray<ReactionWire>.self, forKey: .reactions)) ?? LossyArray(elements: [])
+        emojis = ((try? c.decodeIfPresent(LossyArray<CustomEmojiWire>.self, forKey: .emojis))?.elements ?? [])
+            .prefix(PostDecodingLimits.maximumCustomEmojis).map(\.emoji)
         linkPreview = nil
         // The server adds at most one link embed (for the first link). Only the first
         // few entries are examined; permalink, boards and plain link embeds are ignored.

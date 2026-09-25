@@ -59,7 +59,7 @@ final class TimelineRowLayouter {
     /// Body text plus the trailing "(edited)" marker for edited messages, so it is shown
     /// on continuation rows too and measured with the text it follows.
     private func rendered(_ post: PostPresentation) -> NSAttributedString {
-        let text = renderer.render(post.body, budget: budget)
+        let text = renderer.render(post.body, budget: budget, customEmoji: post.customEmoji)
         guard post.isEdited, case .document(let document, _) = post.body else { return text }
         return renderer.appendingEditedMarker(to: text, inlineAfterParagraph: document.blocks.last.map {
             if case .paragraph = $0 { return true }

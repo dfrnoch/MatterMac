@@ -13,6 +13,7 @@ extension ConversationController {
         let resource: MattermostAPI.ImageResource
         let points: CGFloat
         switch request {
+        case .customEmoji(let id): resource = .customEmoji(id: id); points = 32
         case .avatar(let user, let revision): resource = .profileImage(user, revision: revision); points = TimelineMetrics.avatarSize
         case .thumbnail(let file): resource = .fileThumbnail(file); points = TimelineMetrics.maximumThumbnailSize.width
         case .preview(let file): resource = .filePreview(file); points = TimelineMetrics.maximumThumbnailSize.width

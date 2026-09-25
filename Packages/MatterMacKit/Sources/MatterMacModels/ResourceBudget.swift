@@ -82,6 +82,14 @@ public struct ResourceBudget: Sendable, Hashable {
     public static let maximumRenderedTableRows = 50
     public static let maximumRenderedTableColumns = 10
     public static let maximumRenderedTableCellCharacters = 300
+    /// Custom emoji name → id entries remembered per session (LRU), and names the
+    /// server reported unknown (LRU, expiring), so lookups are neither repeated nor
+    /// unbounded.
+    public var customEmojiNames = 2_000
+    public var customEmojiMisses = 1_000
+    public var customEmojiQueuedNames = 400
+    /// Custom emoji listed in the reaction picker's "Custom" section (paged).
+    public var customEmojiPickerEntries = 600
 
     public init() {}
 

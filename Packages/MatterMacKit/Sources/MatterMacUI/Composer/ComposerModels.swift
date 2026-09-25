@@ -79,19 +79,21 @@ nonisolated public enum CompletionTrigger: Hashable, Sendable, CaseIterable {
     case channel
     /// `:` — emoji (only after at least two query characters).
     case emoji
+    case command
 
     public var character: Character {
         switch self {
         case .user: "@"
         case .channel: "~"
         case .emoji: ":"
+        case .command: "/"
         }
     }
 
     /// Minimum number of query characters before the provider is asked.
     public var minimumQueryLength: Int {
         switch self {
-        case .user, .channel: 0
+        case .user, .channel, .command: 0
         case .emoji: 2
         }
     }

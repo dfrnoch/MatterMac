@@ -32,6 +32,11 @@ nonisolated enum CompletionQueryDetector {
             return nil
         }
         let caret = selection.location
+        if caret > 0, caret <= 513, text.character(at: 0) == 0x2F {
+            let query = text.substring(with: NSRange(location: 1, length: caret - 1))
+            guard !query.contains(where: \.isNewline) else { return nil }
+            return CompletionContext(trigger: .command, triggerLocation: 0, caretLocation: caret, query: query)
+        }
         let lowestTriggerLocation = max(0, caret - maximumQueryLength - 1)
         var index = caret
         while index > lowestTriggerLocation {

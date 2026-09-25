@@ -129,19 +129,26 @@ public struct QuickSwitchItem: Hashable, Sendable, Identifiable {
 }
 
 public struct CompletionCandidate: Hashable, Sendable, Identifiable {
-    public enum Kind: Hashable, Sendable { case user, channel, special }
+    /// `special`: `@here`-style mentions and system emoji (glyph in `subtitle`);
+    /// `customEmoji`: server emoji (`customEmojiID` set, no glyph); `command`: a
+    /// slash command or argument suggestion (`insertion` is the whole command line).
+    public enum Kind: Hashable, Sendable { case user, channel, special, customEmoji, command }
     public let kind: Kind
     public let id: String
     public let title: String
     public let subtitle: String
     public let insertion: String
+    /// Server emoji id for `customEmoji` candidates (image via the image pipeline).
+    public let customEmojiID: String?
 
-    public init(kind: Kind, id: String, title: String, subtitle: String, insertion: String) {
+    public init(kind: Kind, id: String, title: String, subtitle: String, insertion: String,
+                customEmojiID: String? = nil) {
         self.kind = kind
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.insertion = insertion
+        self.customEmojiID = customEmojiID
     }
 }
 

@@ -227,7 +227,7 @@ private struct EnvelopeWire: Decodable {
     private static func event(_ kind: HandledEventName, _ data: KeyedDecodingContainer<AnyKey>?,
                               _ broadcast: BroadcastWire, currentUserID: UserID?) throws -> RealtimeEvent {
         switch kind {
-        case .emojiAdded: return .emojiAdded
+        case .emojiAdded: return .emojiAdded((try? data?.optionalNestedJSON(CustomEmojiWire.self, "emoji"))??.emoji)
         case .configChanged: return .configChanged
         case .licenseChanged: return .licenseChanged
         case .hello: throw PayloadError.unexpected

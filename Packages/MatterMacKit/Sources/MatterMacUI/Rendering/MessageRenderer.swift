@@ -10,6 +10,7 @@ extension NSAttributedString.Key {
     /// Username (without "@") of a user mention. The body text view reports clicks on it
     /// as `TimelineAction.mentionTapped`. Never a `.link`: only `SafeLink` destinations
     /// carry the `.link` attribute.
+    nonisolated public static let matterMacCustomEmoji = NSAttributedString.Key("MatterMacCustomEmoji")
     nonisolated public static let matterMacMention = NSAttributedString.Key("MatterMacMention")
     /// Channel name (without "~") of a channel mention; clicks report
     /// `TimelineAction.channelMentionTapped`.
@@ -71,11 +72,11 @@ public final class MessageRenderer {
     /// Renders a message body. Collapsed documents render at most
     /// `budget.collapsedMessageCharacters` characters followed by an ellipsis; everything
     /// else is bounded by `budget.maximumRenderedCharacters`.
-    public func render(_ body: MessageBody, budget: ResourceBudget = .standard) -> NSAttributedString {
+    public func render(_ body: MessageBody, budget: ResourceBudget = .standard, customEmoji: [String: String] = [:]) -> NSAttributedString {
         switch body {
         case .document(let document, let isCollapsed):
             return render(document, characterLimit: isCollapsed ? budget.collapsedMessageCharacters
-                                                                : budget.maximumRenderedCharacters)
+                                                                : budget.maximumRenderedCharacters, customEmoji: customEmoji)
         case .system(let text):
             return renderNote(text, limit: budget.maximumRenderedCharacters)
         case .deleted:
@@ -99,8 +100,8 @@ public final class MessageRenderer {
     }
 
     /// Renders a document, stopping after `characterLimit` UTF-16 units (plus an ellipsis).
-    public func render(_ document: MessageDocument, characterLimit: Int? = nil) -> NSAttributedString {
-        let state = RenderState(limit: characterLimit ?? ResourceBudget.standard.maximumRenderedCharacters)
+    public func render(_ document: MessageDocument, characterLimit: Int? = nil, customEmoji: [String: String] = [:]) -> NSAttributedString {
+        let state = RenderState(limit: characterLimit ?? ResourceBudget.standard.maximumRenderedCharacters, customEmoji: customEmoji)
         renderBlocks(document.blocks, context: BlockContext(), state: state)
         let ellipsisStyle = state.lastParagraphStyle ?? baseParagraphStyle(indent: 0, blocks: [], spacingBefore: 0)
         return state.finish(ellipsisAttributes: [
@@ -325,7 +326,18 @@ public final class MessageRenderer {
             case .emoji(let name):
                 var attributes = attributes(style, state: state)
                 attributes[.toolTip] = ":" + name + ":"
-                state.append(emojiText(for: name), attributes: attributes)
+                if let id = state.customEmoji[name.lowercased()] {
+                    let font = attributes[.font] as? NSFont ?? fonts.body
+                    let attachment = NSTextAttachment()
+                    let edge = ceil(font.ascender - font.descender)
+                    attachment.bounds = NSRect(x: 0, y: font.descender, width: edge, height: edge)
+                    attachment.attachmentCell = CustomEmojiAttachmentCell(bounds: attachment.bounds)
+                    attributes[.attachment] = attachment
+                    attributes[.matterMacCustomEmoji] = id
+                    state.append("\u{FFFC}", attributes: attributes)
+                } else {
+                    state.append(emojiText(for: name), attributes: attributes)
+                }
             case .hashtag(let tag):
                 state.append("#" + tag, attributes: hashtagAttributes(tag, style: style, state: state))
             case .lineBreak, .softBreak:
@@ -363,6 +375,7 @@ public final class MessageRenderer {
 /// unit) and snaps truncation to a grapheme boundary.
 final class RenderState {
     let output = NSMutableAttributedString()
+    let customEmoji: [String: String]
     private var remaining: Int
     private(set) var isTruncated = false
     private var firstParagraphStyle: NSParagraphStyle = .default
@@ -371,7 +384,8 @@ final class RenderState {
     private(set) var lastParagraphStyle: NSParagraphStyle?
     private var lastAttributes: [NSAttributedString.Key: Any] = [:]
 
-    init(limit: Int) {
+    init(limit: Int, customEmoji: [String: String] = [:]) {
+        self.customEmoji = customEmoji
         remaining = max(limit, 0)
     }
 
@@ -451,6 +465,7 @@ final class RenderState {
         attributes[.attachment] = nil
         attributes[.matterMacSelfMention] = nil
         attributes[.matterMacInlineCode] = nil
+        attributes[.matterMacCustomEmoji] = nil
         attributes[.paragraphStyle] = currentParagraphStyle
         if attributes[.font] == nil { attributes[.font] = NSFont.preferredFont(forTextStyle: .body) }
         append("\n", attributes: attributes)
@@ -465,5 +480,31 @@ final class RenderState {
             output.setAttributes(attributes, range: NSRange(location: location, length: 1))
         }
         return output
+    }
+}
+
+/// TextKit 1 measures the attachment cell, not NSTextAttachment.bounds. Keep
+/// cell geometry independent of the image's pixel dimensions and arrival time.
+final class CustomEmojiAttachmentCell: NSTextAttachmentCell {
+    nonisolated let fixedBounds: NSRect
+
+    init(bounds: NSRect, image: NSImage? = nil) {
+        fixedBounds = bounds
+        super.init(imageCell: image)
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    nonisolated override func cellSize() -> NSSize { fixedBounds.size }
+    nonisolated override func cellBaselineOffset() -> NSPoint { fixedBounds.origin }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        if let image {
+            image.draw(in: cellFrame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        } else {
+            NSAttributedString(string: ":", attributes: [.foregroundColor: NSColor.secondaryLabelColor])
+                .draw(in: cellFrame)
+        }
     }
 }

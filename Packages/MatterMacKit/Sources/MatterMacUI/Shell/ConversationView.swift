@@ -155,7 +155,9 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
     private func loadDraft() {
         guard model?.requiresAuthentication != true else { return }
         editingStateDiscarded = false
-        composer.completionProvider = SessionCompletionProvider(model: model, channel: target.channelID)
+        let completionRoot: PostID?
+        if case .thread(let root, _) = target { completionRoot = root } else { completionRoot = nil }
+        composer.completionProvider = SessionCompletionProvider(model: model, channel: target.channelID, rootID: completionRoot)
         let draft = environment.drafts.draft(for: key) ?? Draft(text: "")
         selectedFiles = draft.attachments
         refreshAttachmentChips()
@@ -349,7 +351,7 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         case .toggleReaction(let id, let emoji): run { try await $0.toggleReaction(id, emojiName: emoji) }
         case .addReaction(let id):
             reactionPicker?.close()
-            reactionPicker = ReactionPickerPresenter.present(for: id, in: timeline) { [weak self] name in
+            reactionPicker = ReactionPickerPresenter.present(for: id, in: timeline, model: model, channel: target.channelID) { [weak self] name in
                 self?.run { try await $0.toggleReaction(id, emojiName: name) }
             }
         case .retrySend(let id):
@@ -420,15 +422,17 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
 private final class SessionCompletionProvider: ComposerCompletionProvider {
     weak var model: SessionViewModel?
     let channel: ChannelID
+    let rootID: PostID?
 
-    init(model: SessionViewModel?, channel: ChannelID) {
+    init(model: SessionViewModel?, channel: ChannelID, rootID: PostID?) {
         self.model = model
         self.channel = channel
+        self.rootID = rootID
     }
 
     func completions(for trigger: CompletionTrigger, query: String) async -> [CompletionItem] {
         guard let model, !model.isDetached else { return [] }
-        let candidates = await model.session.completions(trigger: trigger.character, query: query, channel: channel)
+        let candidates = await model.session.completions(trigger: trigger.character, query: query, channel: channel, rootID: rootID)
         guard !Task.isCancelled, !model.isDetached else { return [] }
         return candidates.map {
             // Emoji candidates carry the glyph as subtitle; show it in the leading slot.

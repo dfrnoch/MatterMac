@@ -181,11 +181,13 @@ extension ServerSession {
         return Array(results.prefix(limit))
     }
 
-    public func completions(trigger: Character, query: String, channel: ChannelID?) async -> [CompletionCandidate] {
+    public func completions(trigger: Character, query: String, channel: ChannelID?, rootID: PostID? = nil) async -> [CompletionCandidate] {
         guard isActiveSessionAlive, !Task.isCancelled else { return [] }
         let epoch = epoch
         let needle = query.lowercased()
         switch trigger {
+        case "/":
+            return await commandCompletions(query, channel: channel, rootID: rootID)
         case "@":
             var items: [CompletionCandidate] = []
             if needle.isEmpty || "channel".hasPrefix(needle) || "here".hasPrefix(needle) || "all".hasPrefix(needle) {
@@ -215,13 +217,10 @@ extension ServerSession {
                 .map { CompletionCandidate(kind: .channel, id: $0.id.rawValue, title: "~" + $0.name,
                                            subtitle: $0.displayName, insertion: "~" + $0.name) }
         case ":":
-            // System (Unicode) emoji from the static catalog only: exact, then prefix,
-            // then substring matches. Custom emoji are not offered. `subtitle` carries
-            // the glyph; the UI shows it in the leading slot.
-            return EmojiCatalog.system.search(needle, limit: 8).map { match in
-                CompletionCandidate(kind: .special, id: match.matchedName, title: ":" + match.matchedName + ":",
-                                    subtitle: match.emoji.glyph, insertion: ":" + match.matchedName + ":")
-            }
+            // System (Unicode) emoji from the static catalog (exact, then prefix, then
+            // substring matches; `subtitle` carries the glyph), then the server's custom
+            // emoji when enabled (ServerSession+CustomEmoji.swift).
+            return await emojiCompletions(needle, limit: 8)
         default:
             return []
         }

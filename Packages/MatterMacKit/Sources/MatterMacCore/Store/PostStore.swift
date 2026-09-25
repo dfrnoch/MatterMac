@@ -19,6 +19,9 @@ public struct PostStore: Sendable {
         public var revision: UInt64
         public var cost: Int
         public var references: Int
+        /// `:name:` in the document that are not system emoji (possible custom emoji),
+        /// computed once per parse (`MessageDocument.customEmojiCandidates`).
+        public var customEmojiCandidates: [String] = []
     }
 
     public enum UpsertResult: Equatable {
@@ -54,7 +57,8 @@ public struct PostStore: Sendable {
             let document = incoming.isDeleted ? .empty : render(incoming)
             let cost = Self.estimatedCost(of: incoming, document: document)
             entries[incoming.id] = Entry(post: incoming, document: document, revision: nextRevision(),
-                                         cost: cost, references: 0)
+                                         cost: cost, references: 0,
+                                         customEmojiCandidates: document.customEmojiCandidates())
             usage.count += 1
             usage.bytes += cost
             return .inserted
@@ -79,6 +83,7 @@ public struct PostStore: Sendable {
             if merged.replyCount == 0 && incoming.replyCount > 0 { merged.replyCount = incoming.replyCount }
             if merged.lastReplyAt < incoming.lastReplyAt { merged.lastReplyAt = incoming.lastReplyAt }
             if merged.linkPreview == nil, let preview = incoming.linkPreview { merged.linkPreview = preview }
+            if merged.customEmojis.isEmpty && !incoming.customEmojis.isEmpty { merged.customEmojis = incoming.customEmojis }
             if merged == stored { return .unchanged }
         } else {
             merged = incoming
@@ -86,11 +91,15 @@ public struct PostStore: Sendable {
             if merged.files.isEmpty && !merged.fileIDs.isEmpty && !stored.files.isEmpty { merged.files = stored.files }
             // Posts in `since`/thread lists may lack metadata; keep a preview for the same text.
             if merged.linkPreview == nil, merged.message == stored.message { merged.linkPreview = stored.linkPreview }
+            if merged.customEmojis.isEmpty { merged.customEmojis = stored.customEmojis }
         }
         if merged.pendingPostID == nil { merged.pendingPostID = stored.pendingPostID }
         let reparse = merged.message != stored.message || merged.isDeleted != stored.isDeleted
             || merged.props.attachments != stored.props.attachments
-        if reparse { entry.document = merged.isDeleted ? .empty : render(merged) }
+        if reparse {
+            entry.document = merged.isDeleted ? .empty : render(merged)
+            entry.customEmojiCandidates = entry.document.customEmojiCandidates()
+        }
         entry.post = merged
         replaceCost(of: &entry)
         entry.revision = nextRevision()
@@ -134,6 +143,7 @@ public struct PostStore: Sendable {
         guard !entry.post.isDeleted else { return false }
         entry.post = Self.tombstone(of: entry.post, deleteAt: time.isZero ? MattermostTimestamp(milliseconds: 1) : time)
         entry.document = .empty
+        entry.customEmojiCandidates = []
         replaceCost(of: &entry)
         entry.revision = nextRevision()
         entries[id] = entry
@@ -219,6 +229,7 @@ public struct PostStore: Sendable {
         }
         for (key, value) in post.props.systemContext { cost += 64 + key.utf8.count + value.utf8.count }
         cost += post.linkPreview?.estimatedCost ?? 0
+        cost += post.customEmojis.reduce(0) { $0 + $1.estimatedCost }
         return cost
     }
 
@@ -243,6 +254,7 @@ public struct PostStore: Sendable {
         dead.hasReactions = false
         dead.props = .empty
         dead.linkPreview = nil
+        dead.customEmojis = []
         return dead
     }
 }

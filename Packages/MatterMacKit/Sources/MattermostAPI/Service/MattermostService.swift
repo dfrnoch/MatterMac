@@ -393,6 +393,25 @@ public protocol MattermostService: Sendable {
     /// `POST /users/search`.
     func searchUsers(_ query: UserSearchQuery) async throws(APIError) -> [User]
 
+    // Custom emoji (all answer 501 when `EnableCustomEmoji` is off) and slash commands
+    /// `POST /emoji/names` in batches of at most 200 names. Unknown names are simply
+    /// absent from the result.
+    func customEmoji(names: [String]) async throws(APIError) -> [CustomEmoji]
+    /// `GET /emoji/name/{name}`; the server's "not found" 404 is `nil`.
+    func customEmoji(named name: String) async throws(APIError) -> CustomEmoji?
+    /// `GET /emoji?page=&per_page=&sort=name` (stable name order; `per_page` ≤ 200).
+    func customEmojiList(page: Int, perPage: Int) async throws(APIError) -> [CustomEmoji]
+    /// `GET /emoji/autocomplete?name=` (name prefix, at most 100 results).
+    func autocompleteCustomEmoji(name: String) async throws(APIError) -> [CustomEmoji]
+    /// `GET /teams/{team}/commands/autocomplete_suggestions?user_input=`: built-in,
+    /// custom and plugin command (and argument) suggestions for `userInput`, which
+    /// starts with `/`.
+    func commandSuggestions(userInput: String, team: TeamID, channel: ChannelID, rootID: PostID?)
+        async throws(APIError) -> [CommandSuggestion]
+    /// `GET /teams/{team}/commands/autocomplete` (legacy list of autocompleting
+    /// commands; top-level triggers only).
+    func autocompleteCommands(team: TeamID) async throws(APIError) -> [CommandSuggestion]
+
     // Posts
     func posts(channel: ChannelID, query: PostPageQuery, collapsedThreads: Bool, priority: RequestPriority)
         async throws(APIError) -> PostPage

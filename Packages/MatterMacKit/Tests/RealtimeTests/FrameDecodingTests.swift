@@ -481,10 +481,12 @@ struct FrameDecodingTests {
     }
 
     @Test func signalEvents() throws {
-        guard case (.emojiAdded, 1) = try event(F.emojiAdded(seq: 1)) else {
+        guard case (.emojiAdded(let emoji), 1) = try event(F.emojiAdded(seq: 1)) else {
             Issue.record("expected emoji_added")
             return
         }
+        #expect(emoji?.name == "party")
+        #expect(emoji?.id == "emojiemojiemojiemojiemoji")
         guard case (.configChanged, 2) = try event(F.configChanged(seq: 2)) else {
             Issue.record("expected config_changed")
             return

@@ -470,6 +470,9 @@ public struct Post: Hashable, Sendable, Identifiable {
     public var props: PostProps
     /// Server-provided preview of the post's first link (`metadata.embeds`), if any.
     public var linkPreview: LinkPreview?
+    /// Custom emoji used by the message or its reactions (`metadata.emojis`), bounded
+    /// at decode time. Saves a name lookup; empty when the server sent none.
+    public var customEmojis: [CustomEmoji] = []
 
     public init(id: PostID, channelID: ChannelID, userID: UserID, rootID: PostID? = nil, message: String,
                 type: PostType = .normal, createAt: MattermostTimestamp,

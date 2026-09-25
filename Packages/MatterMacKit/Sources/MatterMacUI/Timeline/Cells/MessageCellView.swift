@@ -29,6 +29,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
         super.draw(dirtyRect)
     }
     private var avatarRequest: TimelineImageRequest?
+    private var emojiRequests: Set<TimelineImageRequest> = []
     private var thumbnailRequests: [TimelineImageRequest: Int] = [:]
     /// Requests registered with the host that have not been satisfied yet.
     private var outstandingRequests: Set<TimelineImageRequest> = []
@@ -130,7 +131,20 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
             ])
         }
 
-        bodyTextView.setText(body, width: layout.body.width)
+        // Attachments in the render cache hold geometry only. Each displayed cell
+        // owns its images, released with the pipeline lease on reuse/scroll-out.
+        let displayedBody = NSMutableAttributedString(attributedString: body)
+        body.enumerateAttribute(.matterMacCustomEmoji, in: NSRange(location: 0, length: body.length)) { value, range, _ in
+            guard let id = value as? String,
+                  let template = body.attribute(.attachment, at: range.location, effectiveRange: nil) as? NSTextAttachment else { return }
+            let attachment = NSTextAttachment()
+            attachment.bounds = template.bounds
+            let request = TimelineImageRequest.customEmoji(id)
+            emojiRequests.insert(request)
+            attachment.attachmentCell = CustomEmojiAttachmentCell(bounds: template.bounds, image: resolveImage(request))
+            displayedBody.addAttribute(.attachment, value: attachment, range: range)
+        }
+        bodyTextView.setText(displayedBody, width: layout.body.width)
         bodyTextView.onMentionClick = { [weak self] key, value in
             guard let host = self?.host else { return }
             host.perform(key == .matterMacChannelMention ? .channelMentionTapped(value) : .mentionTapped(value))
@@ -298,7 +312,12 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
             let view = reactionViews[index]
             let emoji = host.renderer.emojiText(for: reaction.emojiName)
             view.configure(emoji: emoji, count: reaction.count, includesCurrentUser: reaction.includesCurrentUser,
-                           fonts: fonts)
+                           fonts: fonts, custom: reaction.customEmojiID != nil)
+            if let id = reaction.customEmojiID {
+                let request = TimelineImageRequest.customEmoji(id)
+                emojiRequests.insert(request)
+                view.image = resolveImage(request)
+            }
             view.frame = rowLayout.reactions[index]
             view.isHidden = false
             let reactors = TimelineStrings.reactors(reaction)
@@ -389,6 +408,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
     func imageDidBecomeAvailable(_ request: TimelineImageRequest) {
         guard outstandingRequests.contains(request), let host, let image = host.image(for: request) else { return }
         if request == avatarRequest { avatarView.image = image }
+        if emojiRequests.contains(request) { setEmojiImage(image, for: request) }
         if request == linkPreviewRequest { linkPreviewView?.setImage(image) }
         if let index = thumbnailRequests[request], index < thumbnailViews.count {
             thumbnailViews[index].setImage(image)
@@ -398,11 +418,26 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
     /// Re-queries images (e.g. after a backing-scale change).
     func refreshImages() {
         guard host != nil else { return }
+        for request in emojiRequests { setEmojiImage(resolveImage(request), for: request) }
         if let request = avatarRequest { avatarView.image = resolveImage(request) }
         if let request = linkPreviewRequest { linkPreviewView?.setImage(resolveImage(request)) }
         for (request, index) in thumbnailRequests where index < thumbnailViews.count {
             thumbnailViews[index].setImage(resolveImage(request))
         }
+    }
+
+    private func setEmojiImage(_ image: NSImage?, for request: TimelineImageRequest) {
+        guard case .customEmoji(let id) = request else { return }
+        if let storage = bodyTextView.textStorage {
+            storage.enumerateAttribute(.matterMacCustomEmoji, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+                guard value as? String == id,
+                      let attachment = storage.attribute(.attachment, at: range.location, effectiveRange: nil) as? NSTextAttachment else { return }
+                (attachment.attachmentCell as? CustomEmojiAttachmentCell)?.image = image
+            }
+            bodyTextView.needsDisplay = true
+        }
+        for (index, reaction) in (post?.reactions ?? []).prefix(reactionViews.count).enumerated()
+            where reaction.customEmojiID == id { reactionViews[index].image = image }
     }
 
     var hasOutstandingImageRequests: Bool { !outstandingRequests.isEmpty }
@@ -416,6 +451,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
 
     func releaseImageDemand() {
         avatarView.image = nil
+        for request in emojiRequests { setEmojiImage(nil, for: request) }
         for view in thumbnailViews { view.setImage(nil) }
         linkPreviewView?.setImage(nil)
         if let host {
@@ -438,6 +474,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
         avatarRequest = nil
         linkPreviewRequest = nil
         thumbnailRequests.removeAll()
+        emojiRequests.removeAll()
         linkPreviewView?.reset()
         linkPreviewView?.isHidden = true
         hoverTimeLabel?.isHidden = true

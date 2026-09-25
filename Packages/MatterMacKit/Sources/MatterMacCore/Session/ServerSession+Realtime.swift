@@ -176,7 +176,9 @@ extension ServerSession {
             refreshConfiguration()
         case .sidebarCategoriesChanged(let team):
             handleSidebarCategoriesChanged(team: team)
-        case .emojiAdded, .unhandled:
+        case .emojiAdded(let emoji):
+            handleEmojiAdded(emoji)
+        case .unhandled:
             break
         }
     }

@@ -11,6 +11,8 @@ public final class FakeMattermostService: MattermostService {
     private let lock: OSAllocatedUnfairLock<State>
     /// Sidebar categories, browsing and membership fakes (FakeMattermostService+Directory.swift).
     let directory = OSAllocatedUnfairLock(initialState: DirectoryState())
+    /// Custom emoji and slash-command fakes (FakeMattermostService+Emoji.swift).
+    let emojiCommands = OSAllocatedUnfairLock(initialState: EmojiCommandState())
 
     public struct State: Sendable {
         public var me: User

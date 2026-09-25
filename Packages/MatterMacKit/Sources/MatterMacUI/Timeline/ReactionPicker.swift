@@ -6,13 +6,30 @@ import MatterMacCore
 /// "Frequently Used" row (usage is never recorded), and the catalog grid by
 /// category. The search field keeps focus: arrow keys move the grid selection,
 /// Return picks the selected emoji (the first one by default), Escape cancels.
-/// Custom emoji are not offered.
+/// Custom emoji are loaded by page while browsing, or by the server autocomplete.
 final class ReactionPickerViewController: NSViewController, NSSearchFieldDelegate, NSCollectionViewDataSource,
                                           NSCollectionViewDelegate, NSCollectionViewDelegateFlowLayout {
+    struct Entry: Equatable {
+        let name: String
+        let glyph: String
+        let customID: String?
+        init(_ emoji: SystemEmoji) { name = emoji.name; glyph = emoji.glyph; customID = nil }
+        init(_ emoji: CustomEmoji) { name = emoji.name; glyph = ":"; customID = emoji.id }
+    }
     struct Section: Equatable {
         let title: String
-        let emoji: [SystemEmoji]
+        let emoji: [Entry]
     }
+    var customPage: ((Int, String) async -> [CustomEmoji])?
+    var customImage: ((String) async -> ImagePipeline.Decoded?)?
+    var customLimit = ResourceBudget.standard.customEmojiPickerEntries
+    private var customEntries: [Entry] = []
+    private var customTask: Task<Void, Never>?
+    private var customGeneration = 0
+    private var nextPage = 0
+    private var hasMore = true
+    private var currentQuery = ""
+
 
     static let itemSize = NSSize(width: 32, height: 32)
     static let columns = 9
@@ -42,16 +59,16 @@ final class ReactionPickerViewController: NSViewController, NSSearchFieldDelegat
     init(catalog: EmojiCatalog = .system) {
         self.catalog = catalog
         let frequent = EmojiCatalog.defaultQuickReactions.compactMap(catalog.emoji(named:))
-        browseSections = [Section(title: String(localized: "Frequently Used"), emoji: frequent)]
+        browseSections = [Section(title: String(localized: "Frequently Used"), emoji: frequent.map(Entry.init))]
             + EmojiCategory.allCases.filter(\.isShownInPicker).map {
-                Section(title: $0.displayName, emoji: catalog.pickerEmoji(in: $0))
+                Section(title: $0.displayName, emoji: catalog.pickerEmoji(in: $0).map(Entry.init))
             }
         super.init(nibName: nil, bundle: nil)
     }
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    var selectedEmoji: SystemEmoji? {
+    var selectedEmoji: Entry? {
         guard let selection, sections.indices.contains(selection.section),
               sections[selection.section].emoji.indices.contains(selection.item) else { return nil }
         return sections[selection.section].emoji[selection.item]
@@ -132,11 +149,58 @@ final class ReactionPickerViewController: NSViewController, NSSearchFieldDelegat
             // combinations are longer), so those are not offered.
             let results = catalog.search(trimmed, limit: Self.maximumResults).map(\.emoji)
                 .filter { Reaction.isValidEmojiName($0.name) }
-            sections = results.isEmpty ? [] : [Section(title: String(localized: "Search Results"), emoji: results)]
+            sections = results.isEmpty ? [] : [Section(title: String(localized: "Search Results"), emoji: results.map(Entry.init))]
         }
+        currentQuery = trimmed
+        customGeneration += 1
+        customTask?.cancel()
+        customTask = nil
+        customEntries = []
+        nextPage = 0
+        hasMore = true
+        loadCustomPage()
         emptyLabel.isHidden = !sections.isEmpty
         collectionView.reloadData()
         select(sections.firstIndex { !$0.emoji.isEmpty }.map { IndexPath(item: 0, section: $0) }, announce: false)
+    }
+
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        customGeneration += 1
+        customTask?.cancel()
+        customTask = nil
+        for case let item as EmojiPickerItem in collectionView.visibleItems() { item.cancelImage() }
+    }
+
+    func loadCustomPage() {
+        guard customTask == nil, hasMore, let customPage else { return }
+        let generation = customGeneration, page = nextPage, query = currentQuery
+        customTask = Task { [weak self] in
+            let result = await customPage(page, query)
+            guard !Task.isCancelled, let self, customGeneration == generation else { return }
+            customTask = nil
+            let known = Set(customEntries.map(\.name))
+            customEntries += result.filter { !known.contains($0.name) }.map(Entry.init)
+            customEntries = Array(customEntries.prefix(max(0, customLimit)))
+            nextPage += 1
+            hasMore = query.isEmpty && result.count == 60 && customEntries.count < customLimit
+            sections.removeAll { $0.title == String(localized: "Custom") }
+            if !customEntries.isEmpty { sections.append(Section(title: String(localized: "Custom"), emoji: customEntries)) }
+            emptyLabel.isHidden = !sections.isEmpty
+            collectionView.reloadData()
+            if selection == nil { select(sections.firstIndex { !$0.emoji.isEmpty }.map { IndexPath(item: 0, section: $0) }, announce: false) }
+        }
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, willDisplay item: NSCollectionViewItem,
+                        forRepresentedObjectAt indexPath: IndexPath) {
+        if sections[indexPath.section].title == String(localized: "Custom"),
+           indexPath.item >= customEntries.count - 18 { loadCustomPage() }
+    }
+
+    func collectionView(_ collectionView: NSCollectionView, didEndDisplaying item: NSCollectionViewItem,
+                        forRepresentedObjectAt indexPath: IndexPath) {
+        (item as? EmojiPickerItem)?.cancelImage()
     }
 
     private func select(_ path: IndexPath?, announce: Bool = true) {
@@ -201,7 +265,7 @@ final class ReactionPickerViewController: NSViewController, NSSearchFieldDelegat
         onPick?(emoji.name)
     }
 
-    static func spokenName(_ emoji: SystemEmoji) -> String {
+    static func spokenName(_ emoji: Entry) -> String {
         emoji.name.replacingOccurrences(of: "_", with: " ")
     }
 
@@ -236,7 +300,7 @@ final class ReactionPickerViewController: NSViewController, NSSearchFieldDelegat
         -> NSCollectionViewItem {
         let item = collectionView.makeItem(withIdentifier: EmojiPickerItem.identifier, for: indexPath)
         if let item = item as? EmojiPickerItem {
-            item.configure(sections[indexPath.section].emoji[indexPath.item])
+            item.configure(sections[indexPath.section].emoji[indexPath.item], imageLoader: customImage)
             item.isCurrent = indexPath == selection
         }
         return item
@@ -262,6 +326,11 @@ final class ReactionPickerViewController: NSViewController, NSSearchFieldDelegat
 final class EmojiPickerItem: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("EmojiPickerItem")
     private let glyphLabel = NSTextField(labelWithString: "")
+    private let customImageView = NSImageView()
+    private var imageTask: Task<Void, Never>?
+    private var decodedImage: ImagePipeline.Decoded?
+    private var imageID: String?
+
 
     override func loadView() {
         let cell = EmojiCellView(frame: NSRect(origin: .zero, size: ReactionPickerViewController.itemSize))
@@ -269,6 +338,10 @@ final class EmojiPickerItem: NSCollectionViewItem {
         glyphLabel.alignment = .center
         glyphLabel.translatesAutoresizingMaskIntoConstraints = false
         glyphLabel.setAccessibilityElement(false)
+        customImageView.frame = NSRect(x: 5, y: 5, width: 22, height: 22)
+        customImageView.imageScaling = .scaleProportionallyUpOrDown
+        customImageView.setAccessibilityElement(false)
+        cell.addSubview(customImageView)
         cell.addSubview(glyphLabel)
         NSLayoutConstraint.activate([
             glyphLabel.centerXAnchor.constraint(equalTo: cell.centerXAnchor),
@@ -279,8 +352,33 @@ final class EmojiPickerItem: NSCollectionViewItem {
         view = cell
     }
 
-    func configure(_ emoji: SystemEmoji) {
+    func cancelImage() {
+        imageTask?.cancel()
+        imageTask = nil
+        imageID = nil
+        customImageView.image = nil
+        decodedImage = nil
+    }
+
+    override func prepareForReuse() { super.prepareForReuse(); cancelImage() }
+
+    func configure(_ emoji: ReactionPickerViewController.Entry,
+                   imageLoader: ((String) async -> ImagePipeline.Decoded?)?) {
+        _ = view
+        cancelImage()
+        glyphLabel.isHidden = false
         glyphLabel.stringValue = emoji.glyph
+        if let id = emoji.customID, let imageLoader {
+            imageID = id
+            imageTask = Task { [weak self] in
+                let decoded = await imageLoader(id)
+                guard !Task.isCancelled, let self, imageID == id, let decoded else { return }
+                decodedImage = decoded
+                customImageView.image = NSImage(cgImage: decoded.image, size: .zero)
+                glyphLabel.isHidden = true
+                imageTask = nil
+            }
+        }
         view.toolTip = ":" + emoji.name + ":"
         view.setAccessibilityLabel(ReactionPickerViewController.spokenName(emoji))
         view.setAccessibilityHelp(":" + emoji.name + ":")
@@ -362,8 +460,21 @@ extension EmojiCategory {
 enum ReactionPickerPresenter {
     @discardableResult
     static func present(for post: PostID, in timeline: TimelineViewController,
+                        model: SessionViewModel? = nil, channel: ChannelID? = nil,
                         pick: @escaping (String) -> Void) -> NSPopover {
         let picker = ReactionPickerViewController()
+        if let model, let channel {
+            picker.customLimit = model.app?.environment.budget.customEmojiPickerEntries ?? ResourceBudget.standard.customEmojiPickerEntries
+            picker.customPage = { [weak model] page, query in
+                guard let model, !model.isDetached else { return [] }
+                return await model.session.customEmojiPage(page: page, query: query)
+            }
+            picker.customImage = { [weak model] id in
+                guard let model, !model.isDetached, let pipeline = model.app?.images else { return nil }
+                return await model.session.timelineImage(.customEmoji(id: id), channel: channel,
+                                                         maxPixelSize: 64, pipeline: pipeline)
+            }
+        }
         let popover = NSPopover()
         popover.behavior = .transient
         popover.contentViewController = picker

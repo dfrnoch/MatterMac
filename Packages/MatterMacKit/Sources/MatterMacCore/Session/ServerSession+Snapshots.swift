@@ -70,15 +70,18 @@ extension ServerSession {
         generations[target] = generation
         let channel = directory.channels[target.channelID]
         let isAdmin = me.isSystemAdmin || directory.memberships[target.channelID]?.isChannelAdmin == true
-        let context = TimelineBuildContext(
+        var context = TimelineBuildContext(
             scope: scope, me: me.id, channel: channel, teamName: teamName(for: channel), endpoint: endpoint,
             collapsedThreads: collapsedThreadsActive, editTimeLimitSeconds: capabilities.postEditTimeLimitSeconds,
             canDeleteOthers: isAdmin, now: now(), collapsedMessageCharacters: budget.collapsedMessageCharacters,
             timeZone: deps.timeZone(), lastViewedAtOnOpen: lastViewedOnOpen[target.channelID],
             linkPreviewImages: capabilities.hasImageProxy == true)
+        context.customEmojiEnabled = customEmojiEnabled
         let output = TimelineBuilder.build(window: window, store: store, directory: directory,
-                                           pending: pending.items(for: target), context: context)
+                                           pending: pending.items(for: target), context: context,
+                                           customEmoji: customEmoji)
         missingUsers.formUnion(output.missingUsers)
+        wantCustomEmoji(output.missingEmojiNames)
         var items = output.items
         if !window.isLoaded, case .loading = window.initialLoad {
             items = [TimelineItem(id: TimelineItemID(.olderGap), revision: 2,

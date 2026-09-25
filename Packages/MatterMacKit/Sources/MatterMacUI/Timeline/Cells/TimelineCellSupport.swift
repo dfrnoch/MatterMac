@@ -280,13 +280,13 @@ struct ReactionChipMetrics: Equatable {
     let emojiInkMinX: CGFloat
     let countWidth: CGFloat
 
-    init(emoji: String, count: String, fonts: TimelineFonts) {
+    init(emoji: String, count: String, fonts: TimelineFonts, custom: Bool = false) {
         let emojiText = NSAttributedString(string: emoji, attributes: [.font: fonts.body])
         let ink = emoji.isEmpty ? .zero : emojiText.boundingRect(
             with: NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesDeviceMetrics])
-        emojiInkMinX = min(0, floor(ink.minX))
-        emojiWidth = max(DrawnText.width(of: emojiText), ceil(ink.maxX) - emojiInkMinX)
+        emojiInkMinX = custom ? 0 : min(0, floor(ink.minX))
+        emojiWidth = custom ? ceil(fonts.body.ascender - fonts.body.descender) : max(DrawnText.width(of: emojiText), ceil(ink.maxX) - emojiInkMinX)
         countWidth = DrawnText.width(of: NSAttributedString(string: count, attributes: [.font: fonts.metaBold]))
     }
 
@@ -294,6 +294,7 @@ struct ReactionChipMetrics: Equatable {
 }
 
 final class ReactionChipView: TimelinePressableView {
+    var image: NSImage? { didSet { needsDisplay = true } }
     private(set) var emoji = ""
     private(set) var countText = ""
     private(set) var isSelectedByCurrentUser = false
@@ -301,13 +302,13 @@ final class ReactionChipView: TimelinePressableView {
     private var countFont: NSFont = .systemFont(ofSize: 11, weight: .semibold)
     private(set) var metrics: ReactionChipMetrics?
 
-    func configure(emoji: String, count: Int, includesCurrentUser: Bool, fonts: TimelineFonts) {
+    func configure(emoji: String, count: Int, includesCurrentUser: Bool, fonts: TimelineFonts, custom: Bool = false) {
         self.emoji = emoji
         self.countText = "\(count)"
         self.isSelectedByCurrentUser = includesCurrentUser
         self.emojiFont = fonts.body
         self.countFont = fonts.metaBold
-        metrics = ReactionChipMetrics(emoji: emoji, count: countText, fonts: fonts)
+        metrics = ReactionChipMetrics(emoji: emoji, count: countText, fonts: fonts, custom: custom)
         needsDisplay = true
     }
 
@@ -331,7 +332,14 @@ final class ReactionChipView: TimelinePressableView {
                                                           : TimelinePalette.reactionCount,
             ])
             var x = ReactionChipMetrics.horizontalPadding
-            emojiText.draw(at: NSPoint(x: x - metrics.emojiInkMinX, y: floor((bounds.height - emojiText.size().height) / 2)))
+            if let image {
+                image.draw(in: NSRect(x: x, y: (bounds.height - metrics.emojiWidth) / 2,
+                                     width: metrics.emojiWidth, height: metrics.emojiWidth),
+                           from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            } else {
+                emojiText.draw(with: NSRect(x: x - metrics.emojiInkMinX, y: floor((bounds.height - emojiText.size().height) / 2),
+                                           width: metrics.emojiWidth, height: bounds.height), options: [.truncatesLastVisibleLine])
+            }
             x += metrics.emojiWidth + ReactionChipMetrics.spacing
             countText.draw(at: NSPoint(x: x, y: floor((bounds.height - countText.size().height) / 2)))
         }
@@ -339,6 +347,7 @@ final class ReactionChipView: TimelinePressableView {
 
     func reset() {
         resetPressable()
+        image = nil
         emoji = ""
         countText = ""
         isSelectedByCurrentUser = false

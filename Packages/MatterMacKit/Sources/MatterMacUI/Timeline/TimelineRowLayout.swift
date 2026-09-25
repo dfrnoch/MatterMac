@@ -115,7 +115,7 @@ struct TimelineRowMetrics {
     /// Same measurement the chip draws with (`ReactionChipMetrics`), so nothing clips.
     func reactionChipWidth(_ reaction: ReactionGroup, renderer: MessageRenderer) -> CGFloat {
         let title = reactionTitle(reaction, renderer: renderer)
-        return ReactionChipMetrics(emoji: title.emoji, count: title.count, fonts: fonts).width
+        return ReactionChipMetrics(emoji: title.emoji, count: title.count, fonts: fonts, custom: reaction.customEmojiID != nil).width
     }
 
     func statusText(for state: SendState) -> NSAttributedString {

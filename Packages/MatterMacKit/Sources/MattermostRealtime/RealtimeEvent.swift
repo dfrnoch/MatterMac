@@ -47,7 +47,9 @@ public enum RealtimeEvent: Sendable {
     case threadUpdated(threadID: PostID, channelID: ChannelID?)
     case threadReadChanged(threadID: PostID?, channelID: ChannelID?)
     case threadFollowChanged(threadID: PostID, isFollowing: Bool)
-    case emojiAdded
+    /// A custom emoji was created; `nil` when the payload could not be read (the
+    /// event only makes a name known sooner, so it is not a durable change).
+    case emojiAdded(CustomEmoji?)
     case configChanged
     case licenseChanged
     /// An event MatterMac does not handle. Only the (bounded) name is kept.

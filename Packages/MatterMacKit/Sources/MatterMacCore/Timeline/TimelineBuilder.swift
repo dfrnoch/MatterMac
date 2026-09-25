@@ -21,6 +21,9 @@ public struct TimelineBuildContext {
     /// (`HasImageProxy`). Without a proxy, previews are text-only and nothing is fetched
     /// from third-party sites.
     public var linkPreviewImages: Bool
+    /// The server has custom emoji on (`EnableCustomEmoji`): non-system `:name:` are
+    /// resolved and reported in `Output.missingEmojiNames` until known.
+    public var customEmojiEnabled = false
 
     public init(scope: AccountScope, me: UserID, channel: Channel?, teamName: String?, endpoint: ServerEndpoint,
                 collapsedThreads: Bool, editTimeLimitSeconds: Int?, canDeleteOthers: Bool, now: MattermostTimestamp,
@@ -50,10 +53,18 @@ public enum TimelineBuilder {
         public var items: [TimelineItem]
         /// Authors whose profiles are not retained; the session fetches them.
         public var missingUsers: Set<UserID>
+        /// Custom emoji candidate names not looked up yet (bounded, first-seen order).
+        public var missingEmojiNames: [String] = []
     }
 
+    /// Most names reported missing by one build.
+    public static let maximumMissingEmojiNames = 200
+
     public static func build(window: HistoryWindow, store: PostStore, directory: DirectoryStore,
-                             pending: [PendingSend], context: TimelineBuildContext) -> Output {
+                             pending: [PendingSend], context: TimelineBuildContext,
+                             customEmoji: CustomEmojiStore? = nil) -> Output {
+        var missingEmoji: [String] = []
+        var missingEmojiSet = Set<String>()
         var items: [TimelineItem] = []
         items.reserveCapacity(window.count + pending.count + 8)
         var missing = Set<UserID>()
@@ -102,10 +113,15 @@ public enum TimelineBuilder {
             let isContinuation = !separated && previous.map { prev in
                 continues(prev, with: post, isThread: isThread, showsThreadContext: showsThreadContext)
             } ?? false
-            let presentation = postPresentation(
+            var presentation = postPresentation(
                 post: post, document: stored.document, author: author, isContinuation: isContinuation,
                 showsThreadContext: showsThreadContext, expanded: window.expanded.contains(post.id),
                 context: context, isThread: isThread, directory: directory, missing: &missing)
+            if context.customEmojiEnabled, let customEmoji {
+                resolveCustomEmoji(in: &presentation, post: post, candidates: stored.customEmojiCandidates,
+                                   store: customEmoji, now: context.now.date, missing: &missingEmoji,
+                                   missingSet: &missingEmojiSet)
+            }
             var hasher = Hasher()
             hasher.combine(stored.revision)
             hasher.combine(isContinuation)
@@ -117,6 +133,7 @@ public enum TimelineBuilder {
             hasher.combine(presentation.reactions)
             hasher.combine(presentation.isSaved)
             hasher.combine(presentation.linkPreview)
+            hasher.combine(presentation.customEmoji)
             items.append(TimelineItem(id: TimelineItemID(.post(post.id)), revision: UInt64(bitPattern: Int64(hasher.finalize())),
                                       content: .post(presentation)))
             previous = post
@@ -164,7 +181,54 @@ public enum TimelineBuilder {
                                           content: .post(presentation)))
             }
         }
-        return Output(items: items, missingUsers: missing)
+        return Output(items: items, missingUsers: missing, missingEmojiNames: missingEmoji)
+    }
+
+    /// Fills `customEmoji` (message) and `customEmojiID` (reactions) from the post's
+    /// own `metadata.emojis` first, then the session store; unknown names are reported.
+    static func resolveCustomEmoji(in presentation: inout PostPresentation, post: Post, candidates: [String],
+                                   store: CustomEmojiStore, now: Date, missing: inout [String],
+                                   missingSet: inout Set<String>) {
+        guard case .document = presentation.body else {
+            if !presentation.reactions.isEmpty {
+                resolveReactions(&presentation, post: post, store: store, now: now, missing: &missing, missingSet: &missingSet)
+            }
+            return
+        }
+        func lookup(_ name: String) -> String? {
+            if let own = post.customEmojis.first(where: { $0.name == name }) { return own.id }
+            switch store.peekResolution(name, now: now) {
+            case .custom(let emoji): return emoji.id
+            case .missing: return nil
+            case .unknown:
+                if missing.count < maximumMissingEmojiNames, missingSet.insert(name).inserted { missing.append(name) }
+                return nil
+            }
+        }
+        var resolved: [String: String] = [:]
+        for name in candidates { if let id = lookup(name) { resolved[name] = id } }
+        presentation.customEmoji = resolved
+        resolveReactions(&presentation, post: post, store: store, now: now, missing: &missing, missingSet: &missingSet)
+    }
+
+    private static func resolveReactions(_ presentation: inout PostPresentation, post: Post, store: CustomEmojiStore,
+                                         now: Date, missing: inout [String], missingSet: inout Set<String>) {
+        guard !presentation.reactions.isEmpty else { return }
+        var reactions = presentation.reactions
+        for index in reactions.indices where CustomEmoji.isCandidateName(reactions[index].emojiName) {
+            let name = reactions[index].emojiName
+            if let own = post.customEmojis.first(where: { $0.name == name }) {
+                reactions[index].customEmojiID = own.id
+                continue
+            }
+            switch store.peekResolution(name, now: now) {
+            case .custom(let emoji): reactions[index].customEmojiID = emoji.id
+            case .missing: continue
+            case .unknown:
+                if missing.count < maximumMissingEmojiNames, missingSet.insert(name).inserted { missing.append(name) }
+            }
+        }
+        presentation.reactions = reactions
     }
 
     // MARK: - Pieces
