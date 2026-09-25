@@ -83,17 +83,41 @@ it bundles no font, emoji atlas, or external runtime dependency. See
 
 ## README screenshots
 
-`docs/images/*.png` are captures of MatterMac's own test window, with no other part
-of the screen. They were taken by the opt-in `LiveReadmeScreenshotsTests`
-(UI-support target), signed in as the synthetic test user **alice** on the local
-Mattermost 11.11.1 test server (`Tests/Integration/Server`). The only content is
-the synthetic "Design Demo" channel seeded by `LiveSeedDemoTests`. Its dashboard
-image is drawn with Core Graphics in that test, and contains no real data or
-third-party art. Captures were downscaled to 1600 px with `sips`. To reproduce
-them, from the repository root with the test servers running:
+The screenshots in `docs/images/` (every file except `icon.png`) come from the
+opt-in `ReadmeShowcaseTests` (UI-support target, an XCTest case). It runs the real
+SwiftUI/AppKit shell in the test process against the in-process TestSupport fakes:
+no server, no network and no real account. Everything on screen is synthetic and
+defined in that file:
+
+- the fictional company "Northwind Studio", its people, teams, channels and
+  messages (English, no real people or companies);
+- the profile pictures, team icons and the attached dashboard image, drawn with
+  Core Graphics in the test (no photos, stock art or third-party images);
+- the app icon on the sign-in screen, read from a local build of this
+  repository's `MatterMac.app`.
+
+Each window is a focused window on the main display, captured on its own with
+`screencapture -l` (never the screen) with its shadow. Behind the windows the test
+shows the desktop wallpaper of the Mac it runs on (read with
+`NSWorkspace.desktopImageURL(for:)` and never changed), so the glass materials
+blur it. The test then composites each capture onto the matching crop of that
+wallpaper and scales it to 2000 px wide (PNG, or JPEG at quality 0.85 when a PNG
+would exceed 1 MB). The background of the current images is therefore the
+maintainer's own desktop wallpaper at capture time (2026-09-25), not an asset of
+this project; recapturing on another Mac uses that Mac's wallpaper.
+
+To reproduce from the repository root (it takes focus for about a minute; build
+the app first for its icon):
 
 ```sh
-set -a; . ./.local/test-server.env; set +a
-MM_LIVE_TESTS=1 MM_SEED_DEMO=1 swift test --package-path Packages/MatterMacKit --filter LiveSeedDemoTests
-MM_README_SCREENSHOTS=/tmp/mm-readme swift test --package-path Packages/MatterMacKit --filter LiveReadmeScreenshotsTests
+xcodebuild -workspace MatterMac.xcworkspace -scheme MatterMac -configuration Debug -derivedDataPath build build
+swift build --package-path Packages/MatterMacKit --build-tests
+MM_README_SHOWCASE=/tmp/mm-showcase xcrun xctest -AppleLocale en_US -AppleLanguages '(en)' -AppleAccentColor 4 \
+  -XCTest UITestsSupport.ReadmeShowcaseTests/testCaptureReadmeShowcase \
+  "$(swift build --package-path Packages/MatterMacKit --show-bin-path)/UITestsSupport.xctest"
 ```
+
+The composited images are written to `/tmp/mm-showcase/final/`, the raw window
+captures to `/tmp/mm-showcase/`. `MM_README_SHOWCASE_ONLY=hero,thread` limits the
+run to matching shots. The locale and accent are passed to `xctest` because it
+reads them before any test runs; they apply to that process only.

@@ -2068,3 +2068,42 @@ publish a nightly.
   the conversation area before opening the palette, while it is open, and after it
   closes. It failed on the old code and passes now.
 - `swift test` passes, and the Debug `xcodebuild` has no warnings.
+
+### README redesign and showcase screenshots (2026-09-25)
+
+**README**
+- New layout: an icon header with badges and links, a light/dark hero image, and
+  feature sections (conversations and threads, switcher and search, media viewer
+  and Channel Info, themes, sign-in).
+- Then install, build from source, a privacy/storage table, and the honest status
+  section.
+- Signing, secrets and notarization details moved to `docs/releasing.md`
+  (sections Signing and Secrets).
+
+**Screenshots:** 13 images in `docs/images/`, plus `icon.png` rendered with
+`ictool`. They come from the new opt-in XCTest
+`UITestsSupport/ReadmeShowcaseTests.swift` (`MM_README_SHOWCASE`):
+- an in-process synthetic workspace with the TestSupport fakes and Core Graphics
+  avatars, team icons and a dashboard image;
+- focused, on-screen windows over the user's desktop wallpaper, composited with the
+  window shadow;
+- the reproduce command is in `docs/assets.md`.
+
+`FakeMattermostService.channelStats` now takes member counts from
+`DirectoryState.memberCounts` and counts pinned posts.
+
+**Title bar in the captures.** In this test process, AppKit's title-bar scroll edge
+effect sometimes renders no blur (NSScrollPocket's `ThinFilmBackgroundReplay`
+opacity 0 and variable blur only), with or without activation. The user confirmed
+the real nightly 20260925.6 blurs correctly when focused, and an inactive copy of
+it was checked here too. The showcase therefore keeps each conversation short
+enough that no message sits under the title bar.
+
+**Checks:** `swift build --build-tests` has no warnings; `swift test` passes (the
+showcase test skips without its variable).
+
+**Open:**
+- The wallpaper (`glaze_1.heic`) needs the user's confirmation before publishing.
+- The sidebar still shows group DMs by username while the switcher uses display
+  names.
+- The old live `LiveReadmeScreenshotsTests` no longer matches the README.

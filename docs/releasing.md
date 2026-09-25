@@ -74,9 +74,48 @@ To exercise updates locally with Debug builds, serve a GitHub-shaped
 Debug builds accept updates signed by the team's Apple Development certificate.
 Release builds require Developer ID and notarization.
 
+## Signing
+
+The bundle ID is `dev.frnoch.mattermac`. Debug builds use Apple Development
+signing. Release builds use David Frnoch's Developer ID (team `ZJ37A69485`).
+
+To build without that certificate, append this ad-hoc override to the
+`xcodebuild` command; pull-request CI uses it:
+
+```sh
+CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= OTHER_CODE_SIGN_FLAGS=
+```
+
+`build-dmg.yml` does the following:
+
+1. Builds the universal app.
+2. Checks the version keys, the embedded update installer's signature, and the
+   Developer ID signature.
+3. Notarizes and staples the app, then a DMG with an Applications shortcut.
+4. Checks that Apple's status is `Accepted` and that Gatekeeper accepts both.
+
+The manual **Notarized DMG** workflow (`sign.yml`) makes the same DMG as a 7-day
+artifact without publishing a release.
+
+The move to this bundle ID gave the app a new sandbox container. Content caches
+from older builds are not migrated; the server refills them. Keychain service names
+are unchanged, but sign-ins created by an older ad-hoc build may not be readable;
+sign in again if needed.
+
 ## Secrets
 
-Same as the notarized build (see the README): `DEVELOPER_ID_CERTIFICATE_BASE64`,
-`DEVELOPER_ID_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`. The
-Release workflow passes them to the reusable build with `secrets: inherit`. The
-build keeps them in a temporary runner Keychain and deletes it afterwards.
+The Release workflow passes these repository secrets to the reusable build with
+`secrets: inherit`:
+
+- `DEVELOPER_ID_CERTIFICATE_BASE64`: the exported Developer ID identity, as
+  base64-encoded PKCS#12.
+- `DEVELOPER_ID_CERTIFICATE_PASSWORD`: the PKCS#12 export password.
+- `APPLE_ID`: the developer Apple Account email.
+- `APPLE_APP_SPECIFIC_PASSWORD`: a dedicated app-specific password for
+  notarization.
+
+The workflow validates the notarization credentials, keeps them and the signing
+identity in a temporary runner Keychain, and deletes that Keychain afterwards.
+Never store the account's normal password in GitHub. See
+[GitHub's certificate setup](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)
+and [Apple's notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).

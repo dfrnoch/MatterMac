@@ -1,43 +1,129 @@
-# MatterMac
+<p align="center">
+  <img src="docs/images/icon.png" width="128" height="128" alt="MatterMac app icon">
+</p>
 
-An independent native macOS client for existing Mattermost servers, built with
-SwiftUI, AppKit, Swift 6, and Apple frameworks. No Electron, no web view, and no
-external runtime dependencies. This is a development checkpoint, not an official
-Mattermost application or a release candidate.
+<h1 align="center">MatterMac</h1>
+
+<p align="center">
+  <b>A fast, native macOS client for your existing Mattermost servers.</b><br>
+  100% Swift, built with SwiftUI and AppKit. No Electron and no web view.
+</p>
+
+<p align="center">
+  <a href="https://github.com/dfrnoch/MatterMac/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/dfrnoch/MatterMac?include_prereleases&label=release&color=F05138"></a>
+  <img alt="macOS 14 or later" src="https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white">
+  <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white">
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/dfrnoch/MatterMac/releases"><b>Download</b></a> ·
+  <a href="#features">Features</a> ·
+  <a href="#build-from-source">Build from source</a> ·
+  <a href="#privacy-and-storage">Privacy</a> ·
+  <a href="#status">Status</a>
+</p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/conversation-dark.png">
-  <img alt="A MatterMac window: the channel sidebar with the team name in the title bar, and a conversation with a Markdown table, a thread summary, a task list, a New messages line and an image attachment" src="docs/images/conversation-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
+  <img alt="The MatterMac window. The rail shows two servers and four team icons with unread badges; the sidebar has favorites, channels with unread and mention badges, and direct messages with avatars and presence; the Product Launch channel shows a dashboard image, a PDF attachment, reactions, a four-reply thread, a New messages line, a checklist and an @mention" src="docs/images/hero-light.png">
 </picture>
 
-| Threads beside the conversation | In-window image viewer |
+> [!NOTE]
+> MatterMac is an independent project, not an official Mattermost application.
+> It is under active development: nightly builds are published every day, and
+> there is no production release yet.
+
+## Features
+
+### Conversations that feel at home on the Mac
+
+Markdown, tables, task lists, code blocks, quotes, emoji and attachment cards are
+all rendered natively, and threads open in a pane beside the channel. Reactions,
+edits, pinned and saved messages, unread lines and mentions work the way you expect
+from Mattermost.
+
+<p align="center">
+  <img src="docs/images/thread-dark.png" width="100%" alt="A thread open in a pane next to the channel, with a Swift code block, an edited reply and reactions">
+</p>
+
+### Jump anywhere, find anything
+
+Press <kbd>⌘</kbd> <kbd>K</kbd> to switch to any channel, direct message or person.
+Results are ranked by how well they match, unread conversations come first, and
+matching ignores accents. Server-wide message and file search is built in.
+
+| Quick switcher | Search |
 | --- | --- |
-| ![A thread open in a pane next to the channel](docs/images/thread-dark.png) | ![An attached image open in the dimmed in-window viewer with author, date and actions](docs/images/image-viewer-dark.png) |
+| ![The ⌘K quick switcher over the conversation, with Unread and Recent sections, avatars, presence and badges](docs/images/switcher-dark.png) | ![Search results for "screenshots" with two matching messages](docs/images/search-dark.png) |
 
-<sub>Screenshots show synthetic test users and content on a local test server
-(see [asset provenance](docs/assets.md#readme-screenshots)).</sub>
+### Images, files and channel details
 
-## Highlights
+Images open in an in-window viewer with zoom, keyboard navigation, copy and save.
+Channel Info collects the purpose, header, members, pinned messages, files and
+per-channel settings.
 
-- **Native and light.** A SwiftUI shell with an AppKit timeline and composer that
-  render Markdown, tables, task lists, code and emoji natively. Memory, tasks and
-  caches are bounded by one resource budget.
+| Media viewer | Channel Info |
+| --- | --- |
+| ![The dashboard image open in the dimmed in-window viewer, with the author, date and actions](docs/images/media-viewer-dark.png) | ![The Channel Info pane with members, pinned messages, purpose, header and settings](docs/images/channel-info-light.png) |
+
+### Make it yours
+
+Pick a window theme, or mix your own gradient from two to four colours. Themes tint
+the sidebar, conversation and Liquid Glass chrome, in light and dark mode. MatterMac
+reduces any tint that would make text hard to read.
+
+| Dusk | Lagoon | Ember |
+| --- | --- | --- |
+| ![The main window with the Dusk theme in dark mode](docs/images/themes-dusk-dark.jpg) | ![The main window with the Lagoon theme in light mode](docs/images/themes-lagoon-light.jpg) | ![The main window with the Ember theme in dark mode](docs/images/themes-ember-dark.jpg) |
+
+<p align="center">
+  <img src="docs/images/settings-theme-dark.jpg" width="70%" alt="Settings › Appearance with the theme gallery and the custom gradient editor">
+</p>
+
+### Signs in the way your server does
+
+Sign in with a password (including MFA), a personal access token, or browser-based
+SSO. Several servers can stay signed in at once, and sign-ins are restored from the
+macOS Keychain at launch.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/sign-in-dark.jpg">
+  <img alt="The sign-in card: a Server, Confirm, Sign In step indicator, the server address with a Change button, and the password form" src="docs/images/sign-in-light.jpg">
+</picture>
+
+### And the rest
+
+- **Native and light.** A SwiftUI shell with an AppKit timeline and composer.
+  Memory, tasks and caches are all bounded by one resource budget.
 - **Fast to open.** An encrypted on-device cache shows your channels, profiles,
   images and recent messages at once, then refreshes them from the server.
-- **Liquid Glass on macOS 26 and later** (earlier systems get material
-  fallbacks). Floating account and composer controls, a jump-to-latest pill, and
-  a full-window image viewer with zoom and keyboard navigation.
-- **Works with your server as it is.** Password, access-token and browser SSO
-  sign-in; channels, direct and group messages, threads, reactions, search,
-  uploads and notifications. Tested on Mattermost 10.11 and 11.11, including
-  subpath deployments.
+- **Liquid Glass** on macOS 26 and later, with material fallbacks on macOS 14 and 15.
+- **Everyday essentials:** file uploads and downloads, pasted images, custom emoji
+  with completion, slash-command suggestions, and editing your profile and status.
+- **Mac integration:** notifications with message previews (on by default), automatic
+  online and away status, keyboard shortcuts for navigation, and a Dock badge.
+- **Nothing lost silently.** Review Unsent Work lets you copy drafts or unconfirmed
+  sends and export pasted images before you discard them.
+- **Keeps itself up to date** from GitHub releases, on the Stable or Nightly channel.
 
-## Build and run
+## Install
 
-The verified development toolchain is **Xcode 27.0 / Apple Swift 6.4** on macOS 27.
-The app targets **macOS 14 or later**; execution on macOS 14 and Intel hardware has
-not yet been verified. Open `MatterMac.xcworkspace`, select the MatterMac scheme,
-and run, or use these commands from the repository root:
+1. Download the latest DMG from [Releases](https://github.com/dfrnoch/MatterMac/releases).
+   Every build is signed with a Developer ID and notarized by Apple.
+2. Open it and drag **MatterMac** to Applications.
+3. Enter your server address and choose **Continue**. Check the address MatterMac
+   will connect to, choose **Connect**, then sign in. Release builds require HTTPS.
+
+MatterMac checks GitHub for updates at launch and every six hours, verifies what it
+downloads, and offers **Restart to Update**. Choose the channel in
+Settings ▸ General ▸ Updates.
+
+## Build from source
+
+You need **Xcode 27** (Swift 6.4). The app runs on **macOS 14 or later**, though
+macOS 14 and Intel Macs have not been verified yet. Open `MatterMac.xcworkspace`
+and run the MatterMac scheme, or use these commands from the repository root:
 
 ```sh
 swift test --package-path Packages/MatterMacKit
@@ -46,122 +132,76 @@ xcodebuild -workspace MatterMac.xcworkspace -scheme MatterMac \
 open build/Build/Products/Debug/MatterMac.app
 ```
 
-Enter your server address, choose Continue to review the normalized address, then
-Connect. Release builds require HTTPS. For the repository's local test servers,
-Debug builds accept `-MatterMacAllowInsecureLoopback YES`.
+- **Local test servers:** Debug builds accept `-MatterMacAllowInsecureLoopback YES`.
+  The Docker setup is in [CONTRIBUTING.md](CONTRIBUTING.md).
+- **No Developer ID certificate?** See [releasing](docs/releasing.md#signing) for the
+  ad-hoc signing override.
+- **Releases:** the nightly and production pipelines, versions, in-app updates and
+  secrets are all documented in [docs/releasing.md](docs/releasing.md).
 
-The bundle ID is `dev.frnoch.mattermac`. Debug uses Apple Development signing;
-Release uses David Frnoch’s Developer ID (team `ZJ37A69485`). To build without
-that certificate, append `CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= OTHER_CODE_SIGN_FLAGS=`
-to the build command. Pull-request CI uses this ad-hoc override.
+## Privacy and storage
 
-The **Release** GitHub Actions workflow publishes signed, notarized and stapled
-DMGs as GitHub releases ([releasing](docs/releasing.md)):
+MatterMac talks only to your Mattermost servers, plus GitHub to check for updates.
+It never sends account or message data to GitHub.
 
-- **Nightly:** built every day at 02:17 UTC when `main` changed, or on demand.
-  It is published as a pre-release named like **MatterMac 1.0.0-nightly.20260923.45**
-  (next version, UTC date, build number). The newest 14 nightlies are kept.
-- **Production:** run by hand with channel `production`. It releases
-  `MARKETING_VERSION` from `Shared.xcconfig` (or a given version) as `v1.0.0`,
-  then commits the next development version to `main` (patch, minor or major).
+| What | Where | Details |
+| --- | --- | --- |
+| **Sign-ins** | macOS Keychain | Bearer token and kind, server address and account ID. Passwords are never saved. |
+| **Content cache** | Sandbox Caches, encrypted | Images, profiles, the channel list and recent messages. Encrypted with a per-account key kept in Keychain, capped at 512 MiB of images and 96 MiB of other content, and excluded from backups. Cached messages never mark a channel read. |
+| **Settings** | MatterMac's preferences | The "On This Mac" values: notifications, previews, sound, Dock bounce, send behavior, text size, appearance and theme. |
+| **Drafts** | Memory only | Drafts, pending sends and pasted images stay in bounded memory. **They do not survive quit, a crash, or forced termination.** |
 
-MatterMac updates itself from these releases (Settings ▸ General ▸ Updates). It
-checks GitHub at launch and every six hours, downloads a newer build on your
-channel (Stable or Nightly), and verifies it. It then offers **Restart to
-Update**; an embedded installer service swaps the app and reopens it.
+Quitting keeps sign-ins and the cache; **Sign Out** removes that account's sign-in,
+cache and key. Settings ▸ Accounts shows the cache size and has **Clear Cache**.
 
-Both channels share `build-dmg.yml`, which builds the universal app, notarizes
-the app and a DMG with an Applications shortcut, and checks Apple's `Accepted`
-status and Gatekeeper. The manual **Notarized DMG** workflow makes the same DMG as
-a 7-day artifact without publishing a release.
+- **Limits:** drafts and pending sends share a budget of 100 items or 4 MiB of text,
+  and pasted images share 8 MiB. At the limit MatterMac refuses new work rather than
+  evicting unsent work.
+- **Uploads** start when you send; files can stay on the server if their message is
+  never posted.
+- **Downloads and exports** are written only when you choose to.
+- **Outside the app's control:** macOS swap, system diagnostics and other apps. A
+  full filesystem audit has not run yet.
 
-Required repository secrets:
+See decisions [0031](docs/decisions/0031-on-device-content-cache.md) and
+[0032](docs/decisions/0032-saved-local-settings-and-notifications.md).
 
-- `DEVELOPER_ID_CERTIFICATE_BASE64`: exported Developer ID identity, PKCS#12, base64 encoded.
-- `DEVELOPER_ID_CERTIFICATE_PASSWORD`: PKCS#12 export password.
-- `APPLE_ID`: the developer Apple Account email.
-- `APPLE_APP_SPECIFIC_PASSWORD`: a dedicated app-specific password for notarization.
+## Status
 
-The workflow validates notarization credentials, keeps them and the signing identity
-in a temporary runner Keychain, and deletes it afterwards. Never put the account's
-normal password in GitHub. See [GitHub’s certificate setup](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)
-and [Apple’s notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
+**Tested server versions.** Live tests cover REST and WebSocket messaging, and the
+native conversation and attachment flows, on Mattermost **10.11.24**, **11.11.1**,
+and **11.11.1 under a URL subpath**.
+- Both peers in these tests are native clients.
+- A separate real-app check exchanged channel and DM messages both ways with the
+  official web client on 11.11.1, including after relaunch and sign-in again.
+- Browser SSO supports the routes a server advertises, but each identity provider
+  still needs testing on a real deployment.
 
-The bundle ID change gives the app a new sandbox container. Existing content
-caches are not migrated; the server can refill them. Keychain service names stay
-unchanged, but access to sign-ins created by an older ad-hoc build is not guaranteed;
-sign in again if needed.
+See [compatibility](docs/compatibility.md) and the dated
+[verification record](docs/progress.md).
 
-## Current scope
+**Out of scope:** Calls, arbitrary web plugins, Boards, Playbooks dashboards and
+administration. Interactive command dialogs and ephemeral bot posts are not
+supported yet.
 
-- Password/PAT login, browser SSO handoff, and Keychain sign-in restoration.
-- Channels, DMs/group messages, collapsed threads, unread state, edits/deletions,
-  reactions, saved/pinned messages, and server message/file search.
-- Native Markdown tables, task lists, code/quotes and attachment cards; system and
-  custom emoji with completion, plus server slash-command suggestions.
-- File upload/download, pasted images, avatars, an in-window image viewer, and
-  profile editing with bounded profile-picture upload.
-- Multiple server sessions, keyboard navigation, server notification preferences,
-  macOS notifications with message previews (on by default), automatic
-  online/away status, and saved appearance/settings.
-- Session recovery notices and Review Unsent Work: copy individual drafts or
-  unconfirmed sends, export pasted images, and confirm local discard.
+**Still open:**
+- Accessibility, real input methods (IMEs), running on the minimum macOS version,
+  privacy audits and full performance gates are incomplete.
+- Synthetic rendering measurements are in [benchmarks](docs/benchmarks.md).
+- A [two-hour soak](docs/soak.md) found a row-retention defect. It is fixed and
+  covered by a regression test that failed before the fix, but still needs a
+  sustained foreground remeasurement.
 
-Live tests cover REST/WebSocket messaging and native conversation/attachment flows
-on Mattermost **10.11.24**, **11.11.1**, and **11.11.1 under a URL subpath**. These
-checks use two native clients. A separate real-app check verifies bidirectional
-channel/DM exchange with the official web client on 11.11.1, including fetching
-both conversations after relaunch and reauthentication. Browser SSO supports server-advertised routes, but individual identity
-providers still require deployment testing. See [compatibility](docs/compatibility.md)
-and the dated [verification record](docs/progress.md).
-
-Calls, arbitrary web plugins, Boards, Playbooks dashboards, and administration are
-outside the native messaging scope. Interactive command dialogs and ephemeral bot
-posts remain unsupported. Accessibility, real IMEs, minimum-OS execution, privacy
-audits, and full application performance gates remain incomplete. The synthetic
-native rendering measurements are recorded in [benchmarks](docs/benchmarks.md).
-A [two-hour app soak](docs/soak.md) exposed a native row-retention defect, now fixed
-and covered by a failing-before/passing-after regression. The corrected app still
-needs a sustained foreground remeasurement; macOS locked before that final run.
-
-## What is saved
-
-- **Sign-ins:** verified sign-ins are saved in the local macOS Keychain (bearer
-  token and kind, canonical server address, and account ID). Passwords are never
-  saved. Saved identity is checked on launch; server expiry or revocation can
-  still require another sign-in.
-- **Content cache:** to open quickly, MatterMac keeps a cache in its sandbox Caches
-  directory. It holds image bytes (avatars, team icons, attachment thumbnails and
-  previews, custom emoji), the channel list and profiles, the last open channel,
-  and the latest messages of recently opened channels. Every file is encrypted
-  with a per-account key kept in Keychain. The cache is bounded (512 MiB of images,
-  96 MiB of other content) and excluded from backups. Cached messages are only
-  shown until the server answers, and never mark a channel read.
-- **Quit keeps both; Sign Out removes that account's sign-in, cache and key.**
-  Settings ▸ Accounts shows the cache size and has **Clear Cache**. See
-  [decision 0031](docs/decisions/0031-on-device-content-cache.md).
-- **Settings:** the Settings values marked "On This Mac" (notifications, message
-  previews, sound, Dock bounce, send behavior, text size, appearance) are saved in
-  MatterMac's preferences on this Mac. Notifications and previews are on by
-  default; macOS asks for permission once, after your first sign-in. See
-  [decision 0032](docs/decisions/0032-saved-local-settings-and-notifications.md).
-- **Drafts:** drafts, pending sends, and pasted images stay in bounded memory. **Drafts do not survive quit, a crash, or forced termination.**
-  Drafts and pending sends share a 100-item / 4 MiB text budget; pasted images
-  share 8 MiB. New work is refused at the limit without evicting existing unsent
-  work. Review Unsent Work in the Session menu before leaving the app.
-
-Uploads begin on Send. Uploaded files can remain on the server if their message
-is never posted. Downloads and image exports write only when explicitly chosen;
-copying content also hands it to the system clipboard. The server retains sent
-messages according to its own policy. macOS swap, system diagnostics, browsers,
-and external applications are outside the app-managed storage guarantee. A full
-filesystem audit has not yet run.
+<sub>Screenshots show synthetic people and content, generated entirely in process
+by an opt-in test (see [asset provenance](docs/assets.md#readme-screenshots)).</sub>
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for local servers, opt-in tests, and review
-expectations; [architecture](docs/architecture.md) for code ownership; and
-[SECURITY.md](SECURITY.md) for reporting security issues. Do not include credentials
-or private server content in public reports.
+- [CONTRIBUTING.md](CONTRIBUTING.md): local servers, opt-in tests and review
+  expectations.
+- [Architecture](docs/architecture.md): how the code is organised.
+- [SECURITY.md](SECURITY.md): how to report security issues.
+
+Please keep credentials and private server content out of public reports.
 
 Licensed under the [MIT License](LICENSE).
