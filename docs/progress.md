@@ -1647,3 +1647,41 @@ full-size-content window, dark and light, under a volatile `en_US` locale. The
 run passed. Four captures, downscaled to 1600 px, are committed in `docs/images`
 (1.4 MB); provenance is in `docs/assets.md`. README gained the screenshots and
 highlights, and its "What is saved" section now describes the content cache.
+
+## 2026-09-25 — bundle identity and Developer ID signing
+
+User requested `dev.frnoch.mattermac`, signing with their Apple account, and the
+required GitHub keys. Updated the app/test bundle IDs and native soak sampler.
+Debug uses Apple Development; Release uses Developer ID Application, team
+`ZJ37A69485`, with secure timestamping. Existing Keychain service names are kept;
+the new bundle ID has a fresh sandbox container (no cache migration).
+
+Verified the David Frnoch account/team in Xcode Settings using computer use.
+Exported only its existing Developer ID identity with Security.framework into an
+encrypted PKCS#12 in memory, and piped it and a random export password directly to
+`gh secret set` for `dfrnoch/MatterMac`. No private key or password was printed or
+written to the repository. Verified both secret names with `gh secret list`.
+
+Added the manual, main-only `Signed app` workflow: temporary runner Keychain,
+universal Release build, Developer ID/team/bundle requirement verification,
+signed ZIP artifact, and unconditional signing-material cleanup. PR CI remains
+ad-hoc and never imports signing secrets. Notarization is not configured and the
+artifact is explicitly documented as signed, not notarized.
+
+Validation:
+- `xcodebuild -workspace MatterMac.xcworkspace -scheme MatterMac -configuration
+  Release -derivedDataPath build build` passed (`/tmp/mattermac-signing-release.log`).
+- `codesign --verify --deep --strict` and an explicit Developer ID certificate,
+  team and bundle-ID requirement passed for the resulting Release app.
+- `codesign -dvv` reports Developer ID Application: David Frnoch (ZJ37A69485),
+  hardened runtime, secure timestamp; `lipo -archs` reports x86_64 and arm64.
+- Release entitlements are exactly App Sandbox, network client and user-selected
+  read/write files; no get-task-allow.
+- Both workflow files parse with Ruby YAML; embedded shell passes `bash -n`.
+- Existing AppIntents metadata extraction warning remains; no Swift warnings.
+
+Debug workspace build and strict signature verification also passed
+(`/tmp/mattermac-signing-debug.log`), using the Apple Development identity.
+
+Next: verify the GitHub signing run. Notarization,
+clean-account installation, and migration from an old ad-hoc sign-in are untested.

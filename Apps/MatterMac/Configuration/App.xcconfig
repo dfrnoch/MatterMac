@@ -2,7 +2,7 @@
 // (layered on top of the project-level Debug/Release.xcconfig).
 
 PRODUCT_NAME = MatterMac
-PRODUCT_BUNDLE_IDENTIFIER = org.mattermac.MatterMac
+PRODUCT_BUNDLE_IDENTIFIER = dev.frnoch.mattermac
 GENERATE_INFOPLIST_FILE = NO
 INFOPLIST_FILE = Configuration/Info.plist
 

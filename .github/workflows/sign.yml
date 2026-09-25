@@ -1,0 +1,60 @@
+name: Signed app
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    if: github.ref == 'refs/heads/main'
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Import Developer ID
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          certificate="$RUNNER_TEMP/developer-id.p12"
+          keychain="$RUNNER_TEMP/mattermac-signing.keychain-db"
+          keychain_password=$(openssl rand -hex 32)
+          echo "::add-mask::$keychain_password"
+          printf '%s' "$CERTIFICATE_BASE64" | base64 --decode > "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -P "$CERTIFICATE_PASSWORD" -k "$keychain" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          rm "$certificate"
+      - name: Build and verify universal signed app
+        run: |
+          set -euo pipefail
+          xcodebuild -workspace MatterMac.xcworkspace -scheme MatterMac \
+            -configuration Release -derivedDataPath build build
+          app=build/Build/Products/Release/MatterMac.app
+          codesign --verify --deep --strict "$app"
+          codesign --verify -R='identifier "dev.frnoch.mattermac" and anchor apple generic and certificate leaf[subject.OU] = "ZJ37A69485" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "$app"
+          architectures=$(lipo -archs "$app/Contents/MacOS/MatterMac")
+          [[ " $architectures " == *" arm64 "* && " $architectures " == *" x86_64 "* ]]
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/MatterMac-signed.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: MatterMac-signed
+          path: ${{ runner.temp }}/MatterMac-signed.zip
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove signing material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          if [[ -f "$RUNNER_TEMP/mattermac-signing.keychain-db" ]]; then
+            security delete-keychain "$RUNNER_TEMP/mattermac-signing.keychain-db"
+          fi

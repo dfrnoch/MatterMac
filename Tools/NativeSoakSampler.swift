@@ -51,7 +51,7 @@ var timebase = mach_timebase_info_data_t()
 precondition(mach_timebase_info(&timebase) == KERN_SUCCESS)
 // task POWER_INFO / proc rusage CPU times are Mach absolute ticks, not nanoseconds.
 let secondsPerTick = Double(timebase.numer) / Double(timebase.denom) / 1_000_000_000
-let bundle = "org.mattermac.MatterMac"
+let bundle = "dev.frnoch.mattermac"
 let home = FileManager.default.homeDirectoryForCurrentUser
 
 func persistenceMetadata(_ phase: String) {

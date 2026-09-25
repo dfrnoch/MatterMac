@@ -31,7 +31,7 @@ jobs:
       - name: Universal app
         run: |
           xcodebuild -workspace MatterMac.xcworkspace -scheme MatterMac \
-            -configuration Release -derivedDataPath build build
+            -configuration Release -derivedDataPath build CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= OTHER_CODE_SIGN_FLAGS= build
           codesign --verify --strict build/Build/Products/Release/MatterMac.app
           architectures=$(lipo -archs build/Build/Products/Release/MatterMac.app/Contents/MacOS/MatterMac)
           [[ " $architectures " == *" arm64 "* && " $architectures " == *" x86_64 "* ]]

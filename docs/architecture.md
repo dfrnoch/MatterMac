@@ -67,7 +67,11 @@ complete native group synchronously and rolls it back if the resulting draft can
 fit the shared admission budget; intermediate edits are not published to the store.
 
 Debug builds use the host architecture; Release builds produce both arm64 and
-x86_64. The app uses local ad-hoc signing and three sandbox entitlements: outgoing
+x86_64. The bundle ID is `dev.frnoch.mattermac`, using team `ZJ37A69485`: Apple
+Development for Debug and Developer ID Application for Release. CI tests override
+the identity to ad-hoc; the manual signing workflow imports the Developer ID from
+GitHub secrets into a temporary Keychain. The three sandbox entitlements are outgoing
 network, user-selected file access, and App Sandbox. Release does not inject
-`get-task-allow`. No automatic signing identity, updater, or notarization is configured.
+`get-task-allow`. No updater or notarization is configured. Existing Keychain
+service names are retained; changing the bundle ID creates a new sandbox container.
 Asset source and reproduction are documented in [assets.md](assets.md).

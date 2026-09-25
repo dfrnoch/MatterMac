@@ -50,8 +50,23 @@ Enter your server address, choose Continue to review the normalized address, the
 Connect. Release builds require HTTPS. For the repository's local test servers,
 Debug builds accept `-MatterMacAllowInsecureLoopback YES`.
 
-Local builds use ad-hoc signing. Developer ID signing and notarization have not
-been performed; there is no signed public release yet.
+The bundle ID is `dev.frnoch.mattermac`. Debug uses Apple Development signing;
+Release uses David Frnoch’s Developer ID (team `ZJ37A69485`). To build without
+that certificate, append `CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= OTHER_CODE_SIGN_FLAGS=`
+to the build command. Pull-request CI uses this ad-hoc override.
+
+The manual **Signed app** GitHub Actions workflow builds a universal signed ZIP
+from `main`. It requires `DEVELOPER_ID_CERTIFICATE_BASE64` (the exported Developer
+ID identity in PKCS#12 format, base64 encoded) and `DEVELOPER_ID_CERTIFICATE_PASSWORD`
+as repository secrets. It imports the identity into a temporary runner Keychain
+and deletes it afterwards. The ZIP is signed, **not notarized**; no public release
+is published by this workflow. See [GitHub’s certificate setup](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)
+and [Apple’s notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
+
+The bundle ID change gives the app a new sandbox container. Existing content
+caches are not migrated; the server can refill them. Keychain service names stay
+unchanged, but access to sign-ins created by an older ad-hoc build is not guaranteed;
+sign in again if needed.
 
 ## Current scope
 
