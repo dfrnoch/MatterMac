@@ -1683,5 +1683,16 @@ Validation:
 Debug workspace build and strict signature verification also passed
 (`/tmp/mattermac-signing-debug.log`), using the Apple Development identity.
 
-Next: verify the GitHub signing run. Notarization,
-clean-account installation, and migration from an old ad-hoc sign-in are untested.
+GitHub validation of commit `db2bdd4`:
+- [Signed app run 36126978154](https://github.com/dfrnoch/MatterMac/actions/runs/36126978154)
+  passed every step, including import, build, identity requirement, artifact
+  upload, and Keychain cleanup. Downloaded the ZIP into `build/github-signed`,
+  extracted it and independently verified its strict signature and Developer ID,
+  team and bundle requirement on this Mac. It is universal, hardened and timestamped.
+- [Build and test run 36126968282](https://github.com/dfrnoch/MatterMac/actions/runs/36126968282)
+  passed package tests and the ad-hoc universal app build.
+- Local signed ZIP: `build/MatterMac-signed.zip`.
+
+Next: configure notarization credentials and submit/staple a distribution build.
+Notarization, clean-account installation, and migration from an old ad-hoc sign-in
+are untested.
