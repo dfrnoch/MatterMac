@@ -527,14 +527,12 @@ extension ServerSession {
         for target in windows.keys where target.channelID == id { closeWindow(target) }
         _ = store.purge(channel: id)
         searchState.purge(channel: id)
-        if searchKind == .files {
-            // An in-flight page may have been authorized before this revocation.
-            // Keep unrelated hits, but require a fresh search before paginating again.
-            tasks[.search]?.cancel()
-            searchState.generation &+= 1
-            searchState.canLoadMore = false
-            searchState.state = .results
-        }
+        // An in-flight page may have been authorized before this revocation.
+        // Keep unrelated hits, but require a fresh search before paginating again.
+        tasks[.search]?.cancel()
+        searchState.generation &+= 1
+        searchState.canLoadMore = false
+        searchState.state = .results
         typing[id] = nil
         for transfer in downloads.values where transfer.channel == id { transfer.task.cancel() }
         let blocked = pending.items.filter { $0.channelID == id }
