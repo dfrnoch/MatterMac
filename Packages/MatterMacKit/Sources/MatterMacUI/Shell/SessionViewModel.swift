@@ -556,8 +556,11 @@ public final class SessionViewModel {
         Task { await session.networkPathChanged() }
     }
 
-    public func userActivity() {
-        Task { await session.reportUserActivity(isActive: true) }
+    /// Reports whether the user is using the Mac, so the server keeps (or lets go of)
+    /// their automatic online status.
+    public func userActivity(isActive: Bool) {
+        guard !isDetached, !requiresAuthentication else { return }
+        Task { await session.reportUserActivity(isActive: isActive) }
     }
 }
 

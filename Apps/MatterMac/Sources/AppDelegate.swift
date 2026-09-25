@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Created on first use (the scene body); lives until the process exits.
     private(set) lazy var environment: AppEnvironment = AppComposition.makeEnvironment()
     private let events = SystemEventMonitor()
+    private let activity = UserActivityMonitor()
     private let splitViewPersistence = SplitViewPersistenceGuard()
     private var terminating = false
 
@@ -32,8 +33,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         events.onNetworkPathChange = { [weak self] _ in
             for model in self?.environment.appModel?.sessionModels.values ?? [:].values { model.networkPathChanged() }
         }
-        events.onActivationChange = { [weak self] _ in self?.updateVisibility() }
+        events.onActivationChange = { [weak self] isActive in
+            self?.updateVisibility()
+            if isActive { self?.activity.evaluate() }
+        }
         events.start()
+        // Without activity reports the server turns the account "away" after ~5 min.
+        activity.onActivity = { [weak self] isActive in
+            for model in self?.environment.appModel?.sessionModels.values ?? [:].values {
+                model.userActivity(isActive: isActive)
+            }
+        }
+        activity.start()
     }
 
     @objc private func windowDidBecomeKey(_ notification: Notification) {
@@ -68,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard environment.confirmTermination() == .terminateNow else { return .terminateCancel }
         terminating = true
         events.stop()
+        activity.stop()
         Task {
             await environment.appModel?.shutdownAll(preservingSavedSignIns: true)
             sender.reply(toApplicationShouldTerminate: true)
