@@ -57,7 +57,8 @@ extension ServerSession {
     func evaluateReadState() {
         evaluateThreadReadState()
         guard let channel = activeChannel, readConditionsHold(for: channel) else { return }
-        guard !isRunning(.readMark) else { return }
+        guard !isRunning(.readMark) else { readEvaluationPending = true; return }
+        readEvaluationPending = false
         run(.readMark) { session in
             // Short dwell so a channel flicked past is not marked read.
             try? await session.deps.clock.sleep(for: .milliseconds(600))
@@ -69,12 +70,12 @@ extension ServerSession {
                 // server must not mark every thread read as a side effect.
                 let times = try await session.service.viewChannel(channel, previous: previous,
                                                                   collapsedThreadsSupported: true)
-                guard session.epoch == epoch else { return }
+                guard session.epoch == epoch, !Task.isCancelled else { return }
                 session.lastViewedChannel = channel
                 session.markViewedLocally(channel, at: times[channel] ?? session.now())
                 session.markDirty(.sidebar)
             } catch {
-                guard session.epoch == epoch else { return }
+                guard session.epoch == epoch, !Task.isCancelled else { return }
                 // Not retried with the old context: the next visibility change re-evaluates.
                 session.deps.diagnostics.record(.sync, .warning, "view channel failed")
                 session.handleAuthenticationFailureIfNeeded(error)
@@ -95,18 +96,20 @@ extension ServerSession {
     }
 
     func evaluateThreadReadState() {
-        guard let candidate = threadReadTarget(), !isRunning(.threadRead), let team = selectedTeam else { return }
+        guard let candidate = threadReadTarget(), let team = selectedTeam else { return }
+        guard !isRunning(.threadRead) else { threadReadEvaluationPending = true; return }
+        threadReadEvaluationPending = false
         run(.threadRead) { session in
             try? await session.deps.clock.sleep(for: .milliseconds(600))
             guard !Task.isCancelled, let current = session.threadReadTarget(), current.root == candidate.root else { return }
             let epoch = session.epoch
             do {
                 try await session.service.markThreadRead(current.root, at: current.latest, team: team, me: session.me.id)
-                guard session.epoch == epoch else { return }
+                guard session.epoch == epoch, !Task.isCancelled else { return }
                 session.threadReadMark = (current.root, current.latest)
                 session.refreshThreadTotals()
             } catch {
-                guard session.epoch == epoch else { return }
+                guard session.epoch == epoch, !Task.isCancelled else { return }
                 session.deps.diagnostics.record(.sync, .warning, "thread read failed")
                 session.handleAuthenticationFailureIfNeeded(error)
             }

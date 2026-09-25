@@ -51,6 +51,8 @@ public actor ServerSession {
     var searchKind: SearchKind = .terms
     /// The newest reply time already reported read for the open thread (CRT).
     var threadReadMark: (root: PostID, at: MattermostTimestamp)?
+    var readEvaluationPending = false
+    var threadReadEvaluationPending = false
     let accountSettingsContinuation: AsyncStream<AccountSettingsSnapshot>.Continuation
 
     let service: any MattermostService
@@ -293,6 +295,16 @@ public actor ServerSession {
             tasks[key] = nil
             taskTokens[key] = nil
             if key == .sender { processSendQueue() }
+            // Coalesce visibility/event changes while a read request is running.
+            // Only deferred changes retry; a failed request alone cannot spin.
+            if key == .readMark, readEvaluationPending {
+                readEvaluationPending = false
+                evaluateReadState()
+            }
+            if key == .threadRead, threadReadEvaluationPending {
+                threadReadEvaluationPending = false
+                evaluateThreadReadState()
+            }
         }
     }
 

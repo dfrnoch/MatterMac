@@ -28,6 +28,8 @@ public final class FakeMattermostService: MattermostService {
         public var calls: [String] = []
         public var createdPosts: [OutgoingPost] = []
         public var viewedChannels: [ChannelID] = []
+        public var viewChannelHandler: (@Sendable (ChannelID?) async throws -> [ChannelID: MattermostTimestamp])?
+        public var threadReadHandler: (@Sendable (PostID?, MattermostTimestamp) async throws -> Void)?
         public var statuses: [UserID: PresenceStatus] = [:]
         public var executedCommands: [String] = []
         public var threads: [UserThread] = []
@@ -209,6 +211,7 @@ public final class FakeMattermostService: MattermostService {
         async throws(APIError) -> [ChannelID: MattermostTimestamp]
     {
         record("viewChannel")
+        if let handler = withState({ $0.viewChannelHandler }) { return try await Self.typed { try await handler(id) } }
         guard let id else { return [:] }
         withState { $0.viewedChannels.append(id) }
         return [id: MattermostTimestamp(milliseconds: 1)]
@@ -430,6 +433,7 @@ public final class FakeMattermostService: MattermostService {
     public func markThreadRead(_ thread: PostID?, at timestamp: MattermostTimestamp, team: TeamID, me: UserID)
         async throws(APIError) {
         record("markThreadRead")
+        if let handler = withState({ $0.threadReadHandler }) { try await Self.typed { try await handler(thread, timestamp) } }
         withState { state in
             state.threadReadMarks.append(thread)
             state.threads = state.threads.map { item in
