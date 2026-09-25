@@ -128,7 +128,7 @@ extension ServerSession {
                     page = try await session.service.posts(channel: channelID, query: .latest(perPage: Self.initialPageSize),
                                                            collapsedThreads: crt, priority: .interactive)
                 }
-                guard session.epoch == epoch, var window = session.windows[target],
+                guard session.epoch == epoch, !Task.isCancelled, var window = session.windows[target],
                       window.initialLoad == .loading(generation: generation) else { return }
                 session.merge(page: page, journalStart: journalStart)
                 let entries = page.posts.filter { !crt || $0.rootID == nil }.map {
@@ -149,7 +149,8 @@ extension ServerSession {
                 session.enforceRetention()
                 session.markDirty([.timeline])
             } catch {
-                guard session.epoch == epoch, session.windows[target] != nil else { return }
+                guard session.epoch == epoch, !Task.isCancelled,
+                      session.windows[target]?.initialLoad == .loading(generation: generation) else { return }
                 session.windows[target]?.initialLoad = .failed(Self.userFacing(error))
                 session.windows[target]?.olderState = .failed(Self.userFacing(error))
                 session.handleAuthenticationFailureIfNeeded(error)
@@ -176,7 +177,7 @@ extension ServerSession {
                 async let after = session.service.posts(channel: channelID, query: .after(post, perPage: 30),
                                                         collapsedThreads: crt, priority: .interactive)
                 let (focused, older, newer) = try await (focus, before, after)
-                guard session.epoch == epoch, var window = session.windows[target],
+                guard session.epoch == epoch, !Task.isCancelled, var window = session.windows[target],
                       window.initialLoad == .loading(generation: generation) else { return }
                 // A reply found by search is shown in its thread when CRT hides replies.
                 let combined = PostPage(posts: newer.posts + [focused] + older.posts,
@@ -198,7 +199,8 @@ extension ServerSession {
                 session.enforceRetention()
                 session.markDirty([.timeline])
             } catch {
-                guard session.epoch == epoch else { return }
+                guard session.epoch == epoch, !Task.isCancelled,
+                      session.windows[target]?.initialLoad == .loading(generation: generation) else { return }
                 session.windows[target]?.initialLoad = .failed(Self.userFacing(error))
                 session.windows[target]?.olderState = .failed(Self.userFacing(error))
                 session.notify(.operationFailed(Self.userFacing(error)))
@@ -234,7 +236,7 @@ extension ServerSession {
                 let page = try await session.service.posts(
                     channel: channelID, query: .before(anchor.id, perPage: Self.pageSize), collapsedThreads: crt,
                     priority: .interactive)
-                guard session.epoch == epoch, var window = session.windows[target],
+                guard session.epoch == epoch, !Task.isCancelled, var window = session.windows[target],
                       window.olderState == .loading(generation: generation) else { return }
                 session.merge(page: page, journalStart: journalStart)
                 let added = window.merge(page.posts.filter { !crt || $0.rootID == nil }.map {
@@ -250,7 +252,7 @@ extension ServerSession {
                 session.enforceRetention()
                 session.markDirty(.timeline)
             } catch {
-                guard session.epoch == epoch, session.windows[target]?.olderState == .loading(generation: generation)
+                guard session.epoch == epoch, !Task.isCancelled, session.windows[target]?.olderState == .loading(generation: generation)
                 else { return }
                 session.windows[target]?.olderState = .failed(Self.userFacing(error))
                 session.handleAuthenticationFailureIfNeeded(error)
@@ -283,7 +285,7 @@ extension ServerSession {
                         root: root, query: ThreadPageQuery(after: (anchor.id, anchor.createAt), perPage: Self.pageSize,
                                                            collapsedThreads: crt))
                 }
-                guard session.epoch == epoch, var window = session.windows[target],
+                guard session.epoch == epoch, !Task.isCancelled, var window = session.windows[target],
                       window.newerState == .loading(generation: generation) else { return }
                 session.merge(page: page, journalStart: journalStart)
                 let isThread: Bool
@@ -301,7 +303,7 @@ extension ServerSession {
                 session.enforceRetention()
                 session.markDirty(isThread ? .thread : .timeline)
             } catch {
-                guard session.epoch == epoch, session.windows[target]?.newerState == .loading(generation: generation)
+                guard session.epoch == epoch, !Task.isCancelled, session.windows[target]?.newerState == .loading(generation: generation)
                 else { return }
                 session.windows[target]?.newerState = .failed(Self.userFacing(error))
                 session.markDirty(target == session.openThread ? .thread : .timeline)
@@ -332,7 +334,7 @@ extension ServerSession {
             do {
                 let page = try await session.service.posts(channel: channelID, query: .latest(perPage: Self.initialPageSize),
                                                            collapsedThreads: crt, priority: .interactive)
-                guard session.epoch == epoch, var window = session.windows[target],
+                guard session.epoch == epoch, !Task.isCancelled, var window = session.windows[target],
                       window.initialLoad == .loading(generation: generation) else { return }
                 session.merge(page: page, journalStart: journalStart)
                 let delta = window.replace(
@@ -345,7 +347,8 @@ extension ServerSession {
                 session.enforceRetention()
                 session.markDirty(.timeline)
             } catch {
-                guard session.epoch == epoch else { return }
+                guard session.epoch == epoch, !Task.isCancelled,
+                      session.windows[target]?.initialLoad == .loading(generation: generation) else { return }
                 session.windows[target]?.initialLoad = .failed(Self.userFacing(error))
                 session.markDirty(.timeline)
             }
@@ -403,7 +406,7 @@ extension ServerSession {
             do {
                 let page = try await session.service.thread(
                     root: root, query: ThreadPageQuery(after: nil, perPage: Self.pageSize, collapsedThreads: crt))
-                guard session.epoch == epoch, var window = session.windows[target],
+                guard session.epoch == epoch, !Task.isCancelled, var window = session.windows[target],
                       window.initialLoad == .loading(generation: generation) else { return }
                 session.merge(page: page, journalStart: journalStart)
                 let delta = window.replace(
@@ -415,7 +418,8 @@ extension ServerSession {
                 session.enforceRetention()
                 session.markDirty(.thread)
             } catch {
-                guard session.epoch == epoch else { return }
+                guard session.epoch == epoch, !Task.isCancelled,
+                      session.windows[target]?.initialLoad == .loading(generation: generation) else { return }
                 session.windows[target]?.initialLoad = .failed(Self.userFacing(error))
                 if case .notFound = error as? APIError {
                     session.notify(.operationFailed(.notFoundOrInaccessible))

@@ -39,3 +39,12 @@ Copying all text and explicitly signing out are the current recovery options for
 inaccessible drafts. A per-item recovery editor/exporter, including pasted-image
 export or transfer after reauthentication, remains a separate UI slice. Existing
 attachments stay charged in the session until explicit discard/sign-out/quit.
+
+History request replacement (2026-09-25): a canceled initial/around/thread load must
+not mark its successor failed or merge an obsolete page. Both success and failure
+paths check task cancellation; failure paths also require their exact loading
+generation. Cancellation is necessary even on success because closing and
+recreating a window can reuse its initial generation number. Gated regressions
+reproduced both stale-error clobbering and stale-success acceptance before the fix.
+This independently confirmed race is not by itself attribution of a live reconnect
+timeout; live failures still need their stage diagnostics.
