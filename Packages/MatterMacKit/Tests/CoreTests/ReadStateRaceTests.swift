@@ -35,6 +35,20 @@ struct ReadStateRaceTests {
         _ = await h.session.shutdown(revokeServerSession: false)
     }
 
+    @Test func olderViewEventPreservesNewerUnreadPost() async throws {
+        let h = await SessionHarness()
+        await h.openChannel()
+        let newer = CoreFixtures.post(51, channel: h.channel.id)
+        await h.realtime.push(.event(.posted(PostedEvent(post: newer, channelType: .open,
+            teamID: CoreFixtures.team.id, mentionsCurrentUser: false, setOnline: false))))
+        #expect(await eventually { await h.session.store.post(newer.id) != nil })
+        await h.session.markViewedLocally(h.channel.id, at: MattermostTimestamp(milliseconds: newer.createAt.milliseconds - 1))
+        #expect(await h.session.directory.unread(for: h.channel.id, collapsedThreads: false).isUnread)
+        await h.session.markViewedLocally(h.channel.id, at: newer.createAt)
+        #expect(await !h.session.directory.unread(for: h.channel.id, collapsedThreads: false).isUnread)
+        _ = await h.session.shutdown(revokeServerSession: false)
+    }
+
     @Test func failedReadWithoutNewVisibilityDoesNotRetryItself() async throws {
         let h = await SessionHarness(unread: true)
         await h.openChannel()

@@ -1167,3 +1167,29 @@ as XCUI buttons. The harness now checks visible viewer controls/results instead.
 The scoped storage snapshot saw a preference plist mtime change, but did not have
 before-values to attribute it; autosave behavior is being investigated, not yet
 classified as an app-content persistence finding.
+
+### Read-state ordering and stricter scene checks
+
+Gated regressions reproduced three read-state races: changing channels during a
+view request lost the next mark, a cancelled response undid explicit Mark Unread,
+and a reply arriving during a thread mark never received its own mark. The keyed
+workers now retain one deferred-evaluation bit each and reject cancelled responses;
+a failed request alone cannot create a retry loop. Twelve focused Core tests passed
+in `/tmp/mm-read-races-after.log` before integration.
+
+A separate regression reproduced an older view event clearing counts for a newer
+already-received post. The shared local-view update now preserves counts until the
+view timestamp reaches the channel's latest post. The test failed before the guard
+and passed after it; the combined read/thread run passed **11 Core tests**, plus one
+disabled opt-in live case reported separately, with no compiler warnings
+(`/tmp/mm-stale-view-before.log`, `/tmp/mm-stale-view-after.log`).
+
+Removing `ApplePersistenceIgnoreState` from an actual-app launch check exposed a
+windowless launch. The first `defaultLaunchBehavior(.presented)` change did not fix
+existing empty restoration state: **2 failures in 9 UI tests** were retained in
+`/tmp/mm-launch-layout-ui.log`. A stronger startup regression and native split-view
+state checks are in progress; this failure must pass before the long soak.
+The scoped actual-app metadata comparison after login/search/settings reported no
+changes to either native split geometry key, but the attempted XCTest edge drag did
+not resize the window, so it does not establish resize persistence behavior
+(`/tmp/mm-layout-persistence2.csv`).

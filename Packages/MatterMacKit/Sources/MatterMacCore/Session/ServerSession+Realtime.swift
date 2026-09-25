@@ -288,6 +288,8 @@ extension ServerSession {
         let totals = directory.channels[channel]
         directory.updateMembership(channel) { membership in
             membership.lastViewedAt = max(membership.lastViewedAt, time)
+            // A delayed view response/event cannot acknowledge a newer post.
+            if let totals, totals.lastPostAt > time { return }
             membership.messageCount = totals?.totalMessageCount ?? membership.messageCount
             membership.messageCountRoot = totals?.totalMessageCountRoot ?? membership.messageCountRoot
             membership.mentionCount = 0
