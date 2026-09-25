@@ -7,6 +7,11 @@ import MatterMacCore
 /// `Window` scene; all navigation state below it lives in memory only.
 public struct MatterMacRootView: View {
     @State private var model: AppModel
+    /// The address typed on the connect screen, kept while moving between the
+    /// connect and sign-in steps of this window (memory only, cleared once signed in).
+    @State private var serverDraft = ""
+    @State private var connectStep: OnboardingStep = .server
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(environment: AppEnvironment) {
         let model = environment.appModel ?? AppModel(environment: environment)
@@ -15,30 +20,40 @@ public struct MatterMacRootView: View {
     }
 
     public var body: some View {
-        Group {
-            switch model.phase {
-            case .restoring:
-                ZStack {
-                    OnboardingBackdrop()
-                    ProgressView("Restoring saved sign-ins…")
-                        .padding(24)
-                        .glassSurface(cornerRadius: 20)
-                }
-            case .connect:
-                ConnectView(model: model)
-            case .login(let login):
-                LoginView(login: login, app: model)
-            case .main:
-                if let session = model.activeSession {
-                    MainWindowView(app: model, session: session)
-                        .id(session.scope)
-                } else {
-                    ConnectView(model: model)
+        ZStack {
+            if screen != .main {
+                OnboardingBackdrop(stage: backdropStage)
+                    .transition(.opacity)
+            }
+            Group {
+                switch model.phase {
+                case .restoring:
+                    RestoringSignInsView()
+                        .transition(Self.cardTransition)
+                case .connect:
+                    ConnectView(model: model, serverText: $serverDraft, step: $connectStep)
+                        .transition(Self.cardTransition)
+                case .login(let login):
+                    LoginView(login: login, app: model)
+                        .transition(Self.cardTransition)
+                case .main:
+                    if let session = model.activeSession {
+                        MainWindowView(app: model, session: session)
+                            .id(session.scope)
+                            .transition(.opacity)
+                    } else {
+                        ConnectView(model: model, serverText: $serverDraft, step: $connectStep)
+                    }
                 }
             }
         }
+        .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: screen)
         .frame(minWidth: 760, minHeight: 500)
         .task { await model.restoreSavedAccounts() }
+        .onChange(of: screen) { _, screen in
+            if screen == .main { serverDraft = "" }
+            if screen != .connect { connectStep = .server }
+        }
         .sheet(isPresented: Binding(get: { model.isCompatibilityVisible },
                                     set: { model.isCompatibilityVisible = $0 })) {
             CompatibilityView(app: model)
@@ -47,13 +62,67 @@ public struct MatterMacRootView: View {
             KeyboardShortcutsView()
         }
     }
+
+    private static let cardTransition = AnyTransition.opacity.combined(with: .scale(scale: 0.98))
+
+    /// Which screen is visible, for transitions (the login model's identity counts).
+    private enum Screen: Hashable {
+        case restoring, connect, login(ObjectIdentifier), main
+    }
+
+    private var screen: Screen {
+        switch model.phase {
+        case .restoring: .restoring
+        case .connect: .connect
+        case .login(let login): .login(ObjectIdentifier(login))
+        case .main: model.activeSession == nil ? .connect : .main
+        }
+    }
+
+    private var backdropStage: Int {
+        switch screen {
+        case .restoring: 0
+        case .connect: connectStep.rawValue
+        case .login, .main: 2
+        }
+    }
+}
+
+/// Launch state while saved sign-ins are read from Keychain and verified.
+struct RestoringSignInsView: View {
+    var body: some View {
+        OnboardingCardLayout(width: 300) {
+            VStack(spacing: 16) {
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 64, height: 64)
+                    .shadow(color: .black.opacity(0.14), radius: 8, y: 4)
+                    .accessibilityHidden(true)
+                ProgressView()
+                    .controlSize(.regular)
+                    .accessibilityLabel(Text("Restoring saved sign-ins…"))
+                Text("Restoring saved sign-ins…")
+                    .font(.headline)
+                    .accessibilityHidden(true)
+                Text("Checking the accounts saved in Keychain with their servers.")
+                    .font(.callout)
+                    .foregroundStyle(OnboardingStyle.supporting)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
 }
 
 /// Server connection screen; saved accounts are restored separately at launch.
+/// Two steps: Continue shows the normalized final origin, Connect probes it.
 struct ConnectView: View {
     let model: AppModel
-    @State private var serverText = ""
-    @State private var validation: ValidationState = .idle
+    @Binding var serverText: String
+    @Binding var step: OnboardingStep
+    @State private var validation: ValidationState
     @State private var isProbing = false
     @State private var probeTask: Task<Void, Never>?
     @FocusState private var fieldFocused: Bool
@@ -64,100 +133,168 @@ struct ConnectView: View {
         case normalized(String)
     }
 
+    init(model: AppModel, serverText: Binding<String>, step: Binding<OnboardingStep> = .constant(.server),
+         validation: ValidationState = .idle) {
+        self.model = model
+        _serverText = serverText
+        _step = step
+        _validation = State(initialValue: validation)
+    }
+
     var body: some View {
-        ZStack {
-            OnboardingBackdrop()
-            card
-        }
-        .onDisappear(perform: cancelProbe)
+        OnboardingCardLayout { card }
+            .onDisappear(perform: cancelProbe)
+            .onChange(of: currentStep, initial: true) { _, current in step = current }
+    }
+
+    private var currentStep: OnboardingStep {
+        if isProbing { return .confirm }
+        if case .normalized = validation { return .confirm }
+        return .server
+    }
+
+    private var isConfirming: Bool {
+        if case .normalized = validation { true } else { false }
     }
 
     private var card: some View {
-        VStack(spacing: 20) {
-            Image(nsImage: NSApplication.shared.applicationIconImage)
-                .resizable()
-                .frame(width: 88, height: 88)
-                .accessibilityHidden(true)
-            Text("MatterMac")
-                .font(.largeTitle.weight(.semibold))
-            // Primary-weight colours: secondary text fails contrast on the glass card.
-            Text("An independent, native client for existing Mattermost servers.")
-                .foregroundStyle(Color.primary)
+        VStack(spacing: 0) {
+            OnboardingStepIndicator(current: currentStep)
+                .padding(.bottom, 20)
+            header
+            if let message = model.lastSignOutMessage {
+                OnboardingNotice(
+                    tone: model.canRetrySavedSignIn ? .warning : .info,
+                    systemImage: model.canRetrySavedSignIn ? "exclamationmark.triangle.fill" : "info.circle.fill",
+                    message: message,
+                    actionTitle: model.canRetrySavedSignIn ? String(localized: "Retry Saved Sign-In") : nil,
+                    action: retrySavedSignIn,
+                    actionDisabled: isProbing)
+                    .padding(.top, 20)
+            } else if model.canRetrySavedSignIn {
+                Button("Retry Saved Sign-In", action: retrySavedSignIn)
+                    .glassButtonStyle()
+                    .disabled(isProbing)
+                    .padding(.top, 20)
+            }
+            addressField
+                .padding(.top, 26)
+            buttons
+                .padding(.top, 22)
+            disclosure
+                .padding(.top, 24)
+        }
+        .onAppear { fieldFocused = true }
+    }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Server URL")
-                    .font(.headline)
-                TextField("https://chat.example.org", text: $serverText)
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.large)
+    @ViewBuilder private var header: some View {
+        if model.isAddingServer {
+            OnboardingHeader(title: String(localized: "Add a Server"),
+                             subtitle: String(localized: "Connect to another Mattermost server. You stay signed in to the others."))
+            if !model.slots.isEmpty {
+                Text("Signed in to \(model.slots.map { $0.siteName.isEmpty ? $0.endpoint.host : $0.siteName }.formatted(.list(type: .and)))")
+                    .font(.callout)
+                    .foregroundStyle(OnboardingStyle.supporting)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
+            }
+        } else {
+            // UI tests look for the exact "MatterMac" title.
+            OnboardingHeader(title: "MatterMac",
+                             subtitle: String(localized: "An independent, native client for existing Mattermost servers."))
+        }
+    }
+
+    private var addressField: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            OnboardingField(systemImage: "server.rack", isFocused: fieldFocused, isInvalid: isInvalid,
+                            focus: { fieldFocused = true }) {
+                // Verbatim: a localized key would render the URL as a link.
+                TextField(text: $serverText, prompt: Text(verbatim: "https://chat.example.org")) {
+                    Text("Server URL")
+                }
                     .textContentType(.URL)
+                    .autocorrectionDisabled()
                     .focused($fieldFocused)
                     .onSubmit(submit)
                     .onChange(of: serverText) { validation = .idle }
                     .accessibilityLabel(Text("Server URL"))
                     .disabled(isProbing)
-                switch validation {
-                case .idle:
-                    EmptyView()
-                case .invalid(let message):
-                    Label(message, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
-                        .font(.callout)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("serverError")
-                case .normalized(let origin):
-                    Label("Will connect to \(origin)", systemImage: "lock")
-                        .foregroundStyle(.secondary)
-                        .font(.callout)
-                        .accessibilityIdentifier("normalizedOrigin")
-                }
             }
-            .frame(maxWidth: 420)
-
-            HStack {
-                if model.isAddingServer {
-                    Button("Cancel") { cancelProbe(); model.cancelLogin() }
-                        .keyboardShortcut(.cancelAction)
-                }
-                Button(action: submit) {
-                    if isProbing { ProgressView().controlSize(.small) }
-                    else if case .normalized = validation { Text("Connect") }
-                    else { Text("Continue") }
-                }
-                .keyboardShortcut(.defaultAction)
-                .glassButtonStyle(prominent: true)
-                .disabled(serverText.trimmingCharacters(in: .whitespaces).isEmpty || isProbing)
+            switch validation {
+            case .idle:
+                Text("Enter the address you use for Mattermost in a browser, including any path such as /chat.")
+                    .font(.callout)
+                    .foregroundStyle(OnboardingStyle.supporting)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            case .invalid(let message):
+                OnboardingNotice(tone: .error, systemImage: "exclamationmark.triangle.fill", message: message,
+                                 identifier: "serverError")
+            case .normalized(let origin):
+                let secure = origin.hasPrefix("https://")
+                OnboardingNotice(tone: secure ? .info : .warning,
+                                 systemImage: secure ? "lock.fill" : "lock.open.fill",
+                                 message: String(localized: "Will connect to \(origin)"),
+                                 identifier: "normalizedOrigin")
+                Text(isProbing ? "Checking that a Mattermost server answers at this address…"
+                               : "Check the address, then choose Connect. No sign-in details are sent yet.")
+                    .font(.callout)
+                    .foregroundStyle(OnboardingStyle.supporting)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
             }
-            .controlSize(.large)
+        }
+    }
 
+    private var isInvalid: Bool {
+        if case .invalid = validation { true } else { false }
+    }
+
+    private var buttons: some View {
+        HStack(spacing: 10) {
+            if model.isAddingServer {
+                Button("Cancel") { cancelProbe(); model.cancelLogin() }
+                    .keyboardShortcut(.cancelAction)
+                    .onboardingSecondaryButton()
+            }
+            Button(action: submit) {
+                OnboardingPrimaryButtonLabel(
+                    title: isConfirming ? String(localized: "Connect") : String(localized: "Continue"),
+                    progressTitle: isProbing ? String(localized: "Connecting…") : nil)
+            }
+            .keyboardShortcut(.defaultAction)
+            .onboardingPrimaryButton()
+            .disabled(serverText.trimmingCharacters(in: .whitespaces).isEmpty || isProbing)
+        }
+    }
+
+    private var disclosure: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "lock.shield")
+                .font(.body)
+                .foregroundStyle(OnboardingStyle.supporting)
+                .accessibilityHidden(true)
             Text("""
                 MatterMac saves account sign-ins in macOS Keychain and keeps an encrypted cache of recent \
                 messages, profiles and images on this Mac so it opens quickly. Signing out removes both. \
                 Settings are saved on this Mac. Drafts stay in memory only. Your server stores sent messages.
                 """)
                 .font(.footnote)
-                .foregroundStyle(Color.primary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 460)
+                .foregroundStyle(OnboardingStyle.supporting)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("sessionDisclosure")
-            if model.canRetrySavedSignIn {
-                Button("Retry Saved Sign-In") { Task { await model.restoreSavedAccounts(retry: true) } }
-                    .disabled(isProbing)
-            }
-            if let message = model.lastSignOutMessage {
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 460)
-            }
         }
-        .padding(36)
-        .frame(width: 540)
-        .glassSurface(cornerRadius: 28, tint: Color(nsColor: .windowBackgroundColor).opacity(0.6))
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { fieldFocused = true }
+        .padding(.top, 18)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 1)
+        }
+    }
+
+    private func retrySavedSignIn() {
+        Task { await model.restoreSavedAccounts(retry: true) }
     }
 
     private func cancelProbe() {
@@ -217,130 +354,191 @@ struct LoginView: View {
     enum Field { case loginID, password, mfa, token }
 
     var body: some View {
-        ZStack {
-            OnboardingBackdrop()
-            form
-        }
+        OnboardingCardLayout { form }
+    }
+
+    private var isSecure: Bool { login.discovery.endpoint.scheme == .https }
+
+    private var siteName: String {
+        login.discovery.capabilities.siteName.isEmpty ? "Mattermost" : login.discovery.capabilities.siteName
     }
 
     private var form: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                Image(systemName: login.discovery.endpoint.scheme == .https ? "lock.fill" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(login.discovery.endpoint.scheme == .https ? Color.secondary : Color.orange)
-                VStack(alignment: .leading) {
-                    Text(login.discovery.capabilities.siteName.isEmpty ? "Mattermost" : login.discovery.capabilities.siteName)
-                        .font(.title2.weight(.semibold))
-                    Text(login.discovery.endpoint.description)
-                        .font(.callout)
-                        .foregroundStyle(Color.primary)
-                        .textSelection(.enabled)
-                        .accessibilityIdentifier("loginOrigin")
+        VStack(spacing: 0) {
+            OnboardingStepIndicator(current: .signIn)
+                .padding(.bottom, 20)
+            OnboardingHeader(title: String(localized: "Sign in to \(siteName)"), subtitle: nil, iconSize: 56)
+            OnboardingServerChip(origin: login.discovery.endpoint.description, isSecure: isSecure,
+                                 change: changeServer)
+                .padding(.top, 12)
+            serverDetails
+                .padding(.top, 8)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Picker("Sign in with", selection: $login.method) {
+                    if login.discovery.capabilities.login.passwordLoginAvailable {
+                        Text("Password").tag(LoginModel.Method.password)
+                    }
+                    Text("Access Token").tag(LoginModel.Method.personalAccessToken)
+                    if !login.discovery.browserSSOProviders.isEmpty {
+                        Text("Browser SSO").tag(LoginModel.Method.browserSSO)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.large)
+                .frame(maxWidth: .infinity)
+                .disabled(login.isWorking)
+                .padding(.bottom, 4)
+
+                methodFields
+
+                if let message = login.errorMessage {
+                    OnboardingNotice(tone: .error, systemImage: "exclamationmark.circle.fill", message: message,
+                                     identifier: "loginError")
                 }
             }
+            .padding(.top, 18)
+
+            HStack(spacing: 10) {
+                Button(login.isWorking ? "Cancel" : "Back") { app.cancelLogin() }
+                    .keyboardShortcut(.cancelAction)
+                    .onboardingSecondaryButton()
+                Button(action: submit) {
+                    OnboardingPrimaryButtonLabel(title: primaryTitle, progressTitle: progressTitle)
+                }
+                .keyboardShortcut(.defaultAction)
+                .onboardingPrimaryButton()
+                .disabled(login.isWorking || !canSubmit)
+            }
+            .padding(.top, 20)
+        }
+        .onAppear { focused = login.method == .password ? .loginID : .token }
+        .onChange(of: login.method) { _, method in
+            switch method {
+            case .password: focused = .loginID
+            case .personalAccessToken: focused = .token
+            case .browserSSO: focused = nil
+            }
+        }
+        .onDisappear { login.cancel() }
+    }
+
+    @ViewBuilder private var serverDetails: some View {
+        VStack(spacing: 4) {
             if let version = login.discovery.version {
-                Text(login.discovery.capabilities.isTestedReleaseLine
-                     ? "Mattermost \(version.description)"
-                     : "Mattermost \(version.description) — not a release line MatterMac has been tested with.")
+                if login.discovery.capabilities.isTestedReleaseLine {
+                    Text("Mattermost \(version.description)")
+                        .font(.caption)
+                        .foregroundStyle(OnboardingStyle.supporting)
+                } else {
+                    Label {
+                        Text("Mattermost \(version.description) — not a release line MatterMac has been tested with.")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    }
                     .font(.caption)
                     .foregroundStyle(.primary)
+                }
             }
-            if login.discovery.endpoint.scheme == .http {
+            if !isSecure {
                 Text("Development mode: this local server uses unencrypted HTTP.")
                     .font(.caption)
                     .foregroundStyle(.primary)
             }
+        }
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+    }
 
-            Picker("Sign in with", selection: $login.method) {
-                if login.discovery.capabilities.login.passwordLoginAvailable {
-                    Text("Password").tag(LoginModel.Method.password)
-                }
-                Text("Personal access token").tag(LoginModel.Method.personalAccessToken)
-                if !login.discovery.browserSSOProviders.isEmpty {
-                    Text("Browser SSO").tag(LoginModel.Method.browserSSO)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .disabled(login.isWorking)
-
-            switch login.method {
-            case .password:
+    @ViewBuilder private var methodFields: some View {
+        switch login.method {
+        case .password:
+            OnboardingField(systemImage: "person", isFocused: focused == .loginID, focus: { focused = .loginID }) {
                 TextField(login.loginIDPrompt, text: $login.loginID)
                     .accessibilityLabel(Text(login.loginIDPrompt))
                     .textContentType(.username)
+                    .autocorrectionDisabled()
                     .focused($focused, equals: .loginID)
                     .onSubmit { focused = .password }
+            }
+            OnboardingField(systemImage: "key", isFocused: focused == .password, focus: { focused = .password }) {
                 SecureField("Password", text: $login.password)
                     .textContentType(.password)
                     .focused($focused, equals: .password)
                     .onSubmit(submit)
-                if login.needsMFA {
+            }
+            if login.needsMFA {
+                OnboardingField(systemImage: "lock.shield", isFocused: focused == .mfa, focus: { focused = .mfa }) {
                     TextField("Authentication code", text: $login.mfaCode)
                         .textContentType(.oneTimeCode)
                         .focused($focused, equals: .mfa)
                         .onSubmit(submit)
                         .onAppear { focused = .mfa }
-                    Text("Your account uses multi-factor authentication. Enter the current code from your authenticator app.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
-            case .browserSSO:
+                Text("Your account uses multi-factor authentication. Enter the current code from your authenticator app.")
+                    .font(.callout)
+                    .foregroundStyle(OnboardingStyle.supporting)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
+        case .browserSSO:
+            HStack(spacing: 10) {
+                Image(systemName: "person.badge.key")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(OnboardingStyle.supporting)
+                    .frame(width: 22)
+                    .accessibilityHidden(true)
+                Text("Provider")
+                    .font(.title3)
+                    .accessibilityHidden(true)
+                Spacer(minLength: 8)
                 Picker("Sign-in provider", selection: $login.ssoProvider) {
                     ForEach(login.discovery.browserSSOProviders, id: \.self) { provider in
                         Text(login.discovery.capabilities.login.displayName(for: provider)).tag(provider)
                     }
                 }
+                .labelsHidden()
+                .fixedSize()
                 .disabled(login.isWorking)
-                Text("Continue in your browser to sign in with your organization. Use the same sign-in provider you use in Mattermost.")
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("MatterMac requests a private browser session. Your browser, macOS, and identity provider may retain their own sign-in data. Your organization’s SSO configuration has not been verified by MatterMac.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            case .personalAccessToken:
+            }
+            .padding(.horizontal, 12)
+            .frame(height: OnboardingStyle.fieldHeight)
+            .background(RoundedRectangle(cornerRadius: OnboardingStyle.fieldRadius, style: .continuous)
+                .fill(Color(nsColor: .textBackgroundColor).opacity(0.72)))
+            .overlay(RoundedRectangle(cornerRadius: OnboardingStyle.fieldRadius, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.14)))
+            OnboardingNotice(tone: .info, systemImage: "globe",
+                             message: String(localized: "Continue in your browser to sign in with your organization. Use the same sign-in provider you use in Mattermost."))
+            Text("MatterMac requests a private browser session. Your browser, macOS, and identity provider may retain their own sign-in data. Your organization’s SSO configuration has not been verified by MatterMac.")
+                .font(.caption)
+                .foregroundStyle(OnboardingStyle.supporting)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
+        case .personalAccessToken:
+            OnboardingField(systemImage: "key.horizontal", isFocused: focused == .token, focus: { focused = .token }) {
                 SecureField("Personal access token", text: $login.token)
                     .focused($focused, equals: .token)
                     .onSubmit(submit)
-                Text("""
-                    Tokens are created in Mattermost under Profile › Security when your administrator allows it. \
-                    MatterMac saves the token in macOS Keychain. Signing out removes it locally but does not revoke it on the server.
-                    """)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-
-            if let message = login.errorMessage {
-                Label(message, systemImage: "exclamationmark.circle")
-                    .foregroundStyle(.red)
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("loginError")
-            }
-
-            HStack {
-                Button(login.isWorking ? "Cancel" : "Back") { app.cancelLogin() }
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button(action: submit) {
-                    if login.isWorking { ProgressView().controlSize(.small) } else { Text(login.method == .browserSSO ? "Continue in Browser" : "Sign In") }
-                }
-                .keyboardShortcut(.defaultAction)
-                .glassButtonStyle(prominent: true)
-                .disabled(login.isWorking || !canSubmit)
-            }
-            .controlSize(.large)
+            Text("""
+                Tokens are created in Mattermost under Profile › Security when your administrator allows it. \
+                MatterMac saves the token in macOS Keychain. Signing out removes it locally but does not revoke it on the server.
+                """)
+                .font(.callout)
+                .foregroundStyle(OnboardingStyle.supporting)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
         }
-        .textFieldStyle(.roundedBorder)
-        .frame(maxWidth: 440)
-        .padding(32)
-        .glassSurface(cornerRadius: 28, tint: Color(nsColor: .windowBackgroundColor).opacity(0.6))
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { focused = login.method == .password ? .loginID : .token }
-        .onDisappear { login.cancel() }
+    }
+
+    private var primaryTitle: String {
+        login.method == .browserSSO ? String(localized: "Continue in Browser") : String(localized: "Sign In")
+    }
+
+    private var progressTitle: String? {
+        guard login.isWorking else { return nil }
+        return login.method == .browserSSO ? String(localized: "Waiting for Browser…") : String(localized: "Signing In…")
     }
 
     private var canSubmit: Bool {
@@ -359,21 +557,12 @@ struct LoginView: View {
         guard canSubmit else { return }
         Task { await login.submit() }
     }
-}
 
-/// Quiet, static tinted backdrop behind the onboarding cards (no animation).
-struct OnboardingBackdrop: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        ZStack {
-            Color(nsColor: .windowBackgroundColor)
-            RadialGradient(colors: [Color.accentColor.opacity(colorScheme == .dark ? 0.28 : 0.18), .clear],
-                           center: .topLeading, startRadius: 40, endRadius: 700)
-            RadialGradient(colors: [Color.purple.opacity(colorScheme == .dark ? 0.20 : 0.12), .clear],
-                           center: .bottomTrailing, startRadius: 40, endRadius: 650)
-        }
-        .ignoresSafeArea()
-        .accessibilityHidden(true)
+    /// Back to address entry, keeping the typed address. While adding a server,
+    /// the connect screen reopens in that mode instead of returning to the window.
+    private func changeServer() {
+        let returnsToAddServer = !app.slots.isEmpty
+        app.cancelLogin()
+        if returnsToAddServer { app.showAddServer() }
     }
 }
