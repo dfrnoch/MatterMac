@@ -41,6 +41,7 @@ public final class FakeMattermostService: MattermostService {
         public var downloadHandler: (@Sendable (FileID, URL) async throws -> Void)?
         public var createPostHandler: (@Sendable (OutgoingPost, Int) async throws -> Post)?
         public var editPostHandler: (@Sendable (PostID, String) async throws -> Post)?
+        public var searchPostsHandler: (@Sendable (SearchQuery) async throws -> PostPage)?
         public var postsHandler: (@Sendable (ChannelID, PostPageQuery) async throws -> PostPage)?
         public var unreadHandler: (@Sendable (ChannelID) async throws -> PostPage)?
         public var postsByIDsHandler: (@Sendable ([PostID]) async throws -> [Post])?
@@ -331,6 +332,7 @@ public final class FakeMattermostService: MattermostService {
 
     public func searchPosts(_ query: SearchQuery) async throws(APIError) -> PostPage {
         record("searchPosts")
+        if let handler = withState({ $0.searchPostsHandler }) { return try await Self.typed { try await handler(query) } }
         let hits = withState { state in state.posts.values.filter { $0.message.contains(query.terms) } }
         return PostPage(posts: hits.sorted { $0.createAt > $1.createAt })
     }

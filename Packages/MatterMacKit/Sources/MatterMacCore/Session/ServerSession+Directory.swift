@@ -238,7 +238,9 @@ extension ServerSession {
         searchState.generation &+= 1
         searchState.terms = trimmed
         searchState.page = 0
-        guard !trimmed.isEmpty, let team = selectedTeam else {
+        searchState.canLoadMore = false
+        searchState.isTruncated = false
+        guard isActiveSessionAlive, !trimmed.isEmpty, let team = selectedTeam else {
             searchState.state = .idle
             markDirty(.search)
             return
@@ -250,6 +252,8 @@ extension ServerSession {
 
     public func loadMoreSearchResults() {
         guard searchState.canLoadMore, searchState.state == .results, let team = selectedTeam else { return }
+        searchState.state = .searching
+        markDirty(.search)
         searchState.page += 1
         if searchKind == .files { runFileSearch(team: team, page: searchState.page); return }
         if searchKind != .terms { runList(searchKind, team: team, page: searchState.page); return }
@@ -259,7 +263,7 @@ extension ServerSession {
     public func clearSearch() {
         tasks[.search]?.cancel()
         releaseSearchResults()
-        searchState = SearchModel()
+        searchState = SearchModel(generation: searchState.generation &+ 1)
         searchKind = .terms
         markDirty(.search)
     }
@@ -273,7 +277,7 @@ extension ServerSession {
             do {
                 let result = try await session.service.searchPosts(
                     SearchQuery(team: team, terms: terms, timeZoneOffsetSeconds: offset, page: page, perPage: 20))
-                guard session.epoch == epoch, session.searchState.generation == generation else { return }
+                guard session.epoch == epoch, session.searchState.generation == generation, !Task.isCancelled else { return }
                 let cap = session.budget.searchResults.count
                 var added = 0
                 for post in result.posts where session.searchState.results.count < cap {
@@ -292,7 +296,7 @@ extension ServerSession {
                 session.enforceRetention()
                 session.markDirty(.search)
             } catch {
-                guard session.epoch == epoch, session.searchState.generation == generation else { return }
+                guard session.epoch == epoch, session.searchState.generation == generation, !Task.isCancelled else { return }
                 session.searchState.state = .failed(Self.userFacing(error))
                 session.markDirty(.search)
             }

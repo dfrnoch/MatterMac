@@ -49,7 +49,7 @@ extension ServerSession {
                 session.searchState.state = .results
                 session.markDirty(.search)
             } catch {
-                guard session.epoch == epoch, session.searchState.generation == generation else { return }
+                guard session.epoch == epoch, session.searchState.generation == generation, !Task.isCancelled else { return }
                 session.handleAuthenticationFailureIfNeeded(error)
                 session.searchState.state = .failed(Self.userFacing(error))
                 session.markDirty(.search)

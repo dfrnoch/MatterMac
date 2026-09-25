@@ -53,10 +53,10 @@ extension ServerSession {
                     result = try await session.service.pinnedPosts(channel: channel)
                     pageSize = .max
                 }
-                guard session.epoch == epoch, session.searchState.generation == generation else { return }
+                guard session.epoch == epoch, session.searchState.generation == generation, !Task.isCancelled else { return }
                 session.ingestListResults(result.posts, pageSize: pageSize)
             } catch {
-                guard session.epoch == epoch, session.searchState.generation == generation else { return }
+                guard session.epoch == epoch, session.searchState.generation == generation, !Task.isCancelled else { return }
                 session.handleAuthenticationFailureIfNeeded(error)
                 session.searchState.state = .failed(Self.userFacing(error))
                 session.markDirty(.search)
