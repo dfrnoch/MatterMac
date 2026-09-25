@@ -20,6 +20,18 @@ struct OnboardingBackdropPalette: Equatable {
     static func tinted(_ color: Color) -> Self { Self(warm: color, cool: color, accent: color) }
 }
 
+extension OnboardingBackdropPalette {
+    /// The window theme's hues as the backdrop glows; the standard palette for System.
+    init(theme: AppTheme) {
+        guard let gradient = theme.gradient else { self = .standard; return }
+        let hues = gradient.hues
+        func glow(_ hue: Double) -> Color {
+            Color(hue: hue, saturation: 0.35 + 0.5 * gradient.saturation, brightness: 0.95)
+        }
+        self.init(warm: glow(hues[0]), cool: glow(hues[hues.count - 1]), accent: glow(hues[hues.count / 2]))
+    }
+}
+
 extension EnvironmentValues {
     @Entry var onboardingBackdropPalette: OnboardingBackdropPalette = .standard
 }

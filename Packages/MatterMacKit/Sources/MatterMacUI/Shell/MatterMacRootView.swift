@@ -48,6 +48,9 @@ public struct MatterMacRootView: View {
             }
         }
         .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: screen)
+        .environment(\.matterMacTheme, model.environment.settings.theme)
+        .environment(\.onboardingBackdropPalette, OnboardingBackdropPalette(theme: model.environment.settings.theme))
+        .themeAccentTint()
         .frame(minWidth: 760, minHeight: 500)
         .task { await model.restoreSavedAccounts() }
         .onChange(of: screen) { _, screen in
