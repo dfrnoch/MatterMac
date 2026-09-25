@@ -143,6 +143,13 @@ struct QuickSwitcherView: View {
 /// About / Compatibility (SPEC §19, §20): version, verified server info, session
 /// identity, and honest boundaries for unsupported features.
 struct CompatibilityView: View {
+    /// The release label (e.g. `1.0.0-nightly.20260923.45`), else the short version.
+    static var versionLabel: String {
+        let info = Bundle.main.infoDictionary
+        if let label = info?["MatterMacVersionLabel"] as? String, !label.isEmpty, !label.hasPrefix("$(") { return label }
+        return info?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+
     let app: AppModel
     @Environment(\.dismiss) private var dismiss
 
@@ -150,7 +157,7 @@ struct CompatibilityView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 Text("MatterMac").font(.title.weight(.semibold))
-                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"))")
+                Text("Version \(Self.versionLabel) (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"))")
                     .foregroundStyle(.secondary)
                 Text("An independent, open-source, Mattermost-compatible client. Not affiliated with or endorsed by Mattermost, Inc.")
                     .font(.callout)

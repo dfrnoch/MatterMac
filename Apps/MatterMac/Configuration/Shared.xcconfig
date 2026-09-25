@@ -9,8 +9,12 @@ MACOSX_DEPLOYMENT_TARGET = 14.0
 // arm64 + x86_64 (Release builds both; Debug builds only the active arch).
 ARCHS = $(ARCHS_STANDARD)
 
-MARKETING_VERSION = 0.1.0
+// The next production release (MAJOR.MINOR.PATCH); the release workflow reads and
+// bumps it (Tools/ReleaseVersion.swift). CI injects CURRENT_PROJECT_VERSION (the
+// release run number) and MATTERMAC_VERSION_LABEL (e.g. 1.0.0-nightly.20260923.45).
+MARKETING_VERSION = 1.0.0
 CURRENT_PROJECT_VERSION = 1
+MATTERMAC_VERSION_LABEL = $(MARKETING_VERSION)-dev
 
 // Swift 6 language mode implies complete strict concurrency checking; stated
 // explicitly so the intent survives an accidental language-mode change.

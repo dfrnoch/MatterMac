@@ -1,0 +1,199 @@
+name: Release
+
+# Nightly and production releases of the notarized DMG (docs/releasing.md).
+#
+# - Nightly: every day at 02:17 UTC when main changed since the last nightly, or on
+#   demand. Version `<MARKETING_VERSION>-nightly.<yyyymmdd>.<run>`, e.g.
+#   1.0.0-nightly.20260923.45; published as a GitHub pre-release. The newest 14
+#   nightlies are kept.
+# - Production: on demand. Releases MARKETING_VERSION from Shared.xcconfig (or the
+#   `version` input) as `v<version>`, marks it the latest release, then commits the
+#   next development version (`next`: patch, minor or major) to main.
+#
+# The build number (CFBundleVersion) is this workflow's run number, so it grows
+# across both channels.
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        options: [nightly, production]
+        default: nightly
+      version:
+        description: 'Production only: version to release (default: MARKETING_VERSION)'
+        type: string
+        required: false
+        default: ''
+      next:
+        description: 'Production only: bump main to the next version afterwards'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: xcode-27
+    timeout-minutes: 10
+    outputs:
+      skip: ${{ steps.version.outputs.skip }}
+      channel: ${{ steps.version.outputs.channel }}
+      marketing_version: ${{ steps.version.outputs.marketing_version }}
+      build_number: ${{ steps.version.outputs.build_number }}
+      label: ${{ steps.version.outputs.label }}
+      tag: ${{ steps.version.outputs.tag }}
+      previous_tag: ${{ steps.version.outputs.previous_tag }}
+      next_version: ${{ steps.version.outputs.next_version }}
+      sha: ${{ steps.version.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compute version
+        id: version
+        env:
+          EVENT: ${{ github.event_name }}
+          CHANNEL_INPUT: ${{ inputs.channel }}
+          VERSION_INPUT: ${{ inputs.version }}
+          NEXT_INPUT: ${{ inputs.next }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          channel=${CHANNEL_INPUT:-nightly}
+          sha=$(git rev-parse HEAD)
+          current=$(swift Tools/ReleaseVersion.swift current)
+          skip=false
+          next_version=
+          if [[ "$channel" == nightly ]]; then
+            marketing=$current
+            label=$(swift Tools/ReleaseVersion.swift nightly "$RUN_NUMBER")
+            previous=$(git tag --list 'v*-nightly.*' --sort=-creatordate | head -n 1 || true)
+            if [[ "$EVENT" == schedule && -n "$previous" && $(git rev-list -n 1 "$previous") == "$sha" ]]; then
+              echo "main has not changed since $previous; skipping the nightly."
+              skip=true
+            fi
+          else
+            marketing=${VERSION_INPUT:-$current}
+            # Validates the version and computes the next development version.
+            next_version=$(swift Tools/ReleaseVersion.swift next "$NEXT_INPUT" "$marketing")
+            label=$marketing
+            previous=$(git tag --list 'v*' --sort=-v:refname | grep -v -- '-nightly\.' | head -n 1 || true)
+          fi
+          tag="v$label"
+          if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            echo "::error::Tag $tag already exists."
+            exit 1
+          fi
+          {
+            echo "skip=$skip"
+            echo "channel=$channel"
+            echo "marketing_version=$marketing"
+            echo "build_number=$RUN_NUMBER"
+            echo "label=$label"
+            echo "tag=$tag"
+            echo "previous_tag=$previous"
+            echo "next_version=$next_version"
+            echo "sha=$sha"
+          } >> "$GITHUB_OUTPUT"
+          echo "### MatterMac $label ($channel, build $RUN_NUMBER, $sha)" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
+    uses: ./.github/workflows/build-dmg.yml
+    with:
+      marketing_version: ${{ needs.prepare.outputs.marketing_version }}
+      build_number: ${{ needs.prepare.outputs.build_number }}
+      version_label: ${{ needs.prepare.outputs.label }}
+      artifact_name: MatterMac-release
+      ref: ${{ needs.prepare.outputs.sha }}
+    secrets: inherit
+
+  publish:
+    needs: [prepare, build]
+    runs-on: xcode-27
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CHANNEL: ${{ needs.prepare.outputs.channel }}
+      LABEL: ${{ needs.prepare.outputs.label }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
+      NEXT_VERSION: ${{ needs.prepare.outputs.next_version }}
+      SHA: ${{ needs.prepare.outputs.sha }}
+      DMG_NAME: ${{ needs.build.outputs.dmg_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: MatterMac-release
+          path: dist
+      - name: Write release notes
+        run: |
+          set -euo pipefail
+          test -f "dist/$DMG_NAME" && test -f "dist/$DMG_NAME.sha256"
+          {
+            if [[ "$CHANNEL" == nightly ]]; then
+              echo "Nightly build of \`main\` at ${SHA:0:7}. Nightlies are signed and notarized but not release-tested."
+            else
+              echo "MatterMac $LABEL."
+            fi
+            echo
+            echo "Requires macOS 14 or later (Apple silicon and Intel). Download **$DMG_NAME**, open it and drag MatterMac to Applications."
+            echo
+            echo "SHA-256: \`$(cut -d ' ' -f 1 "dist/$DMG_NAME.sha256")\`"
+            echo
+            if [[ -n "$PREVIOUS_TAG" ]]; then
+              echo "## Changes since $PREVIOUS_TAG"
+              echo
+              git log --no-merges --pretty='- %s (%h)' "$PREVIOUS_TAG..$SHA" | head -n 200
+            else
+              echo "## Changes"
+              echo
+              git log --no-merges --pretty='- %s (%h)' "$SHA" | head -n 50
+            fi
+          } > "$RUNNER_TEMP/notes.md"
+      - name: Create GitHub release
+        run: |
+          set -euo pipefail
+          flags=(--latest)
+          if [[ "$CHANNEL" == nightly ]]; then flags=(--prerelease --latest=false); fi
+          gh release create "$TAG" "dist/$DMG_NAME" "dist/$DMG_NAME.sha256" \
+            --target "$SHA" --title "MatterMac $LABEL" --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"
+      - name: Start the next development version
+        if: needs.prepare.outputs.channel == 'production'
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git pull --rebase origin main
+          swift Tools/ReleaseVersion.swift set "$NEXT_VERSION"
+          git add Apps/MatterMac/Configuration/Shared.xcconfig
+          git commit -m "chore(release): start $NEXT_VERSION after $LABEL"
+          git push origin HEAD:main
+      - name: Keep the newest 14 nightlies
+        if: needs.prepare.outputs.channel == 'nightly'
+        run: |
+          set -euo pipefail
+          gh release list --limit 200 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | test("-nightly\\."))] | sort_by(.createdAt) | reverse | .[14:] | .[].tagName' |
+          while read -r old; do
+            [[ -n "$old" ]] && gh release delete "$old" --cleanup-tag --yes
+          done

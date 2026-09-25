@@ -1,0 +1,153 @@
+name: Build notarized DMG
+
+# Reusable: builds the universal Release app with the given version, signs it with
+# the Developer ID, notarizes and staples the app and a DMG, and uploads the DMG as
+# the artifact `artifact_name`. Called by release.yml (nightly and production) and
+# sign.yml (manual test build). Needs the Developer ID and notary secrets.
+
+on:
+  workflow_call:
+    inputs:
+      marketing_version:
+        description: MAJOR.MINOR.PATCH (CFBundleShortVersionString)
+        required: true
+        type: string
+      build_number:
+        description: Monotonic build number (CFBundleVersion)
+        required: true
+        type: string
+      version_label:
+        description: Full version shown to users, e.g. 1.0.0-nightly.20260923.45
+        required: true
+        type: string
+      artifact_name:
+        required: true
+        type: string
+      ref:
+        description: Commit or tag to build (defaults to the calling ref)
+        required: false
+        type: string
+        default: ''
+    outputs:
+      dmg_name:
+        description: File name of the DMG inside the artifact
+        value: ${{ jobs.build.outputs.dmg_name }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    outputs:
+      dmg_name: ${{ steps.names.outputs.dmg_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Validate version inputs
+        id: names
+        env:
+          MARKETING_VERSION: ${{ inputs.marketing_version }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          VERSION_LABEL: ${{ inputs.version_label }}
+        run: |
+          set -euo pipefail
+          [[ "$MARKETING_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$VERSION_LABEL" =~ ^[0-9A-Za-z.-]+$ && "$VERSION_LABEL" == "$MARKETING_VERSION"* ]]
+          echo "dmg_name=MatterMac-$VERSION_LABEL.dmg" >> "$GITHUB_OUTPUT"
+      - name: Import Developer ID
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          certificate="$RUNNER_TEMP/developer-id.p12"
+          keychain="$RUNNER_TEMP/mattermac-signing.keychain-db"
+          keychain_password=$(openssl rand -hex 32)
+          echo "::add-mask::$keychain_password"
+          printf '%s' "$CERTIFICATE_BASE64" | base64 --decode > "$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" -P "$CERTIFICATE_PASSWORD" -k "$keychain" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          rm "$certificate"
+          xcrun notarytool store-credentials MatterMac --keychain "$keychain" \
+            --apple-id "$APPLE_ID" --team-id ZJ37A69485 --password "$APPLE_APP_SPECIFIC_PASSWORD"
+      - name: Build and verify universal signed app
+        env:
+          MARKETING_VERSION: ${{ inputs.marketing_version }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          VERSION_LABEL: ${{ inputs.version_label }}
+        run: |
+          set -euo pipefail
+          xcodebuild -workspace MatterMac.xcworkspace -scheme MatterMac \
+            -configuration Release -derivedDataPath build \
+            MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            MATTERMAC_VERSION_LABEL="$VERSION_LABEL" build
+          app=build/Build/Products/Release/MatterMac.app
+          info="$app/Contents/Info.plist"
+          [[ $(plutil -extract CFBundleShortVersionString raw "$info") == "$MARKETING_VERSION" ]]
+          [[ $(plutil -extract CFBundleVersion raw "$info") == "$BUILD_NUMBER" ]]
+          [[ $(plutil -extract MatterMacVersionLabel raw "$info") == "$VERSION_LABEL" ]]
+          codesign --verify --deep --strict "$app"
+          codesign --verify -R='identifier "dev.frnoch.mattermac" and anchor apple generic and certificate leaf[subject.OU] = "ZJ37A69485" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "$app"
+          architectures=$(lipo -archs "$app/Contents/MacOS/MatterMac")
+          [[ " $architectures " == *" arm64 "* && " $architectures " == *" x86_64 "* ]]
+      - name: Notarize app and create notarized DMG
+        env:
+          DMG_NAME: ${{ steps.names.outputs.dmg_name }}
+          VERSION_LABEL: ${{ inputs.version_label }}
+        run: |
+          set -euo pipefail
+          app=build/Build/Products/Release/MatterMac.app
+          keychain="$RUNNER_TEMP/mattermac-signing.keychain-db"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/MatterMac.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/MatterMac.zip" \
+            --keychain-profile MatterMac --keychain "$keychain" --wait --timeout 20m \
+            --output-format json > "$RUNNER_TEMP/app-notarization.json"
+          cat "$RUNNER_TEMP/app-notarization.json"
+          [[ $(plutil -extract status raw "$RUNNER_TEMP/app-notarization.json") == Accepted ]]
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose "$app"
+
+          staging="$RUNNER_TEMP/dmg-staging"
+          mkdir "$staging"
+          ditto "$app" "$staging/MatterMac.app"
+          ln -s /Applications "$staging/Applications"
+          mkdir "$RUNNER_TEMP/dmg"
+          dmg="$RUNNER_TEMP/dmg/$DMG_NAME"
+          diskutil image create from --volumeName "MatterMac $VERSION_LABEL" --format UDZO "$staging" "$dmg"
+          codesign --sign 'Developer ID Application: David Frnoch (ZJ37A69485)' --timestamp "$dmg"
+          codesign --verify --strict "$dmg"
+          xcrun notarytool submit "$dmg" \
+            --keychain-profile MatterMac --keychain "$keychain" --wait --timeout 20m \
+            --output-format json > "$RUNNER_TEMP/dmg-notarization.json"
+          cat "$RUNNER_TEMP/dmg-notarization.json"
+          [[ $(plutil -extract status raw "$RUNNER_TEMP/dmg-notarization.json") == Accepted ]]
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl --assess --type open --context context:primary-signature --verbose "$dmg"
+          (cd "$RUNNER_TEMP/dmg" && shasum -a 256 "$DMG_NAME" > "$DMG_NAME.sha256")
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ runner.temp }}/dmg/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove signing material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          if [[ -f "$RUNNER_TEMP/mattermac-signing.keychain-db" ]]; then
+            security delete-keychain "$RUNNER_TEMP/mattermac-signing.keychain-db"
+          fi

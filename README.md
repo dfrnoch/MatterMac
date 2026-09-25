@@ -55,11 +55,20 @@ Release uses David Frnoch’s Developer ID (team `ZJ37A69485`). To build without
 that certificate, append `CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= OTHER_CODE_SIGN_FLAGS=`
 to the build command. Pull-request CI uses this ad-hoc override.
 
-The manual **Notarized DMG** GitHub Actions workflow builds a universal app from
-`main`, notarizes and staples the app, then creates a signed, notarized and stapled
-`MatterMac.dmg` with an Applications shortcut for drag-and-drop installation.
-It checks Apple's `Accepted` status and Gatekeeper before uploading the DMG artifact.
-No public GitHub release is published automatically.
+The **Release** GitHub Actions workflow publishes signed, notarized and stapled
+DMGs as GitHub releases ([releasing](docs/releasing.md)):
+
+- **Nightly:** built every day at 02:17 UTC when `main` changed, or on demand.
+  It is published as a pre-release named like **MatterMac 1.0.0-nightly.20260923.45**
+  (next version, UTC date, build number). The newest 14 nightlies are kept.
+- **Production:** run by hand with channel `production`. It releases
+  `MARKETING_VERSION` from `Shared.xcconfig` (or a given version) as `v1.0.0`,
+  then commits the next development version to `main` (patch, minor or major).
+
+Both channels share `build-dmg.yml`, which builds the universal app, notarizes
+the app and a DMG with an Applications shortcut, and checks Apple's `Accepted`
+status and Gatekeeper. The manual **Notarized DMG** workflow makes the same DMG as
+a 7-day artifact without publishing a release.
 
 Required repository secrets:
 
