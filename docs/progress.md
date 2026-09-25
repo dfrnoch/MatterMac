@@ -1024,3 +1024,17 @@ The active-window visual tour also passed through search and Settings.
   selector correction: **1 passed**, `/tmp/mm-sidebar-member-recheck.log`.
 - Remaining audit reports include contrast, SwiftUI container labels and native
   menu actions; no blanket accessibility pass is claimed.
+
+### Recovered rendering milestone integrated
+
+Integrated the recovered rendering branch (`8284c31`, `be2f1e5`; main equivalents
+`0f8b0a3`, `585dd52`). Task markers, native TextKit tables, quote/code decorations,
+and attachment cards now share the same measurement and display path. Attachment
+images remain explicit safe links; no third-party image fetch was added. Copy
+Text retains image links and unsupported-action notices. See decision 0027.
+
+`swift test --package-path Packages/MatterMacKit` on the integrated main branch:
+**361 tests reported, all passed**, zero compiler warnings (UI 134, Core 129,
+API 53, Models 18, Realtime 27; opt-in live/Keychain/demo checks were not enabled).
+Evidence: `/tmp/mm-rendering-integrated.log`. Performance measurements and the
+other two recovered feature branches remain in progress.
