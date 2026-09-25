@@ -1130,3 +1130,40 @@ The visual tour captures actual-app channel/thread/search/settings states under
 date/login/title/placeholder and native group/menu audit reports remain, so this
 is not a clean accessibility audit. The search capture exposed clipped outer pane
 edges; that layout defect is under investigation before the sustained run.
+
+### Notifications, real reconnect gaps and sustained-run preparation
+
+Followed-thread replies now honor the server's `posted.followers` eligibility
+signal, including `desktop_threads` and channel overrides, without a follow cache
+or per-reply API lookup. Focused decoding/policy/session coverage passed (40 tests),
+and live checks on v11 subpath/v10 verified `desktop_threads=all` includes the
+follower while `mention` does not; preferences restored and test posts deleted.
+Evidence: `/tmp/mm-followed-notifications2.log`, `/tmp/mm-followed-live.log`.
+
+Unknown-sender alerts previously spawned one untracked task per post. They now use
+one tracked worker and a ResourceBudget cap of 32 pending alerts / 256 KiB,
+including the in-flight event. Focus/read/membership/preferences are checked again
+after lookup. Revocation, archival, edit and deletion purge pending content;
+shutdown/auth loss cancel and clear it. The worker holds only IDs across await
+and cannot remove the next entry if its own event was purged. **19 focused tests
+passed**, zero warnings (`/tmp/mm-alert-invalidations2.log`). Overflow drops alerts,
+never drafts or pending sends.
+
+`LiveReconnectTests` closes a real production URLSession socket, refuses at least
+one reconnect, then permits a new connection. On each of the three local servers,
+Alice missed Bob's new post, edit and deletion while disconnected, then reconciled
+all three; draft text and selection survived. Normal app shutdown cleared the
+unsent ledger. **3 endpoint cases passed in 25.175 s**, zero warnings, synthetic
+posts deleted and Bob logged out (`/tmp/mm-live-reconnect.log`). This tests socket
+recovery, not physical Mac sleep/wake or a server outage.
+
+The actual-app soak harness and standalone Swift sampler are in `docs/soak.md`.
+The corrected smoke passed **5 complete profile/image/thread/search cycles in
+165.011 s**. Debug-only preliminary samples: peak 112.20 MiB, last 92.02 MiB,
+45 descriptors. These are not optimized or long-session acceptance results.
+Early attempts exposed brittle XCTest assertions: native image windows were
+visible although `app.windows.count` did not increase; search rows were not exposed
+as XCUI buttons. The harness now checks visible viewer controls/results instead.
+The scoped storage snapshot saw a preference plist mtime change, but did not have
+before-values to attribute it; autosave behavior is being investigated, not yet
+classified as an app-content persistence finding.
