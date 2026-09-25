@@ -46,6 +46,7 @@ struct LocalSettingsPersistenceTests {
             #expect(settings.soundName == SystemSounds.defaultName)
             #expect(settings.sendBehavior == .returnSends && settings.textSize == .standard && settings.appearance == .system)
             #expect(settings.checksForUpdates && settings.updateChannel == nil)
+            #expect(settings.theme == .system)
         }
         // Loading defaults writes nothing.
         #expect(storage.writes == 0 && storage.values.isEmpty)
@@ -66,6 +67,7 @@ struct LocalSettingsPersistenceTests {
         first.appearance = .dark
         first.checksForUpdates = false
         first.updateChannel = .nightly
+        first.theme = .preset(.dusk)
         #expect(storage.values["MatterMac.notificationsEnabled"] as? Bool == false)
         #expect(storage.values["MatterMac.textSize"] as? String == "extraLarge")
         #expect(Set(storage.values.keys) == Set(LocalSettings.Key.allCases.map(\.rawValue)))
@@ -77,6 +79,7 @@ struct LocalSettingsPersistenceTests {
         #expect(restored.sendBehavior == .commandReturnSends && restored.textSize == .extraLarge)
         #expect(restored.appearance == .dark)
         #expect(!restored.checksForUpdates && restored.updateChannel == .nightly)
+        #expect(restored.theme == .preset(.dusk))
         // The saved appearance is applied at launch, not only on change.
         #expect(NSApplication.shared.appearance?.name == .darkAqua)
         #expect(environment(storage).sendBehavior == .commandReturnSends)
@@ -92,12 +95,14 @@ struct LocalSettingsPersistenceTests {
             "MatterMac.sendBehavior": "shiftReturnSends",
             "MatterMac.textSize": true,
             "MatterMac.appearance": String(repeating: "dark", count: 40),
+            "MatterMac.theme": Data(#"{"version":1,"kind":"preset","preset":"neon"}"#.utf8),
         ])
         let settings = LocalSettings(storage: storage)
         #expect(settings.notificationsEnabled && settings.showMessagePreview)
         #expect(settings.playSound && settings.bounceDockIcon)
         #expect(settings.soundName == SystemSounds.defaultName)
         #expect(settings.sendBehavior == .returnSends && settings.textSize == .standard && settings.appearance == .system)
+        #expect(settings.theme == .system)
         #expect(storage.writes == 0)
         // Only real booleans count; a valid value next to invalid ones is kept.
         let mixed = LocalSettings(storage: MemorySettingsStorage([

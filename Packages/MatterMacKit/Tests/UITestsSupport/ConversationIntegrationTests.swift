@@ -97,6 +97,88 @@ struct ConversationIntegrationTests {
         await h.close()
     }
 
+    /// Opt-in visual review of window themes (`MM_THEME_SNAPSHOTS=<dir>`): the main
+    /// window under several themes in Light and Dark, changed live, and the Settings
+    /// appearance tab. Captures only the test windows.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["MM_THEME_SNAPSHOTS"] != nil))
+    func captureThemes() async throws {
+        let h = try await Harness(seedMessages: true)
+        await h.realtime.push(.state(.connected(resumed: false)))
+        #expect(await waitUntil { h.model.connection == .connected })
+        let settings = h.app.environment.settings
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+            styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.contentViewController = NSHostingController(rootView: MainWindowView(app: h.app, session: h.model)
+            .frame(minWidth: 760, minHeight: 500))
+        window.setContentSize(NSSize(width: 1000, height: 700))
+        _ = NSApp.setActivationPolicy(.regular)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+        defer { window.close(); settings.theme = .system }
+        let directory = ProcessInfo.processInfo.environment["MM_THEME_SNAPSHOTS"]!
+        func settle(_ window: NSWindow, _ steps: Int = 12) async throws {
+            for _ in 0..<steps {
+                window.contentView?.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+                try await Task.sleep(for: .milliseconds(60))
+            }
+        }
+        func shoot(_ window: NSWindow, _ name: String) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            process.arguments = ["-x", "-o", "-l", String(window.windowNumber), directory + "/" + name + ".png"]
+            try process.run()
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0)
+        }
+        let themes: [(String, AppTheme)] = [("system", .system), ("dawn", .preset(.dawn)), ("dusk", .preset(.dusk)),
+                                            ("lagoon", .preset(.lagoon)), ("slate", .preset(.slate)),
+                                            ("custom", .custom(ThemeGradient(hues: [0.13, 0.95, 0.55], saturation: 1,
+                                                                             brightness: 1, intensity: 1)))]
+        for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            window.appearance = NSAppearance(named: appearance)
+            try await settle(window, 20)
+            // Scroll a little away from the live edge so messages pass under the toolbar.
+            func scrollViews(_ view: NSView) -> [NSScrollView] {
+                (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+            }
+            if let pane = h.model.draftProvider as? ConversationController {
+                let clip = pane.timeline.scrollView.contentView
+                clip.scroll(to: NSPoint(x: 0, y: max(0, clip.bounds.minY - 90)))
+                pane.timeline.scrollView.reflectScrolledClipView(clip)
+            }
+            for (themeName, theme) in themes {
+                settings.theme = theme
+                try await settle(window)
+                if let pane = h.model.draftProvider as? ConversationController {
+                    // Live: the timeline follows the setting without reopening the pane.
+                    #expect(pane.timeline.drawsThemedBackground == !theme.isSystem)
+                }
+                try shoot(window, "theme-\(themeName)-\(appearanceName)")
+            }
+        }
+        // The Settings appearance tab with a preset and with a custom theme.
+        let settingsWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 900),
+                                      styleMask: [.titled], backing: .buffered, defer: false)
+        settingsWindow.isReleasedWhenClosed = false
+        settingsWindow.isRestorable = false
+        settingsWindow.contentViewController = NSHostingController(rootView: AppearanceSettingsTab(settings: settings)
+            .environment(\.matterMacTheme, settings.theme).frame(width: 540, height: 900))
+        settingsWindow.makeKeyAndOrderFront(nil)
+        defer { settingsWindow.close() }
+        for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            settingsWindow.appearance = NSAppearance(named: appearance)
+            for (themeName, theme) in [("preset", AppTheme.preset(.dusk)), ("custom", themes[5].1)] {
+                settings.theme = theme
+                try await settle(settingsWindow)
+                try shoot(settingsWindow, "settings-\(themeName)-\(appearanceName)")
+            }
+        }
+        await h.close()
+    }
+
     @Test func composerFloatsOverFullHeightTimelineAndTracksGrowth() async throws {
         let h = try await Harness()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),

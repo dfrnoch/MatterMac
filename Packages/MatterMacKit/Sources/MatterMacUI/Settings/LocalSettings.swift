@@ -51,6 +51,17 @@ public final class LocalSettings {
         case bounceDockIcon = "MatterMac.bounceDockIcon"
         case checksForUpdates = "MatterMac.checksForUpdates"
         case updateChannel = "MatterMac.updateChannel"
+        /// Versioned JSON `Data` (`AppTheme`), at most `AppTheme.maximumStoredBytes`.
+        case theme = "MatterMac.theme"
+    }
+
+    /// Window theme (Settings › Appearance). Applies live to every window; invalid
+    /// saved data loads as `.system` (decision 0035).
+    public var theme: AppTheme = .system {
+        didSet {
+            guard oldValue != theme, isLoaded, let data = theme.storageData() else { return }
+            storage?.set(data, forKey: Key.theme.rawValue)
+        }
     }
 
     /// Return vs ⌘Return in the composer.
@@ -116,6 +127,7 @@ public final class LocalSettings {
             bounceDockIcon = read.bool(.bounceDockIcon) ?? bounceDockIcon
             checksForUpdates = read.bool(.checksForUpdates) ?? checksForUpdates
             updateChannel = read.value(.updateChannel)
+            theme = read.data(.theme).flatMap(AppTheme.init(storageData:)) ?? theme
         }
         isLoaded = true
         if appearance != .system { applyAppearance() }
@@ -157,6 +169,10 @@ public final class LocalSettings {
         func string(_ key: Key) -> String? {
             guard let text = storage.object(forKey: key.rawValue) as? String, text.utf8.count <= 64 else { return nil }
             return text
+        }
+
+        func data(_ key: Key) -> Data? {
+            storage.object(forKey: key.rawValue) as? Data
         }
 
         func value<Value: RawRepresentable<String>>(_ key: Key) -> Value? {

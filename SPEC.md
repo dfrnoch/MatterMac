@@ -29,7 +29,7 @@ Priority order when requirements conflict: security and correct user-visible beh
 
 - No Electron, Chromium, WKWebView, embedded HTML interface, JavaScript runtime, React Native, Flutter, Tauri, Rust core, Go helper, or unofficial bridge to the official desktop process.
 - No server component in the shipped product. A development-only Mattermost test instance is permitted; it is not a MatterMac backend.
-- No SQLite, Core Data, SwiftData, Realm, `URLCache`/disk HTTP cache, automatic file logging, or UserDefaults-backed account, navigation, composer, or content state. Application persistence is limited to saved sign-ins in macOS Keychain, the encrypted, bounded `ContentCache` (§7), and — at the user's request (2026-09-25, decision 0032) — the small, typed "On This Mac" settings (notifications, message previews, sound, Dock bounce, send behavior, text size, appearance) in `UserDefaults` under `MatterMac.*` keys. Drafts and pending sends remain session-only.
+- No SQLite, Core Data, SwiftData, Realm, `URLCache`/disk HTTP cache, automatic file logging, or UserDefaults-backed account, navigation, composer, or content state. Application persistence is limited to saved sign-ins in macOS Keychain, the encrypted, bounded `ContentCache` (§7), and — at the user's request (2026-09-25, decision 0032) — the small, typed "On This Mac" settings (notifications, message previews, sound, Dock bounce, send behavior, text size, appearance, window theme — decision 0035) in `UserDefaults` under `MatterMac.*` keys. Drafts and pending sends remain session-only.
 - No `@AppStorage` or `@SceneStorage` for account, navigation, composer, or preference state. The saved local settings go through the injected `LocalSettingsStorage` only. Disable relevant window restoration and text-document autosaving mechanisms.
 - No unbounded arrays of history, event streams, worker tasks, retry queues, image buffers, search results, or user-directory records.
 - No synchronous network or file operations on the main actor. No full-history Markdown parsing or image decoding on the main actor.
@@ -500,7 +500,7 @@ Notification behavior is in-app badges, optional sounds, and Notification Center
 
 Support Mattermost permalinks with the correct server base path. For links to another server, prompt for the target account context rather than silently transmitting the active session token. A custom MatterMac URL handler, if introduced, must use an owned scheme and validate every parameter; do not hijack another app's registered scheme.
 
-The appearance choice, text size, send behavior, sound preference, Dock bounce, notification and message-preview settings are saved on this Mac (decision 0032); quick switcher state stays in memory. Server-side user settings are authoritative only for the server features they describe.
+The appearance choice, window theme (decision 0035), text size, send behavior, sound preference, Dock bounce, notification and message-preview settings are saved on this Mac (decision 0032); quick switcher state stays in memory. Server-side user settings are authoritative only for the server features they describe.
 
 Provide a small About/Compatibility panel showing the app version, verified server version/capabilities, active session identity, native unsupported features, and a link/action to the project's documentation when configured. Do not display fabricated release information.
 

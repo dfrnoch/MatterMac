@@ -20,10 +20,11 @@ durable rules and commands that have actually been run in this repository.
   drafts or pending sends, and cached windows never mark channels read. Quit keeps
   sign-ins and cache; Sign Out deletes both for that account. See SPEC §7 and
   decision 0031. The Settings "On This Mac" values (`LocalSettings`: notifications,
-  previews, sound, Dock bounce, send behavior, text size, appearance) are saved in
-  `UserDefaults.standard` under `MatterMac.*` keys (user request 2026-09-25, decision
-  0032): typed, validated on load, injected via `AppEnvironment(settingsStorage:)`;
-  tests and `-MatterMacUITesting` keep them in memory. Drafts stay session-only.
+  previews, sound, Dock bounce, send behavior, text size, appearance, window theme
+  per decision 0035) are saved in `UserDefaults.standard` under `MatterMac.*` keys
+  (user request 2026-09-25, decision 0032): typed, validated on load, injected via
+  `AppEnvironment(settingsStorage:)`; tests and `-MatterMacUITesting` keep them in
+  memory. Drafts stay session-only.
   Notifications and message previews are on by default; authorization is asked at
   most once per launch, after a sign-in, only while macOS reports `.notDetermined`.
 - Networking: `URLSessionConfiguration.ephemeral` with `urlCache = nil`,

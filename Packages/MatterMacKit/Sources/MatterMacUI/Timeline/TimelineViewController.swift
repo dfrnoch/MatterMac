@@ -42,6 +42,13 @@ public final class TimelineViewController: NSViewController {
         }
     }
 
+    /// With a window theme the timeline draws no background of its own, so the themed
+    /// backdrop behind the pane shows through (the theme keeps text contrast; see
+    /// `ThemePalette`). Otherwise it draws the standard text background.
+    public var drawsThemedBackground = false {
+        didSet { if oldValue != drawsThemedBackground { applyBackground() } }
+    }
+
     /// The signed-in user's username for mention highlighting.
     public var currentUsername: String? {
         didSet { if oldValue != currentUsername { rendererDidChange(fontScaleChanged: false) } }
@@ -152,8 +159,6 @@ public final class TimelineViewController: NSViewController {
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
-        scrollView.drawsBackground = true
-        scrollView.backgroundColor = .textBackgroundColor
         scrollView.contentView.postsBoundsChangedNotifications = true
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("MatterMacTimelineColumn"))
@@ -173,7 +178,6 @@ public final class TimelineViewController: NSViewController {
         tableView.allowsColumnResizing = false
         tableView.allowsTypeSelect = false
         tableView.gridStyleMask = []
-        tableView.backgroundColor = .textBackgroundColor
         tableView.floatsGroupRows = false
         tableView.focusRingType = .none
         tableView.dataSource = adapter
@@ -184,6 +188,7 @@ public final class TimelineViewController: NSViewController {
         tableView.setAccessibilityLabel(String(localized: "Messages"))
         scrollView.documentView = tableView
         container.addSubview(scrollView)
+        applyBackground()
         tableView.fitColumnToWidth()
         installHoverBar(in: container)
 
@@ -199,6 +204,13 @@ public final class TimelineViewController: NSViewController {
         layouter.appearance = RenderAppearance(container.effectiveAppearance)
         currentToken = LayoutToken(bucket: widthBucket(), scaleKey: layouter.fontScaleKey)
         lastClipSize = scrollView.contentView.bounds.size
+    }
+
+    private func applyBackground() {
+        let color: NSColor = drawsThemedBackground ? .clear : .textBackgroundColor
+        scrollView.drawsBackground = !drawsThemedBackground
+        scrollView.backgroundColor = color
+        tableView.backgroundColor = color
     }
 
     public override func viewDidLayout() {

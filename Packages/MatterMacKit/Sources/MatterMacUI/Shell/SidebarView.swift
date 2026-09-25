@@ -49,7 +49,12 @@ struct SidebarView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(SidebarMaterial().ignoresSafeArea().allowsHitTesting(false))
+        // The window theme tints the sidebar material (nothing with the System theme).
+        .background {
+            ZStack { SidebarMaterial(); ThemedBackdrop(.sidebar) }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+        }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { columnWidth = $0 }
         .modifier(SidebarTitleToolbar(app: app, session: session, columnWidth: columnWidth))
         .sheet(item: $session.directorySheet) { sheet in
@@ -319,10 +324,10 @@ struct SidebarRow: View {
                     .font(.caption2.weight(.bold))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
-                    .background(Capsule().fill(Color.accentColor))
+                    .background(Capsule().fill(.tint))
                     .foregroundStyle(.white)
             } else if row.isUnread {
-                Circle().fill(Color.accentColor).frame(width: 7, height: 7)
+                Circle().fill(.tint).frame(width: 7, height: 7)
             }
         }
         // Muted channels are dimmed; mentions still stand out through the badge.
@@ -433,7 +438,7 @@ struct TeamRailButton: View {
             TeamIconView(session: session, team: team, size: 32)
                 .overlay {
                     RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2)
+                        .strokeBorder(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear), lineWidth: 2)
                         .padding(-3)
                 }
                 .overlay(alignment: .topTrailing) {
@@ -535,7 +540,7 @@ struct ServerRailButton: View {
             Text(verbatim: TeamIconView.initials(name))
                 .font(.caption.weight(.bold))
                 .frame(width: 30, height: 30)
-                .background(Circle().fill(isActive ? Color.accentColor : Color.secondary.opacity(0.25)))
+                .background(Circle().fill(isActive ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.secondary.opacity(0.25))))
                 .foregroundStyle(isActive ? .white : .primary)
                 .frame(width: WorkspaceRail.width, height: 34)
                 .contentShape(Rectangle())

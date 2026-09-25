@@ -238,6 +238,12 @@ struct MainWindowView: View {
                 .disabled(session.selectedChannel == nil)
             }
         }
+        // The window theme: a gradient behind both columns and the glass chrome (the
+        // conversation panes draw no background of their own while it is active),
+        // and its accent for badges and controls. Applies live from Settings.
+        .themedBackground()
+        .themeAccentTint()
+        .environment(\.matterMacTheme, app.environment.settings.theme)
         .focusedSceneValue(\.matterMacSession, session)
         .sheet(isPresented: $session.isQuickSwitcherVisible) { QuickSwitcherView(session: session) }
         .sheet(isPresented: $session.isUnsentRecoveryVisible) { UnsentRecoveryView(session: session) }

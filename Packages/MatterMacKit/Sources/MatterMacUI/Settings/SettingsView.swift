@@ -35,13 +35,15 @@ public struct MatterMacSettingsView: View {
                 .tabItem { Label("Notifications", systemImage: "bell.badge") }
                 .tag(Tab.notifications)
             AppearanceSettingsTab(settings: environment.settings)
-                .tabItem { Label("Appearance", systemImage: "textformat.size") }
+                .tabItem { Label("Appearance", systemImage: "paintpalette") }
                 .tag(Tab.appearance)
             AccountsSettingsTab(environment: environment)
                 .tabItem { Label("Accounts", systemImage: "person.crop.circle") }
                 .tag(Tab.accounts)
         }
         .frame(width: 540, height: 560)
+        .themeAccentTint()
+        .environment(\.matterMacTheme, environment.settings.theme)
     }
 }
 
@@ -401,8 +403,9 @@ struct AppearanceSettingsTab: View {
                 Text("A compact message layout is not available yet.")
                     .font(.caption).foregroundStyle(.secondary)
             } header: { LocalSectionHeader() }
+            ThemeSettingsSections(settings: settings)
             Section {
-                Text("Your Mattermost theme is not applied; MatterMac follows the macOS appearance. It never saves its appearance to the server.")
+                Text("Your Mattermost theme is not applied; MatterMac uses the macOS appearance and the theme chosen here. It never saves its appearance to the server.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
