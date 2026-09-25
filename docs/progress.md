@@ -1998,3 +1998,58 @@ straight tangent sides, and its tip lies on the ring's centreline, in the middle
 the gap. Construction values are in `docs/assets.md`. Both icons were rendered with
 `ictool` and checked visually (Default, Dark, ClearLight and TintedDark). The Debug
 build succeeds with no warnings.
+
+### Quick switcher, themes and sign-in redesign (2026-09-25)
+
+Three parallel agents, each in its own worktree with separate file ownership, then
+merged here.
+
+**Quick switcher (⌘K)**
+
+- Now a floating glass palette over the window instead of a sheet: search row,
+  "Unread" and "Recent" sections, fixed-height rows and key hints.
+- Rows show sidebar avatars with presence, and two stacked avatars for group
+  messages. Group messages use members' display names (via
+  `DirectoryStore.peekUsers(usernames:)`), with usernames as the fallback.
+- Ranking: exact, then prefix, then word start, then contains, then all words;
+  ties go to unread, then recency. Matching ignores case and accents. Still at most
+  20 results.
+- Tests: `QuickSwitcherTests` and `QuickSwitcherUITests`. Opt-in captures:
+  `MM_SWITCHER_SNAPSHOTS`.
+
+**Window themes** (decision 0035)
+
+- System (the default, unchanged look), seven presets, and a custom gradient: 2–4
+  hues plus saturation, brightness and intensity.
+- Saved as `MatterMac.theme` in `LocalSettings`.
+- A contrast guard reduces any tint until primary text keeps at least 7:1.
+- The theme is drawn behind the split view; the timeline stops painting its own
+  background while a theme is active, and the accent comes from the theme.
+- The quick switcher and the sign-in backdrop follow the theme too
+  (`OnboardingBackdropPalette(theme:)`).
+- Tests: `ThemeTests`. Opt-in captures: `MM_THEME_SNAPSHOTS`.
+
+**Sign-in screens**
+
+- New gradient backdrop (a mesh on macOS 15 and later, radial glows on 14; it moves
+  only when the step changes, and never with Reduce Motion) behind a glass card.
+- A step indicator (Server, Confirm, Sign In), large fields with symbols, and a
+  server pill with Change on the login step.
+- The "Restoring saved sign-ins…" state is now a card.
+- The typed server address stays in memory at the root view, so Back and Change
+  keep it; it is cleared after sign-in.
+- The method segment now reads "Access Token".
+- Accessibility identifiers and the flow are unchanged. Opt-in captures:
+  `MM_ONBOARDING_SNAPSHOTS`.
+
+**Icon:** both icons were redrawn on one 38° axis (see `docs/assets.md`).
+
+**Verification after the merge**
+
+- `swift test --package-path Packages/MatterMacKit`: all suites pass.
+- Debug `xcodebuild`: succeeds with no warnings.
+- Not done: XCUITests (they drive the desktop), and the macOS 14/15 fallbacks were
+  not viewed on those systems.
+
+Next: check the themed switcher and the sign-in screens in the running app, then
+publish a nightly.
