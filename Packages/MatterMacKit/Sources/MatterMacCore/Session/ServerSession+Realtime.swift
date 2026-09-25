@@ -78,6 +78,9 @@ extension ServerSession {
             noteTeamActivity(posted.teamID)
             handlePosted(posted)
         case .postEdited(let post):
+            // Drop delayed alerts: both the body and server mention decision may
+            // have changed, and edits must not create a second notification.
+            pendingAlerts.removeAll { $0.event.post.id == post.id }
             journal.append(.upsert(post))
             if store.upsert(post, insertIfMissing: false) != .notPresent { markDirty([.timeline, .thread, .search]) }
             if collapsedThreadsActive, let root = post.rootID { updateThreadRoot(root) }
@@ -117,6 +120,7 @@ extension ServerSession {
                 markDirty([.sidebar, .header, .timeline])
             }
         case .channelDeleted(let channel, let deleteAt):
+            pendingAlerts.removeAll { $0.event.post.channelID == channel }
             directory.updateChannel(channel) { $0.deleteAt = deleteAt.isZero ? MattermostTimestamp(milliseconds: 1) : deleteAt }
             markDirty([.sidebar, .header, .timeline])
         case .channelMemberUpdated(let membership):
@@ -259,6 +263,9 @@ extension ServerSession {
     }
 
     func handleDeleted(_ post: Post) {
+        pendingAlerts.removeAll {
+            $0.event.post.id == post.id || (post.rootID == nil && $0.event.post.rootID == post.id)
+        }
         let at = now()
         journal.append(.deleted(post.id, rootOf: post.rootID, at: at))
         var changed = store.markDeleted(post.id, at: at)

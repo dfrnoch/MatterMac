@@ -525,6 +525,7 @@ extension ServerSession {
     /// Removes a channel and everything derived from it (rows, windows, search hits,
     /// thread views, typing state). Unsent work stays charged until explicitly discarded.
     func purgeChannel(_ id: ChannelID, reason: SessionNotice?) {
+        pendingAlerts.removeAll { $0.event.post.channelID == id }
         membershipRevision &+= 1
         tasks.removeValue(forKey: .channelFetch(id))?.cancel()
         memberCounts[id] = nil

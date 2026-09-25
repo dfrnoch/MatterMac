@@ -226,6 +226,47 @@ struct NotificationPreferenceSessionTests {
         #expect(await alerts.next() == nil)
     }
 
+    @Test func delayedAlertsDropRevokedContentBeforeLookupReturns() async throws {
+        let h = await SessionHarness()
+        _ = await eventually { await h.session.directory.channels[h.channel.id] != nil }
+        await h.session.updateAppState(isActive: false, isWindowVisible: true)
+        let gate = Gate()
+        let baseline = h.service.withState { $0.calls.filter { $0 == "users" }.count }
+        h.service.withState { $0.usersGate = gate }
+        var alerts = h.session.alerts.makeAsyncIterator()
+        await h.session.testQueueUnknownAlerts(count: 2, message: "revoked content")
+        #expect(await eventually { h.service.withState { $0.calls.filter { $0 == "users" }.count } > baseline })
+        await h.session.purgeChannel(h.channel.id, reason: nil)
+        #expect(await h.session.pendingAlerts.isEmpty)
+        await gate.open()
+        #expect(await eventually { await h.session.testAlertQueueIdle })
+        _ = await h.session.shutdown(revokeServerSession: false)
+        #expect(await alerts.next() == nil)
+    }
+
+    @Test func delayedEditedOrDeletedAlertDoesNotConsumeTheNextItem() async throws {
+        for deletion in [false, true] {
+            let h = await SessionHarness()
+            _ = await eventually { await h.session.directory.channels[h.channel.id] != nil }
+            await h.session.updateAppState(isActive: false, isWindowVisible: true)
+            await h.session.setAlertPreviews(true)
+            let gate = Gate()
+            let baseline = h.service.withState { $0.calls.filter { $0 == "users" }.count }
+            h.service.withState { $0.usersGate = gate }
+            var alerts = h.session.alerts.makeAsyncIterator()
+            await h.session.testQueueUnknownAlerts(count: 2, message: "kept reply")
+            #expect(await eventually { h.service.withState { $0.calls.filter { $0 == "users" }.count } > baseline })
+            await h.session.testInvalidateFirstAlert(deletion: deletion)
+            #expect(await h.session.pendingAlerts.count == 1)
+            await gate.open()
+            #expect(await eventually { await h.session.testAlertQueueIdle })
+            _ = await h.session.shutdown(revokeServerSession: false)
+            let alert = try #require(await alerts.next())
+            #expect(alert.preview == "kept reply 1")
+            #expect(await alerts.next() == nil)
+        }
+    }
+
     @Test func unknownSenderQueueDropsOnShutdownAndAuthenticationDetach() async throws {
         for detach in [false, true] {
             let h = await SessionHarness()
@@ -352,10 +393,16 @@ struct NotificationPreferenceSessionTests {
 
 private extension ServerSession {
     var testAlertQueueIdle: Bool { pendingAlerts.isEmpty && !isRunning(.alertSender) }
+    func testInvalidateFirstAlert(deletion: Bool) {
+        guard var post = pendingAlerts.first?.event.post else { return }
+        post.message = "changed content"
+        handle(deletion ? .postDeleted(post) : .postEdited(post))
+    }
+
     func testQueueUnknownAlerts(count: Int, message: String) {
         for n in 0..<count {
             let post = CoreFixtures.post(900 + n, channel: CoreFixtures.channel(1).id,
-                                         user: UserID(unchecked: CoreFixtures.id("unknown", n)), message: message)
+                                         user: UserID(unchecked: CoreFixtures.id("unknown", n)), message: "\(message) \(n)")
             alertIfNeeded(PostedEvent(post: post, channelType: .open, teamID: CoreFixtures.team.id,
                                      mentionsCurrentUser: true, setOnline: true))
         }

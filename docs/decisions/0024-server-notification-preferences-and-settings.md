@@ -116,3 +116,10 @@ worker checks the epoch, cancellation, membership, current notification settings
 DND, read state and visible conversation again before delivering. A failed lookup
 keeps the existing generic sender label. Gate tests exercise count/byte refusal,
 deduplication, sender resolution, navigation during the request and cancellation.
+
+Channel revocation/archive and post deletion immediately remove affected pending
+alerts (root deletion includes replies). Edits drop a pending alert, because its
+original body and server mention decision are stale. The worker holds only post
+and user identities across the lookup, then finds that item again; removing the
+head during suspension cannot consume or deliver another queued item. Removed
+content is not retained in a second task-local Post copy.

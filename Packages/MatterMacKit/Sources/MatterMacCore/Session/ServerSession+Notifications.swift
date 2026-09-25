@@ -111,29 +111,37 @@ extension ServerSession {
         guard !isRunning(.alertSender) else { return }
         run(.alertSender) { session in
             let epoch = session.epoch
-            while let queued = session.pendingAlerts.first, !Task.isCancelled {
-                let post = queued.event.post
-                if session.directory.peekUser(post.userID) == nil,
-                   let user = try? await session.service.users(ids: [post.userID]).first {
-                    guard session.epoch == epoch, session.isActiveSessionAlive, !Task.isCancelled else { return }
-                    session.directory.upsertUser(user)
+            // Across suspension retain only identities, never a second Post copy:
+            // purge/delete can release the queued message immediately.
+            while let identity = session.pendingAlertIdentity, !Task.isCancelled {
+                var resolved: User?
+                if session.directory.peekUser(identity.user) == nil {
+                    resolved = try? await session.service.users(ids: [identity.user]).first
                 }
                 guard session.epoch == epoch, session.isActiveSessionAlive, !Task.isCancelled else { return }
-                session.pendingAlerts.removeFirst()
+                guard let index = session.pendingAlerts.firstIndex(where: { $0.event.post.id == identity.post }) else {
+                    continue // Deleted, edited or revoked while resolving this sender.
+                }
+                if let resolved { session.directory.upsertUser(resolved) }
+                let queued = session.pendingAlerts.remove(at: index)
                 // Focus, DND, membership and notification preferences may have
                 // changed while resolving the sender. Never use the earlier decision.
                 if let (kind, channel) = session.eligibleAlert(queued.event) {
-                    session.yieldAlert(post, kind: kind, channel: channel)
+                    session.yieldAlert(queued.event.post, kind: kind, channel: channel)
                 }
             }
         }
+    }
+
+    private var pendingAlertIdentity: (post: PostID, user: UserID)? {
+        pendingAlerts.first.map { ($0.event.post.id, $0.event.post.userID) }
     }
 
     private func eligibleAlert(_ event: PostedEvent) -> (IncomingMessageAlert.Kind, Channel)? {
         let post = event.post
         guard isActiveSessionAlive, post.userID != me.id,
               let channel = directory.channels[post.channelID],
-              let member = directory.memberships[channel.id] else { return nil }
+              let member = directory.memberships[channel.id], channel.deleteAt.isZero else { return nil }
         let input = NotificationPolicy.Input(
             post: post, channelType: channel.type, serverMentioned: event.mentionsCurrentUser,
             membership: member, account: me.notifyProps ?? .serverDefault,
