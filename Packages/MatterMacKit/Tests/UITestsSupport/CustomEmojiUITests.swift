@@ -35,6 +35,36 @@ struct CustomEmojiUITests {
         #expect(measurer.height(of: text, width: 180) == initial)
     }
 
+    @Test func pickerDeduplicatesPagesAndStopsWhenServerMakesNoProgress() async {
+        let picker = ReactionPickerViewController()
+        var requests: [Int] = []
+        picker.customPage = { page, _ in
+            requests.append(page)
+            // First page contains duplicates; the next page adds 60 names; a
+            // broken server then repeats that second page forever.
+            return (0..<60).map { index in
+                let number = page == 0 ? index / 2 : index + 30
+                return CustomEmoji(id: String(repeating: "a", count: 26), name: "custom_\(number)")
+            }
+        }
+        _ = picker.view
+        await picker.customTask?.value
+        #expect(requests == [0])
+        #expect(picker.sections.last?.emoji.count == 30)
+        picker.loadCustomPage()
+        await picker.customTask?.value
+        #expect(requests == [0, 1])
+        #expect(picker.sections.last?.emoji.count == 90)
+        picker.loadCustomPage()
+        await picker.customTask?.value
+        #expect(requests == [0, 1, 2])
+        #expect(picker.sections.last?.emoji.count == 90)
+        picker.loadCustomPage()
+        #expect(picker.customTask == nil)
+        #expect(requests == [0, 1, 2])
+        picker.viewDidDisappear()
+    }
+
     @Test func pickerLoadsBoundedCustomPageAndSearch() async {
         let picker = ReactionPickerViewController()
         picker.customLimit = 2

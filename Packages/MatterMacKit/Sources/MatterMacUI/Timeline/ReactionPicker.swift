@@ -24,7 +24,7 @@ final class ReactionPickerViewController: NSViewController, NSSearchFieldDelegat
     var customImage: ((String) async -> ImagePipeline.Decoded?)?
     var customLimit = ResourceBudget.standard.customEmojiPickerEntries
     private var customEntries: [Entry] = []
-    private var customTask: Task<Void, Never>?
+    private(set) var customTask: Task<Void, Never>?
     private var customGeneration = 0
     private var nextPage = 0
     private var hasMore = true
@@ -179,11 +179,12 @@ final class ReactionPickerViewController: NSViewController, NSSearchFieldDelegat
             let result = await customPage(page, query)
             guard !Task.isCancelled, let self, customGeneration == generation else { return }
             customTask = nil
-            let known = Set(customEntries.map(\.name))
-            customEntries += result.filter { !known.contains($0.name) }.map(Entry.init)
+            var known = Set(customEntries.map(\.name))
+            let additions = result.filter { known.insert($0.name).inserted }.map(Entry.init)
+            customEntries += additions
             customEntries = Array(customEntries.prefix(max(0, customLimit)))
             nextPage += 1
-            hasMore = query.isEmpty && result.count == 60 && customEntries.count < customLimit
+            hasMore = query.isEmpty && result.count == 60 && !additions.isEmpty && customEntries.count < customLimit
             sections.removeAll { $0.title == String(localized: "Custom") }
             if !customEntries.isEmpty { sections.append(Section(title: String(localized: "Custom"), emoji: customEntries)) }
             emptyLabel.isHidden = !sections.isEmpty
