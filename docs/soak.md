@@ -71,8 +71,9 @@ Application State and HTTPStorages paths owned by the app, under both host Libra
 (root 0) and the app sandbox's Data/Library (root 1). Path indices 0–3 follow that
 order. Only existence, regular-file count, total bytes, latest modification time and
 access/traversal errors are recorded; child names are not printed. Separately, up to
-1 MiB of the app preference plist is read to compare two native split-view geometry
-keys. Only valid/changed flags are printed, never their values or hashes.
+1 MiB of the app preference plist is read to compare the single native geometry
+key `NSSplitView Subview Frames main, SidebarNavigationSplitView` in each root.
+The comma is part of that key. Only valid/changed flags are printed, never its value or hash.
 Each traversal is capped at 10,000 entries. These snapshots can detect changes in those
 paths, but cannot establish that no transient writes or writes elsewhere occurred.
 They are not a replacement for a privileged filesystem syscall audit.

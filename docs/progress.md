@@ -1259,3 +1259,21 @@ documentation only. Host: Apple M1 Pro, 16 GiB RAM, MacBookPro18,3, macOS 27.0.
 The optimized test variant's two-hour active workload plus settling/five-minute
 idle sampling is the remaining local sustained-run gate; no duration result is
 claimed before it completes.
+
+### Additional lifecycle review during the sustained run
+
+Hosted CI for `47f3a3c` passed (run `36083607466`), including the package tests and
+universal app build. Its fixture fix gives directory and navigation readiness
+separate deadlines; a shared deadline could expire while hosted actor work was
+still completing and then skip the navigation wait entirely.
+
+Read-only review found Notification Center retention gaps: the oldest tracked ID
+was forgotten without withdrawing its delivered alert, and quit did not withdraw
+delivered alerts. `47a2431` removes pending/delivered alerts on eviction, sign-out,
+disable and shutdown; delayed add completions re-remove invalidated requests.
+Authorization results are generation-checked so disabling or quitting while the
+permission request is pending cannot re-enable notifications. Focused tests cover
+the 65th alert, account isolation, delayed callbacks and shutdown/authorization
+races. Test targets compile without warnings; execution is deferred until the
+exclusive UI soak completes. This change is outside the running soak's binary;
+the final app must be rebuilt and validated after integration.
