@@ -55,6 +55,7 @@ struct ConnectView: View {
     @State private var serverText = ""
     @State private var validation: ValidationState = .idle
     @State private var isProbing = false
+    @State private var probeTask: Task<Void, Never>?
     @FocusState private var fieldFocused: Bool
 
     enum ValidationState: Equatable {
@@ -68,6 +69,7 @@ struct ConnectView: View {
             OnboardingBackdrop()
             card
         }
+        .onDisappear(perform: cancelProbe)
     }
 
     private var card: some View {
@@ -114,7 +116,7 @@ struct ConnectView: View {
 
             HStack {
                 if model.isAddingServer {
-                    Button("Cancel") { model.cancelLogin() }
+                    Button("Cancel") { cancelProbe(); model.cancelLogin() }
                         .keyboardShortcut(.cancelAction)
                 }
                 Button(action: submit) {
@@ -157,7 +159,14 @@ struct ConnectView: View {
         .onAppear { fieldFocused = true }
     }
 
+    private func cancelProbe() {
+        probeTask?.cancel()
+        probeTask = nil
+        isProbing = false
+    }
+
     private func submit() {
+        guard !isProbing else { return }
         let confirmed: Bool
         if case .normalized = validation { confirmed = true } else { confirmed = false }
         // Show the final origin before any credential can be sent (SPEC §4).
@@ -171,8 +180,10 @@ struct ConnectView: View {
         }
         guard confirmed else { return }
         isProbing = true
-        Task {
+        probeTask = Task {
             let failure = await model.beginLogin(serverText: serverText)
+            guard !Task.isCancelled else { return }
+            probeTask = nil
             isProbing = false
             if let failure { validation = .invalid(failure) }
         }

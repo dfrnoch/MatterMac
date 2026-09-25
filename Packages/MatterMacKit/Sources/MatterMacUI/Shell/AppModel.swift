@@ -36,6 +36,7 @@ public final class AppModel {
     private var isSigningOut = false
     private var didRestore = false
     private var isShuttingDown = false
+    @ObservationIgnored private var discoveryGeneration: UInt64 = 0
     public private(set) var canRetrySavedSignIn = false
     /// Opt-in Notification Center alerts for mentions and direct messages. Kept in
     /// memory only (SPEC §19); quitting turns them off again.
@@ -164,6 +165,9 @@ public final class AppModel {
 
     /// Validates and probes a server address; moves to the login phase on success.
     func beginLogin(serverText: String) async -> String? {
+        guard !isShuttingDown, !Task.isCancelled else { return nil }
+        discoveryGeneration &+= 1
+        let generation = discoveryGeneration
         let endpoint: ServerEndpoint
         do {
             endpoint = try ServerURLNormalizer.normalize(serverText, allowInsecureLoopback: environment.allowsInsecureLoopback)
@@ -172,9 +176,11 @@ public final class AppModel {
         }
         do {
             let discovery = try await loginCoordinator.discover(endpoint)
+            guard generation == discoveryGeneration, !Task.isCancelled, !isShuttingDown else { return nil }
             phase = .login(LoginModel(discovery: discovery, app: self))
             return nil
         } catch {
+            guard generation == discoveryGeneration, !Task.isCancelled, !isShuttingDown else { return nil }
             switch error {
             case .notMattermost:
                 return String(localized: "No Mattermost server answered at \(endpoint.description). Check the address, including any path such as /chat.")
@@ -187,6 +193,7 @@ public final class AppModel {
     }
 
     func cancelLogin() {
+        discoveryGeneration &+= 1
         if case .login(let login) = phase { login.cancel() }
         phase = registry.slots.isEmpty ? .connect : .main
         isAddingServer = false
