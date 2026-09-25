@@ -18,7 +18,7 @@ final class LiveSoakUITests: XCTestCase {
         continueAfterFailure = false
         let url = URL(fileURLWithPath: path).standardizedFileURL
         let app = XCUIApplication(url: url)
-        app.launchArguments += ["-ApplePersistenceIgnoreState", "YES", "-MatterMacUITesting", "YES",
+        app.launchArguments += ["-MatterMacUITesting", "YES",
                                 "-MatterMacAllowInsecureLoopback", "YES"]
         app.launch()
         defer { app.terminate() }
