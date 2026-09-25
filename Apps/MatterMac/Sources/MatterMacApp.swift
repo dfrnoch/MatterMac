@@ -24,6 +24,8 @@ struct MatterMacApp: App {
 
     var body: some Scene {
         MainWindowScene(environment: appDelegate.environment)
+            // Disabling restoration must not suppress the initial main window.
+            .defaultLaunchBehavior(.presented)
             .restorationBehavior(.disabled)
         SettingsScene(environment: appDelegate.environment)
             .restorationBehavior(.disabled)

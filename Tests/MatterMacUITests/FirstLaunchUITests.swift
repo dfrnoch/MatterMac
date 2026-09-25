@@ -44,6 +44,25 @@ final class FirstLaunchUITests: XCTestCase {
         field.typeText(text + "\r")
     }
 
+    /// Exercise the shipped scene launch policy, without overriding AppKit's
+    /// persistence handling. A closed previous window must not suppress launch.
+    @MainActor
+    func testLaunchPresentsWindowWithoutPersistenceOverride() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-MatterMacUITesting", "YES"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 20))
+        _ = serverField(in: app)
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(app.windows.firstMatch.waitForNonExistence(timeout: 10))
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 20))
+        XCTAssertEqual(app.windows.count, 1)
+        _ = serverField(in: app)
+    }
+
     @MainActor
     func testFirstLaunchShowsBrandingServerFieldAndDisclosure() throws {
         let app = launchApp()
