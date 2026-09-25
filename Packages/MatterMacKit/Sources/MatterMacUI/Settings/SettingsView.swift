@@ -3,8 +3,8 @@ import MatterMacModels
 import MatterMacCore
 import MatterMacPlatform
 
-/// The Settings window (⌘,). Local settings ("On This Mac") live in memory and reset
-/// when MatterMac quits; server settings belong to the active account, are saved on
+/// The Settings window (⌘,). Local settings ("On This Mac") are saved on this Mac
+/// (decision 0032); server settings belong to the active account, are saved on
 /// the server as an explicit change, and also apply to the official Mattermost apps.
 /// Each section says which kind it is (SPEC §4 "Native quality", §19).
 public struct MatterMacSettingsView: View {
@@ -47,12 +47,12 @@ public struct MatterMacSettingsView: View {
 
 // MARK: - Shared pieces
 
-/// Header for settings kept only in memory on this Mac.
+/// Header for settings saved only on this Mac (never on the server).
 struct LocalSectionHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Label("On This Mac", systemImage: "laptopcomputer")
-            Text("Kept in memory only; reset when MatterMac quits.")
+            Text("Saved on this Mac; not sent to your server.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
@@ -257,18 +257,24 @@ struct NotificationSettingsTab: View {
         let app = environment.appModel
         Section {
             Toggle("Show notifications in Notification Center", isOn: Binding(
-                get: { app?.notificationsEnabled ?? false },
+                get: { settings.notificationsEnabled },
                 set: { value in Task { await app?.setNotificationsEnabled(value) } }))
                 .disabled(app == nil)
                 .accessibilityIdentifier("notificationCenterToggle")
-            Text("macOS may keep delivered notifications in Notification Center. They name the sender and conversation, not the message, unless you turn on previews.")
+            if settings.notificationsEnabled, let status = Self.authorizationText(app?.notificationAuthorization,
+                                                                                    signedIn: app?.slots.isEmpty == false) {
+                Label(status, systemImage: app?.notificationAuthorization == .denied ? "exclamationmark.triangle" : "info.circle")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("notificationAuthorizationStatus")
+            }
+            Text("macOS may keep delivered notifications in Notification Center. They name the sender and conversation and, with previews on, the start of the message.")
                 .font(.caption).foregroundStyle(.secondary)
             Toggle("Show message preview", isOn: Binding(
                 get: { settings.showMessagePreview },
                 set: { app?.setShowMessagePreview($0) }))
-                .disabled(app?.notificationsEnabled != true)
+                .disabled(!settings.notificationsEnabled)
                 .accessibilityIdentifier("messagePreviewToggle")
-            Text("Adds up to \(IncomingMessageAlert.previewCharacters) characters of message text to notifications. Off by default.")
+            Text("Adds up to \(IncomingMessageAlert.previewCharacters) characters of message text to notifications. Turn off to show only the sender and conversation.")
                 .font(.caption).foregroundStyle(.secondary)
             Toggle("Play sound", isOn: Binding(get: { settings.playSound }, set: { settings.playSound = $0 }))
                 .accessibilityIdentifier("playSoundToggle")
@@ -287,6 +293,20 @@ struct NotificationSettingsTab: View {
             Text("Sounds and Dock bounces happen only while MatterMac is running and are silenced when your status is Do Not Disturb.")
                 .font(.caption).foregroundStyle(.secondary)
         } header: { LocalSectionHeader() }
+    }
+
+    /// Why notifications that are switched on are not (yet) being delivered.
+    static func authorizationText(_ authorization: SystemNotifications.Authorization?, signedIn: Bool) -> String? {
+        switch authorization {
+        case .denied:
+            String(localized: "macOS is blocking notifications from MatterMac. Allow them in System Settings › Notifications.")
+        case .notDetermined:
+            String(localized: "macOS is waiting for you to allow notifications from MatterMac.")
+        case nil where !signedIn:
+            String(localized: "MatterMac asks macOS for permission after you sign in.")
+        case .granted, .unavailable, nil:
+            nil
+        }
     }
 
     @ViewBuilder
@@ -424,8 +444,9 @@ struct AccountsSettingsTab: View {
                     Keychain so it can reconnect after you quit. To open quickly, it also keeps a cache on this \
                     Mac: images, profiles, your channel list and the latest messages of recently opened \
                     channels, encrypted with a key in Keychain. Signing out removes the sign-in and that \
-                    account’s cache. Drafts and the settings marked “On This Mac” stay in memory and are \
-                    discarded when MatterMac quits. Server settings are stored by your Mattermost server.
+                    account’s cache. The settings marked “On This Mac” are saved in MatterMac’s preferences \
+                    on this Mac. Drafts stay in memory and are discarded when MatterMac quits. Server \
+                    settings are stored by your Mattermost server.
                     """)
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)

@@ -182,14 +182,15 @@ struct CompatibilityView: View {
                         unsupported("Web plugins, Boards, Playbooks", "Plugin posts show a summary. Interactive buttons are not executed.")
                         unsupported("Interactive commands and ephemeral posts", "Slash commands run on the server and their text reply appears above the conversation. Command dialogs and ephemeral bot posts are not shown.")
                         unsupported("Custom theme CSS and administration", "Out of scope for MatterMac.")
-                        unsupported("Notifications after quitting", "There is no MatterMac push service. While the app runs, the Dock badge counts mentions, and optional notifications (account menu › Show Notifications) announce mentions and direct messages without message text.")
+                        unsupported("Notifications after quitting", "There is no MatterMac push service. While the app runs, the Dock badge counts mentions, and notifications (account menu › Show Notifications) announce mentions and direct messages, with a short preview unless you turn previews off in Settings.")
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 GroupBox("Privacy") {
                     Text("""
-                        MatterMac keeps your session, messages, drafts, and images only in memory while it runs. \
-                        It writes no database, cache, token, or log to disk. Files you explicitly save or export, and \
+                        MatterMac saves verified sign-ins in Keychain, an encrypted cache of recent messages, \
+                        profiles and images, and the settings marked “On This Mac”. Drafts and unsent messages \
+                        stay in memory only. It writes no database or log. Files you explicitly save or export, and \
                         system services (swap, clipboard managers, file dialogs), are outside that guarantee.
                         """)
                     .frame(maxWidth: .infinity, alignment: .leading)

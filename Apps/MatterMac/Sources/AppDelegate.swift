@@ -35,7 +35,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         events.onActivationChange = { [weak self] isActive in
             self?.updateVisibility()
-            if isActive { self?.activity.evaluate() }
+            if isActive {
+                self?.activity.evaluate()
+                // Picks up a change made in System Settings › Notifications.
+                self?.environment.appModel?.refreshNotificationAuthorization()
+            }
         }
         events.start()
         // Without activity reports the server turns the account "away" after ~5 min.

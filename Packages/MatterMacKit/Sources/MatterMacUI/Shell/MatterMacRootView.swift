@@ -133,7 +133,7 @@ struct ConnectView: View {
             Text("""
                 MatterMac saves account sign-ins in macOS Keychain and keeps an encrypted cache of recent \
                 messages, profiles and images on this Mac so it opens quickly. Signing out removes both. \
-                Drafts stay in memory only. Your server stores sent messages.
+                Settings are saved on this Mac. Drafts stay in memory only. Your server stores sent messages.
                 """)
                 .font(.footnote)
                 .foregroundStyle(Color.primary)

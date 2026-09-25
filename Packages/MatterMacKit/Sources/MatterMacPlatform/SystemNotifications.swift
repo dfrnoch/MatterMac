@@ -3,10 +3,11 @@ public import Foundation
 public import MatterMacModels
 import UserNotifications
 
-/// Opt-in Notification Center delivery (SPEC §19). Authorization is requested only
-/// after the user explicitly enables notifications; nothing is requested at launch.
-/// Notifications carry a sender and conversation name, and message text only when the
-/// user separately opted in to previews; only the conversation identity is attached
+/// Notification Center delivery (SPEC §19). On by default at the user's request
+/// (decision 0032): the app asks macOS for authorization at most once per launch,
+/// only after an account has signed in and only while the user has not answered.
+/// Notifications carry a sender and conversation name, plus a short message preview
+/// unless the user turned previews off; only the conversation identity is attached
 /// so a click can open it. Delivery
 /// stops (and delivered notifications are removed) when the user turns it off or
 /// the app quits normally; there is no push service after quitting. macOS can keep
@@ -30,6 +31,8 @@ public final class SystemNotifications: NSObject {
     public enum Authorization: Sendable, Hashable {
         case granted
         case denied
+        /// The user has not answered macOS's permission request yet.
+        case notDetermined
         /// No app bundle (for example a command-line test host).
         case unavailable
     }
@@ -55,6 +58,14 @@ public final class SystemNotifications: NSObject {
         super.init()
     }
 
+    /// The current macOS decision, without asking the user.
+    public func authorizationStatus() async -> Authorization {
+        guard let center else { return .unavailable }
+        return await center.authorizationStatus()
+    }
+
+    /// Shows macOS's permission request if the user has not answered it yet;
+    /// otherwise macOS returns the existing decision without prompting.
     public func requestAuthorization() async -> Authorization {
         guard let center else { return .unavailable }
         do {
@@ -147,6 +158,7 @@ private final class NotificationDelegate: NSObject, UNUserNotificationCenterDele
 /// asking for notification authorization or delivering anything to the desktop.
 @MainActor
 protocol NotificationCenterTransport: AnyObject, Sendable {
+    func authorizationStatus() async -> SystemNotifications.Authorization
     func requestAuthorization() async throws -> Bool
     func add(_ request: UNNotificationRequest, completion: @escaping @Sendable () -> Void)
     func remove(identifiers: [String]?)
@@ -156,6 +168,14 @@ protocol NotificationCenterTransport: AnyObject, Sendable {
 private final class NativeNotificationCenter: NotificationCenterTransport {
     let center = UNUserNotificationCenter.current()
     init(delegate: any UNUserNotificationCenterDelegate) { center.delegate = delegate }
+    func authorizationStatus() async -> SystemNotifications.Authorization {
+        switch await center.notificationSettings().authorizationStatus {
+        case .authorized, .provisional: .granted
+        case .notDetermined: .notDetermined
+        case .denied: .denied
+        @unknown default: .denied
+        }
+    }
     func requestAuthorization() async throws -> Bool {
         try await center.requestAuthorization(options: [.alert, .sound, .badge])
     }

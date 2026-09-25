@@ -43,7 +43,7 @@ struct MatterMacLegacyApp: App {
     }
 }
 
-/// MatterMac ▸ Settings… (⌘,). Local settings stay in memory; server settings are
+/// MatterMac ▸ Settings… (⌘,). Local settings are saved on this Mac; server settings are
 /// explicit changes to the active account (see `MatterMacSettingsView`).
 struct SettingsScene: Scene {
     let environment: AppEnvironment

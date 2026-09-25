@@ -5,7 +5,8 @@ import MatterMacModels
 @testable import MatterMacCore
 import MattermostAPI
 import MattermostRealtime
-import MatterMacPlatform
+import UserNotifications
+@testable import MatterMacPlatform
 import TestSupport
 @testable import MatterMacUI
 
@@ -30,7 +31,7 @@ struct SettingsAndAttentionTests {
         let channel = CoreFixtures.channel(1)
         let attention = RecordingAttention()
 
-        init() async throws {
+        init(notifications: SystemNotifications? = nil, notificationsOn: Bool = true) async throws {
             let service = FakeMattermostService(endpoint: CoreFixtures.endpoint, me: CoreFixtures.me)
             let channel = channel
             var me = CoreFixtures.me
@@ -48,6 +49,8 @@ struct SettingsAndAttentionTests {
             app = AppModel(environment: AppEnvironment(serviceFactory: Factory(fake: service),
                 makeRealtime: { _, _, _ in realtime }, markupParse: { text, _ in MarkupParser.parse(text) }))
             app.attention = attention
+            if let notifications { app.notifications = notifications }
+            app.environment.settings.notificationsEnabled = notificationsOn
             try await app.completeLogin(
                 LoginResult(credential: BearerCredential(token: "fixture-token", kind: .session)!, user: signedIn),
                 discovery: DiscoveryResult(endpoint: CoreFixtures.endpoint, version: nil, capabilities: ServerCapabilities()),
@@ -102,7 +105,7 @@ struct SettingsAndAttentionTests {
     @Test func soundsAndBouncesFollowLocalAndServerSettings() async throws {
         let h = try await Harness()
         let settings = h.app.environment.settings
-        #expect(settings.playSound && settings.bounceDockIcon && !settings.showMessagePreview)
+        #expect(settings.playSound && settings.bounceDockIcon && settings.showMessagePreview)
         h.app.deliver(alert(h.model.scope, .mention))
         h.app.deliver(alert(h.model.scope, .directMessage))
         h.app.deliver(alert(h.model.scope, .channelMessage))
@@ -149,6 +152,101 @@ struct SettingsAndAttentionTests {
         try await Task.sleep(for: .milliseconds(50))
         #expect(await h.model.slot.session.alertPreviewsEnabled == false)
         await h.close()
+    }
+
+    // MARK: - Automatic notification authorization
+
+    /// macOS's side: the current decision and the permission request.
+    @MainActor final class AuthorizationCenter: NotificationCenterTransport {
+        var status: SystemNotifications.Authorization
+        /// The user's answer to the request; `nil` leaves it unanswered.
+        let answer: Bool?
+        var statusQueries = 0
+        var requests = 0
+        var posted = 0
+        init(status: SystemNotifications.Authorization, answer: Bool? = nil) {
+            self.status = status
+            self.answer = answer
+        }
+        func authorizationStatus() async -> SystemNotifications.Authorization {
+            statusQueries += 1
+            return status
+        }
+        func requestAuthorization() async throws -> Bool {
+            requests += 1
+            if let answer { status = answer ? .granted : .denied }
+            return answer ?? false
+        }
+        func add(_ request: UNNotificationRequest, completion: @escaping @Sendable () -> Void) { posted += 1 }
+        func remove(identifiers: [String]?) {}
+    }
+
+    private func settleAuthorization(_ app: AppModel, _ center: AuthorizationCenter, queries: Int) async throws {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while center.statusQueries < queries || app.notificationAuthorization == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        for _ in 0..<20 { await Task.yield() }
+    }
+
+    @Test func firstSignInAsksMacOSOnceAndDeliversWithPreviews() async throws {
+        let center = AuthorizationCenter(status: .notDetermined, answer: true)
+        let h = try await Harness(notifications: SystemNotifications(center: center))
+        try await settleAuthorization(h.app, center, queries: 1)
+        #expect(center.requests == 1)
+        #expect(h.app.notificationsEnabled && h.app.notificationAuthorization == .granted)
+        #expect(h.model.inlineError == nil)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(await h.model.slot.session.alertPreviewsEnabled == true)
+        h.app.deliver(alert(h.model.scope, .mention, preview: "fixture"))
+        #expect(center.posted == 1)
+        // Becoming active again only reads the decision.
+        h.app.refreshNotificationAuthorization()
+        try await settleAuthorization(h.app, center, queries: 2)
+        #expect(center.statusQueries == 2 && center.requests == 1)
+        await h.close()
+    }
+
+    @Test func unansweredOrDeniedPermissionIsNotRequestedAgainThisLaunch() async throws {
+        let center = AuthorizationCenter(status: .notDetermined)
+        let h = try await Harness(notifications: SystemNotifications(center: center))
+        try await settleAuthorization(h.app, center, queries: 1)
+        #expect(center.requests == 1 && !h.app.notificationsEnabled)
+        h.app.refreshNotificationAuthorization()
+        try await settleAuthorization(h.app, center, queries: 2)
+        #expect(center.requests == 1)
+        #expect(h.app.notificationAuthorization == .notDetermined && !h.app.notificationsEnabled)
+        // The saved choice stays on; Settings explains instead of an error banner.
+        #expect(h.app.environment.settings.notificationsEnabled && h.model.inlineError == nil)
+        #expect(NotificationSettingsTab.authorizationText(h.app.notificationAuthorization, signedIn: true) != nil)
+        await h.close()
+
+        let denied = AuthorizationCenter(status: .denied)
+        let blocked = try await Harness(notifications: SystemNotifications(center: denied))
+        try await settleAuthorization(blocked.app, denied, queries: 1)
+        #expect(denied.requests == 0 && blocked.app.notificationAuthorization == .denied)
+        #expect(!blocked.app.notificationsEnabled && blocked.model.inlineError == nil)
+        blocked.app.deliver(alert(blocked.model.scope, .mention))
+        #expect(denied.posted == 0)
+        await blocked.close()
+    }
+
+    @Test func notificationsTurnedOffAreNeitherCheckedNorRequested() async throws {
+        let center = AuthorizationCenter(status: .notDetermined, answer: true)
+        let h = try await Harness(notifications: SystemNotifications(center: center), notificationsOn: false)
+        h.app.refreshNotificationAuthorization()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(center.statusQueries == 0 && center.requests == 0)
+        #expect(!h.app.notificationsEnabled && h.app.notificationAuthorization == nil)
+        await h.close()
+    }
+
+    @Test func settingsExplainWhyNotificationsAreNotDelivered() {
+        #expect(NotificationSettingsTab.authorizationText(.denied, signedIn: true)?.contains("System Settings") == true)
+        #expect(NotificationSettingsTab.authorizationText(.notDetermined, signedIn: true) != nil)
+        #expect(NotificationSettingsTab.authorizationText(nil, signedIn: false) != nil)
+        #expect(NotificationSettingsTab.authorizationText(nil, signedIn: true) == nil)
+        #expect(NotificationSettingsTab.authorizationText(.granted, signedIn: true) == nil)
     }
 
     // MARK: - Local settings plumbing

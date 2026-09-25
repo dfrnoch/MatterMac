@@ -6,8 +6,8 @@ public import MattermostAPI
 public import MattermostRealtime
 
 /// Process-lifetime composition object created once by the app target. Owns the
-/// shared budgets, in-memory stores, optional Keychain sign-ins and the optional
-/// on-device content cache.
+/// shared budgets, in-memory stores, optional Keychain sign-ins, the optional
+/// on-device content cache and the local settings (saved only with injected storage).
 @MainActor
 public final class AppEnvironment {
     public let accounts: KeychainAccounts?
@@ -26,9 +26,10 @@ public final class AppEnvironment {
     /// servers for local testing. Off unless the app was built for development and
     /// the user enabled it for this run.
     public var allowsInsecureLoopback: Bool
-    /// Local presentation and attention settings (in memory only; Settings window).
-    public let settings = LocalSettings()
-    /// In-session send behavior (not persisted).
+    /// Local presentation and attention settings (Settings › "On This Mac"). Saved
+    /// between launches only when the app injects storage; otherwise in memory.
+    public let settings: LocalSettings
+    /// Composer send behavior (a local setting).
     public var sendBehavior: SendBehaviorSetting {
         get { settings.sendBehavior }
         set { settings.sendBehavior = newValue }
@@ -43,6 +44,7 @@ public final class AppEnvironment {
 
     public init(budget: ResourceBudget = .standard, allowsInsecureLoopback: Bool = false,
                 accounts: KeychainAccounts? = nil, cacheStorage: ContentCache.Storage? = nil,
+                settingsStorage: (any LocalSettingsStorage)? = nil,
                 serviceFactory: any MattermostServiceFactory,
                 makeRealtime: @escaping @Sendable (ServerEndpoint, BearerCredential, UserID) -> any RealtimeConnection,
                 markupParse: @escaping @Sendable (String, MarkupLimits) -> MessageDocument) {
@@ -58,6 +60,7 @@ public final class AppEnvironment {
         self.makeRealtime = makeRealtime
         self.markupParse = markupParse
         self.allowsInsecureLoopback = allowsInsecureLoopback
+        self.settings = LocalSettings(storage: settingsStorage)
         diagnostics.record(.lifecycle, .info, "environment created")
     }
 

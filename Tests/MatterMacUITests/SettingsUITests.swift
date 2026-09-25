@@ -21,7 +21,7 @@ final class SettingsUITests: XCTestCase {
                       "local send behavior setting missing")
         let local = app.descendants(matching: .any)["localSettingsHeader"]
         XCTAssertTrue(local.exists, "local-settings header missing")
-        XCTAssertTrue("\(local.label) \(local.value ?? "")".contains("reset when MatterMac quits"),
+        XCTAssertTrue("\(local.label) \(local.value ?? "")".contains("Saved on this Mac"),
                       "local-settings disclosure missing: \(local.label)")
         XCTAssertTrue(app.descendants(matching: .any)["serverSettingsHeader"].exists, "server-settings header missing")
 

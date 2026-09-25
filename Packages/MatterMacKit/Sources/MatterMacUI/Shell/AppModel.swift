@@ -38,9 +38,13 @@ public final class AppModel {
     private var isShuttingDown = false
     @ObservationIgnored private var discoveryGeneration: UInt64 = 0
     public private(set) var canRetrySavedSignIn = false
-    /// Opt-in Notification Center alerts for mentions and direct messages. Kept in
-    /// memory only (SPEC §19); quitting turns them off again.
+    /// Whether Notification Center alerts for mentions and direct messages are being
+    /// delivered now: the saved choice (`LocalSettings.notificationsEnabled`, on by
+    /// default) plus macOS authorization. The toggles show the saved choice.
     public private(set) var notificationsEnabled = false
+    /// The last macOS answer (`nil` until checked after a sign-in). Settings uses it
+    /// to say honestly when macOS blocks MatterMac's notifications.
+    private(set) var notificationAuthorization: SystemNotifications.Authorization?
     /// In-app alert sound (see `LocalSettings.playSound`).
     public var notificationSounds: Bool {
         get { environment.settings.playSound }
@@ -48,6 +52,9 @@ public final class AppModel {
     }
     @ObservationIgnored var notifications = SystemNotifications()
     @ObservationIgnored private var notificationAuthorizationGeneration: UInt64 = 0
+    /// macOS's permission request is shown automatically at most once per launch.
+    @ObservationIgnored private var didRequestNotificationAuthorization = false
+    @ObservationIgnored private var notificationAuthorizationCheck: Task<Void, Never>?
     /// Sounds and Dock bounces; replaceable in tests.
     @ObservationIgnored var attention: any AttentionRequesting = SystemAttention()
 
@@ -65,30 +72,57 @@ public final class AppModel {
 
     // MARK: - Notifications and badge
 
-    /// Enabling asks macOS for permission the first time; nothing is requested at launch.
+    /// The user's choice from Settings or the account menu, saved on this Mac.
+    /// Turning it on asks macOS for permission if the user has not answered yet
+    /// (macOS returns an earlier answer without prompting again).
     public func setNotificationsEnabled(_ enabled: Bool) async {
         notificationAuthorizationGeneration &+= 1
         let generation = notificationAuthorizationGeneration
+        if !isShuttingDown { environment.settings.notificationsEnabled = enabled }
         defer { syncAlertPreviews() }
         guard enabled, !isShuttingDown else {
             notificationsEnabled = false
             notifications.removeDelivered()
             return
         }
+        didRequestNotificationAuthorization = true
         let authorization = await notifications.requestAuthorization()
         guard generation == notificationAuthorizationGeneration, !isShuttingDown, !Task.isCancelled else { return }
-        switch authorization {
-        case .granted:
-            notificationsEnabled = true
-        case .denied:
-            notificationsEnabled = false
+        notificationAuthorization = authorization
+        notificationsEnabled = authorization == .granted
+        if authorization == .denied {
             activeSession?.inlineError = String(localized: "Notifications are turned off for MatterMac in System Settings › Notifications.")
-        case .unavailable:
-            notificationsEnabled = false
         }
     }
 
-    /// Explicit opt-in to message text in Notification Center (in memory only).
+    /// Starts delivery when notifications are on (the default). Reads macOS's
+    /// decision and asks for permission only if the user has never answered, at most
+    /// once per launch. Called after a sign-in and when the app becomes active, never
+    /// before an account exists; it does not block the UI or report a refusal as an
+    /// error (Settings shows it).
+    public func refreshNotificationAuthorization() {
+        guard environment.settings.notificationsEnabled, !sessionModels.isEmpty, !isShuttingDown,
+              notificationAuthorizationCheck == nil else { return }
+        let generation = notificationAuthorizationGeneration
+        notificationAuthorizationCheck = Task { [weak self] in
+            guard let self else { return }
+            defer { notificationAuthorizationCheck = nil }
+            var authorization = await notifications.authorizationStatus()
+            if authorization == .notDetermined, !didRequestNotificationAuthorization,
+               generation == notificationAuthorizationGeneration, !isShuttingDown, !Task.isCancelled {
+                didRequestNotificationAuthorization = true
+                authorization = await notifications.requestAuthorization()
+            }
+            // A toggle or quit meanwhile wins over this late answer.
+            guard generation == notificationAuthorizationGeneration, !isShuttingDown, !Task.isCancelled,
+                  environment.settings.notificationsEnabled else { return }
+            notificationAuthorization = authorization
+            notificationsEnabled = authorization == .granted
+            syncAlertPreviews()
+        }
+    }
+
+    /// Message text in Notification Center (on by default), saved on this Mac.
     public func setShowMessagePreview(_ enabled: Bool) {
         environment.settings.showMessagePreview = enabled
         syncAlertPreviews()
@@ -101,7 +135,7 @@ public final class AppModel {
         for model in sessionModels.values { model.setAlertPreviews(enabled) }
     }
 
-    /// Notification Center (after opt-in), the selected in-app sound, and a Dock
+    /// Notification Center (when on and allowed), the selected in-app sound, and a Dock
     /// bounce for mentions and direct messages while the app is inactive.
     func deliver(_ alert: IncomingMessageAlert) {
         guard !isShuttingDown, sessionModels.values.contains(where: { $0.scope == alert.scope }) else { return }
@@ -117,7 +151,7 @@ public final class AppModel {
         if settings.bounceDockIcon, alert.kind != .channelMessage { attention.requestAttention() }
     }
 
-    /// Who and where; the message text only with an explicit preview opt-in.
+    /// Who and where; the message text only while previews are on.
     static func notificationContent(for alert: IncomingMessageAlert, includePreview: Bool)
         -> (title: String, subtitle: String?, body: String) {
         let preview = includePreview ? alert.preview : nil
@@ -223,6 +257,7 @@ public final class AppModel {
             }
         }
         if !isShuttingDown && remember { phase = .main }
+        refreshNotificationAuthorization()
     }
 
     public func restoreSavedAccounts(retry: Bool = false) async {
@@ -350,6 +385,8 @@ public final class AppModel {
     public func shutdownAll(preservingSavedSignIns: Bool = false) async {
         isShuttingDown = true
         notificationAuthorizationGeneration &+= 1
+        notificationAuthorizationCheck?.cancel()
+        // Delivery stops; the saved choice stays for the next launch.
         notificationsEnabled = false
         notifications.removeDelivered()
         if case .login(let login) = phase { login.cancel() }

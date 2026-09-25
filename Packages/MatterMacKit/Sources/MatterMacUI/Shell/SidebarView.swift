@@ -591,7 +591,7 @@ struct AccountBar: View {
                     Button("Set Custom Status…") { isCustomStatusVisible = true }
                 }
                 Section("Notifications") {
-                    Toggle("Show Notifications", isOn: Binding(get: { app.notificationsEnabled },
+                    Toggle("Show Notifications", isOn: Binding(get: { app.environment.settings.notificationsEnabled },
                                                                set: { value in Task { await app.setNotificationsEnabled(value) } }))
                     Toggle("Play Sound", isOn: Binding(get: { app.notificationSounds }, set: { app.notificationSounds = $0 }))
                 }

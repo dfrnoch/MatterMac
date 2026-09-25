@@ -88,8 +88,8 @@ sign in again if needed.
 - File upload/download, pasted images, avatars, an in-window image viewer, and
   profile editing with bounded profile-picture upload.
 - Multiple server sessions, keyboard navigation, server notification preferences,
-  opt-in macOS notifications, automatic online/away status, and session-only
-  appearance/settings.
+  macOS notifications with message previews (on by default), automatic
+  online/away status, and saved appearance/settings.
 - Session recovery notices and Review Unsent Work: copy individual drafts or
   unconfirmed sends, export pasted images, and confirm local discard.
 
@@ -126,8 +126,12 @@ needs a sustained foreground remeasurement; macOS locked before that final run.
 - **Quit keeps both; Sign Out removes that account's sign-in, cache and key.**
   Settings ▸ Accounts shows the cache size and has **Clear Cache**. See
   [decision 0031](docs/decisions/0031-on-device-content-cache.md).
-- **Drafts:** drafts, pending sends, pasted images, and local preferences stay in
-  bounded memory. **Drafts do not survive quit, a crash, or forced termination.**
+- **Settings:** the Settings values marked "On This Mac" (notifications, message
+  previews, sound, Dock bounce, send behavior, text size, appearance) are saved in
+  MatterMac's preferences on this Mac. Notifications and previews are on by
+  default; macOS asks for permission once, after your first sign-in. See
+  [decision 0032](docs/decisions/0032-saved-local-settings-and-notifications.md).
+- **Drafts:** drafts, pending sends, and pasted images stay in bounded memory. **Drafts do not survive quit, a crash, or forced termination.**
   Drafts and pending sends share a 100-item / 4 MiB text budget; pasted images
   share 8 MiB. New work is refused at the limit without evicting existing unsent
   work. Review Unsent Work in the Session menu before leaving the app.

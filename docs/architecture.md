@@ -48,8 +48,9 @@ It is AES-GCM encrypted under a per-account key held by `KeychainCacheKeys`, and
 bounded by `ResourceBudget.diskCache`. `ImagePipeline` reads it before the network.
 `ServerSession` restores the directory before its first request, and seeds empty
 channel windows (`isCached`) until the server's page replaces them. Quit writes the
-cache and preserves sign-ins. Sign Out removes both for that account. Drafts,
-pending sends, search and local settings stay in memory. Explicit exports and
+cache and preserves sign-ins. Sign Out removes both for that account. The "On This Mac" `LocalSettings` are
+saved in `UserDefaults` through the injected `LocalSettingsStorage` (decision
+0032). Drafts, pending sends and search stay in memory. Explicit exports and
 downloads have separate user-selected destinations.
 
 See [SPEC.md](../SPEC.md) for requirements, [decisions](decisions/) for significant

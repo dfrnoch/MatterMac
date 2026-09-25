@@ -29,8 +29,8 @@ Priority order when requirements conflict: security and correct user-visible beh
 
 - No Electron, Chromium, WKWebView, embedded HTML interface, JavaScript runtime, React Native, Flutter, Tauri, Rust core, Go helper, or unofficial bridge to the official desktop process.
 - No server component in the shipped product. A development-only Mattermost test instance is permitted; it is not a MatterMac backend.
-- No SQLite, Core Data, SwiftData, Realm, `URLCache`/disk HTTP cache, automatic file logging, or UserDefaults-backed user state. Application persistence is limited to saved sign-ins in macOS Keychain and the encrypted, bounded `ContentCache` (§7).
-- No `@AppStorage` or `@SceneStorage` for account, navigation, composer, or preference state. Disable relevant window restoration and text-document autosaving mechanisms.
+- No SQLite, Core Data, SwiftData, Realm, `URLCache`/disk HTTP cache, automatic file logging, or UserDefaults-backed account, navigation, composer, or content state. Application persistence is limited to saved sign-ins in macOS Keychain, the encrypted, bounded `ContentCache` (§7), and — at the user's request (2026-09-25, decision 0032) — the small, typed "On This Mac" settings (notifications, message previews, sound, Dock bounce, send behavior, text size, appearance) in `UserDefaults` under `MatterMac.*` keys. Drafts and pending sends remain session-only.
+- No `@AppStorage` or `@SceneStorage` for account, navigation, composer, or preference state. The saved local settings go through the injected `LocalSettingsStorage` only. Disable relevant window restoration and text-document autosaving mechanisms.
 - No unbounded arrays of history, event streams, worker tasks, retry queues, image buffers, search results, or user-directory records.
 - No synchronous network or file operations on the main actor. No full-history Markdown parsing or image decoding on the main actor.
 - No source or binary third-party dependency containing a bundled non-Swift runtime implementation without a new, explicit product decision. A Swift wrapper around C/C++ is not a pure-Swift dependency.
@@ -69,7 +69,7 @@ No implementation milestone is complete just because a static mock looks correct
 
 Present MatterMac branding, a server URL field, and a short disclosure: “MatterMac saves account sign-ins in macOS Keychain. Signing out removes the saved sign-in. Messages and drafts stay in memory only; quitting discards them. Your server stores sent messages.” On subsequent launches, show progress while revalidating saved sign-ins and a retry action for temporary failures.
 
-Do not request a microphone, camera, contacts, full-disk access, or notifications at launch. Do not sign the user up for another service. No splash animation or network request should prevent the initial connection screen from appearing.
+Do not request a microphone, camera, contacts, or full-disk access at launch. Notification authorization is requested only after an account has signed in (including a restored saved sign-in), at most once per launch, and only while macOS reports it as undetermined; never before any account exists (decision 0032). Do not sign the user up for another service. No splash animation or network request should prevent the initial connection screen from appearing.
 
 Normalize the supplied server URL carefully. Preserve a reverse-proxy subpath, support a custom port, reject embedded credentials and inappropriate schemes, and show the final origin before sending credentials. A server at `https://chat.example.org/company/chat` is not necessarily hosted at the origin root.
 
@@ -224,9 +224,9 @@ Pasted image data remains session-only, with an explicit memory cap. At a cap, r
 
 ### OS boundaries and notifications
 
-Promise “application-managed persistence is limited to the Keychain sign-ins and the encrypted content cache,” not “no other bytes ever reach disk.” macOS swap, system diagnostics, filesystem metadata, the system authentication service, browser history, file dialogs, clipboard managers, and Notification Center are outside that absolute guarantee. Document what was audited and what remains outside the application boundary.
+Promise “application-managed persistence is limited to the Keychain sign-ins, the encrypted content cache, and the local settings,” not “no other bytes ever reach disk.” macOS swap, system diagnostics, filesystem metadata, the system authentication service, browser history, file dialogs, clipboard managers, and Notification Center are outside that absolute guarantee. Document what was audited and what remains outside the application boundary.
 
-Disable native OS notifications by default in strict session mode. Use in-app badges and optional in-app sounds. Enabling Notification Center must be an explicit exception with a disclosure that the OS may retain delivered notifications. Default such notifications to generic text, with no message contents or attachment thumbnails. Do not put a secret into notification identifiers or userInfo. Clear app-delivered notifications on logout where possible without claiming guaranteed erasure.
+At the user's request (2026-09-25, decision 0032), native Notification Center alerts for mentions and direct messages are enabled by default, with message previews (up to 100 characters of text, no attachment thumbnails) enabled by default; both are saved local settings the user can turn off. Keep in-app badges and optional in-app sounds. Settings must disclose that the OS may retain delivered notifications, and must say honestly when macOS blocks MatterMac's notifications. If macOS denies authorization, do not ask again; if the user never answered, ask at most once per launch. Do not put a secret into notification identifiers or userInfo. Clear app-delivered notifications on logout where possible without claiming guaranteed erasure.
 
 Use `ASWebAuthenticationSession` with an ephemeral-session preference where supported, and explain authentication-service limitations. Never assume this provides an absolute no-storage guarantee for an IdP or the OS.
 
@@ -494,11 +494,11 @@ Use least-privilege app entitlements and sandboxing where compatible with the ve
 
 ## 19. Notifications, links, settings, and integration limits
 
-In strict mode, ordinary notification behavior is in-app badges and optional sounds. After an explicit Notification Center opt-in, use `UNUserNotificationCenter`, respect authorization and Focus settings, and avoid rich content by default. Do not promise background push delivery after process exit; no MatterMac push backend exists.
+Notification behavior is in-app badges, optional sounds, and Notification Center alerts (on by default with previews, §7). Use `UNUserNotificationCenter`, respect authorization and Focus settings, and avoid rich content beyond the short text preview. Do not promise background push delivery after process exit; no MatterMac push backend exists.
 
 Support Mattermost permalinks with the correct server base path. For links to another server, prompt for the target account context rather than silently transmitting the active session token. A custom MatterMac URL handler, if introduced, must use an owned scheme and validate every parameter; do not hijack another app's registered scheme.
 
-The quick switcher, temporary appearance choice, text size, compactness, sound preference, and optional notification setting stay in memory. Server-side user settings are authoritative only for the server features they describe. Quitting resets purely local settings under this specification.
+The appearance choice, text size, send behavior, sound preference, Dock bounce, notification and message-preview settings are saved on this Mac (decision 0032); quick switcher state stays in memory. Server-side user settings are authoritative only for the server features they describe.
 
 Provide a small About/Compatibility panel showing the app version, verified server version/capabilities, active session identity, native unsupported features, and a link/action to the project's documentation when configured. Do not display fabricated release information.
 

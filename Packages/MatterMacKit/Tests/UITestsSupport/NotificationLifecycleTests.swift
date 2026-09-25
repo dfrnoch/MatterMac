@@ -17,6 +17,11 @@ struct NotificationLifecycleTests {
         var pending: Set<String> = []
         var completions: [String: @Sendable () -> Void] = [:]
         var authorization: CheckedContinuation<Bool, Never>?
+        var statusQueries = 0
+        func authorizationStatus() async -> SystemNotifications.Authorization {
+            statusQueries += 1
+            return .notDetermined
+        }
         func requestAuthorization() async throws -> Bool {
             await withCheckedContinuation { authorization = $0 }
         }
@@ -45,8 +50,8 @@ struct NotificationLifecycleTests {
         func discovery(for endpoint: ServerEndpoint) -> any MattermostDiscoveryService { fatalError("Unused") }
         func service(for endpoint: ServerEndpoint, credential: BearerCredential) -> any MattermostService { fatalError("Unused") }
     }
-    private func makeApp() -> AppModel {
-        AppModel(environment: AppEnvironment(serviceFactory: Factory(),
+    private func makeApp(settingsStorage: (any LocalSettingsStorage)? = nil) -> AppModel {
+        AppModel(environment: AppEnvironment(settingsStorage: settingsStorage, serviceFactory: Factory(),
             makeRealtime: { _, _, _ in FakeRealtimeConnection() },
             markupParse: { MarkupParser.parse($0, limits: $1) }))
     }
@@ -124,5 +129,32 @@ struct NotificationLifecycleTests {
         center.authorization?.resume(returning: true)
         await enabling.value
         #expect(!app.notificationsEnabled)
+        // Quitting stops delivery but keeps the saved choice; turning it off saves off.
+        #expect(app.environment.settings.notificationsEnabled == shutdown)
+    }
+
+    @Test func togglesSaveTheChoiceAndNothingIsRequestedWithoutAnAccount() async throws {
+        let storage = MemorySettingsStorage()
+        let center = Center()
+        let app = makeApp(settingsStorage: storage)
+        app.notifications = SystemNotifications(center: center)
+        #expect(app.environment.settings.notificationsEnabled)
+        // Signed out: the automatic check neither reads nor asks.
+        app.refreshNotificationAuthorization()
+        for _ in 0..<20 { await Task.yield() }
+        #expect(center.statusQueries == 0 && center.authorization == nil)
+
+        await app.setNotificationsEnabled(false)
+        #expect(storage.values["MatterMac.notificationsEnabled"] as? Bool == false)
+        let enabling = Task { await app.setNotificationsEnabled(true) }
+        while center.authorization == nil { await Task.yield() }
+        #expect(storage.values["MatterMac.notificationsEnabled"] as? Bool == true)
+        center.authorization?.resume(returning: true)
+        await enabling.value
+        #expect(app.notificationsEnabled && app.notificationAuthorization == .granted)
+        await app.shutdownAll()
+        #expect(!app.notificationsEnabled)
+        #expect(storage.values["MatterMac.notificationsEnabled"] as? Bool == true)
+        #expect(LocalSettings(storage: storage).notificationsEnabled)
     }
 }
