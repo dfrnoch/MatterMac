@@ -12,7 +12,9 @@ center-cropped square and re-encoded to a bounded PNG. The circular preview show
 that crop. Upload and Remove Picture are separate explicit actions. No staging file,
 bookmark or disk image cache exists. Removal restores the server-generated default.
 A successful mutation invalidates avatar revisions even if refreshing the user fails.
-Picture changes retain any unsubmitted text edits in the form.
+Picture changes retain any unsubmitted text edits in the form. Sign-out closes the
+profile sheet, cancels the picker/preparation and clears editor state; changing the
+Settings account recreates the form for that account.
 
 Files use the existing single results pane and task key. Search requests use the
 server's team file-search endpoint and grammar; Channel Files supplies an `in:`

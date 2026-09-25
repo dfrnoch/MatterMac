@@ -88,6 +88,8 @@ struct ProfileAvatar: View {
     }
 
     private func load() async {
+        image = nil
+        lease = nil
         guard let pipeline = session.app?.images, !session.isDetached else { return }
         let pixels = Int((size * max(1, displayScale)).rounded(.up))
         guard let decoded = await session.session.profileImage(userID, revision: revision, maxPixelSize: pixels,

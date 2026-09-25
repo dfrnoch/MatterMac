@@ -36,6 +36,18 @@ struct ProfileAndFileSearchTests {
         }
         #expect(h.model.search?.files.count == 1)
         #expect(h.model.search?.kind == .files)
+        let sheet = try #require(ProfileEditSheet.present(session: h.model, on: window))
+        for _ in 0..<10 {
+            sheet.contentView?.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(window.attachedSheet === sheet)
         await h.close()
+        for _ in 0..<50 {
+            sheet.contentView?.layoutSubtreeIfNeeded()
+            if window.attachedSheet == nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(window.attachedSheet == nil)
     }
 }

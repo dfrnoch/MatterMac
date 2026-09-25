@@ -21,6 +21,10 @@ struct LiveProfileEditingTests {
         await discovery.shutdown()
         let api = factory.service(for: endpoint, credential: login.credential)
         let original = login.user
+        var created: PostID?
+        let term = "mattermacfiles" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        let fixture = FileManager.default.temporaryDirectory.appendingPathComponent(term + ".txt")
+        defer { try? FileManager.default.removeItem(at: fixture) }
         do {
             let changed = try await api.patchProfile(.init(nickname: "MatterMac profile check"), me: original.id)
             #expect(changed.nickname == "MatterMac profile check")
@@ -37,15 +41,36 @@ struct LiveProfileEditingTests {
             let detail = try await api.userStatus(original.id)
             #expect(detail.userID == original.id)
             guard let team = try await api.teams().first(where: { $0.name == "qa" }) else { throw Failure.missingTeam }
-            let files = try await api.searchFiles(.init(team: team.id, terms: "in:interop", timeZoneOffsetSeconds: 0, perPage: 20))
-            #expect(files.files.count <= 20)
+            guard let channel = try await api.channels(team: team.id).first(where: { $0.name == "interop" }) else { throw Failure.missingTeam }
+            let payload = Data("MatterMac explicit file search test".utf8)
+            try payload.write(to: fixture)
+            let uploaded = try await api.upload(UploadSource(fileURL: fixture, fileName: term + ".txt", expectedSize: Int64(payload.count)),
+                channel: channel.id, clientID: UUID().uuidString, progress: { _ in })
+            let post = try await api.createPost(.init(channelID: channel.id, rootID: nil,
+                message: "MatterMac file search check", fileIDs: [uploaded.id],
+                pendingPostID: PendingPostID(rawValue: "\(original.id.rawValue):\(UUID().uuidString)")!))
+            created = post.id
+            var found: FileInfo?
+            for _ in 0..<20 {
+                let files = try await api.searchFiles(.init(team: team.id, terms: term + " in:interop", timeZoneOffsetSeconds: 0, perPage: 20))
+                found = files.files.first { $0.id == uploaded.id }
+                if found != nil { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            let result = try #require(found)
+            #expect(result.id == uploaded.id)
+            #expect(result.postID == post.id)
+            #expect(result.channelID == channel.id)
+            #expect(result.size == Int64(payload.count))
         } catch {
+            if let created { try? await api.deletePost(created) }
             if original.lastPictureUpdate.milliseconds <= 0 { try? await api.removeProfileImage(me: original.id) }
             _ = try? await api.patchProfile(.init(nickname: original.nickname), me: original.id)
             try? await api.logout()
             await api.shutdown()
             throw error
         }
+        if let created { try await api.deletePost(created) }
         try await api.logout()
         await api.shutdown()
     }

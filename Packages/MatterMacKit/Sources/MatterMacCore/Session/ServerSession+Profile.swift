@@ -10,7 +10,7 @@ extension ServerSession {
         let epoch = epoch
         do throws(APIError) {
             let user = try await service.patchProfile(patch, me: me.id)
-            guard self.epoch == epoch, isActiveSessionAlive else { throw APIError.cancelled }
+            guard self.epoch == epoch, isActiveSessionAlive, !Task.isCancelled else { throw APIError.cancelled }
             guard user.id == me.id else { throw APIError.malformedResponse }
             adoptCurrentUser(user)
             markDirty([.sidebar, .timeline, .thread, .header, .search])
@@ -27,7 +27,7 @@ extension ServerSession {
         do throws(APIError) {
             if let png { try await service.setProfileImage(png: png, me: me.id) }
             else { try await service.removeProfileImage(me: me.id) }
-            guard self.epoch == epoch, isActiveSessionAlive else { throw .cancelled }
+            guard self.epoch == epoch, isActiveSessionAlive, !Task.isCancelled else { throw .cancelled }
             // The mutation succeeded even if the refresh fails. Invalidate the old
             // avatar immediately; the next user update supplies the server revision.
             let revision = max(min(me.lastPictureUpdate.milliseconds, Int64.max - 1) + 1, Int64(Date.now.timeIntervalSince1970 * 1_000))
@@ -38,6 +38,7 @@ extension ServerSession {
                 adoptCurrentUser(user)
                 markDirty([.sidebar, .timeline, .thread, .search])
             }
+            guard self.epoch == epoch, isActiveSessionAlive, !Task.isCancelled else { throw .cancelled }
             return me
         } catch {
             handleAuthenticationFailureIfNeeded(error)

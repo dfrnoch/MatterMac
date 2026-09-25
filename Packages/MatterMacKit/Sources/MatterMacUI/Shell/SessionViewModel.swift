@@ -83,6 +83,7 @@ public final class SessionViewModel {
     /// Stops consuming snapshots (called when the session is removed).
     func detach() {
         isDetached = true
+        ProfileEditSheet.close(for: self)
         navigationTask?.cancel()
         directMessageTask?.cancel()
         recoveryTask?.cancel()

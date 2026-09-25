@@ -12,6 +12,7 @@ struct ProfileSettingsView: View {
     @State private var lastName = ""
     @State private var nickname = ""
     @State private var position = ""
+    @State private var picturePanel: NSOpenPanel?
     @State private var picture: Data?
     @State private var picturePreview: NSImage?
     @State private var change = ServerChangeState()
@@ -32,7 +33,9 @@ struct ProfileSettingsView: View {
                         if let picture {
                             Button("Upload Picture") {
                                 change.run {
-                                    original = try await session.session.updateProfilePicture(picture)
+                                    let user = try await session.session.updateProfilePicture(picture)
+                                    guard session.canChangeServerSettings, !Task.isCancelled else { return }
+                                    original = user
                                     self.picture = nil
                                     picturePreview = nil
                                 }
@@ -40,7 +43,11 @@ struct ProfileSettingsView: View {
                             Button("Cancel") { self.picture = nil; picturePreview = nil }
                         } else if user.lastPictureUpdate.milliseconds > 0 {
                             Button("Remove Picture") {
-                                change.run { original = try await session.session.updateProfilePicture(nil) }
+                                change.run {
+                                    let user = try await session.session.updateProfilePicture(nil)
+                                    guard session.canChangeServerSettings, !Task.isCancelled else { return }
+                                    original = user
+                                }
                             }
                         }
                     }
@@ -58,7 +65,11 @@ struct ProfileSettingsView: View {
                     }
                     Button("Save Profile") {
                         let patch = patch(user)
-                        change.run { adopt(try await session.session.updateProfile(patch)) }
+                        change.run {
+                            let user = try await session.session.updateProfile(patch)
+                            guard session.canChangeServerSettings, !Task.isCancelled else { return }
+                            adopt(user)
+                        }
                     }
                     .disabled(patch(user).isEmpty || patch(user).fieldOverLimit != nil || !session.canChangeServerSettings)
                     .accessibilityIdentifier("saveProfile")
@@ -72,6 +83,27 @@ struct ProfileSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onChange(of: session.isDetached) {
+            guard session.isDetached else { return }
+            change.cancel()
+            picturePanel?.cancel(nil)
+            picturePanel = nil
+            original = nil
+            firstName = ""
+            lastName = ""
+            nickname = ""
+            position = ""
+            picture = nil
+            picturePreview = nil
+            change.error = UserFacingErrorText.describe(.authenticationRequired)
+        }
+        .onDisappear {
+            change.cancel()
+            picturePanel?.cancel(nil)
+            picturePanel = nil
+            picture = nil
+            picturePreview = nil
+        }
         .task(id: session.slot.id) {
             if let profile = await session.profile(for: session.slot.user.id) { adopt(profile.user) }
             else { change.error = UserFacingErrorText.describe(.notFoundOrInaccessible) }
@@ -79,15 +111,18 @@ struct ProfileSettingsView: View {
     }
 
     private func choosePicture() {
-        guard !change.isSaving else { return }
+        guard !change.isSaving, picturePanel == nil, session.canChangeServerSettings else { return }
         let panel = NSOpenPanel()
+        picturePanel = panel
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
+            picturePanel = nil
+            guard response == .OK, let url = panel.url, session.canChangeServerSettings else { return }
             change.run {
                 let data = try await ProfilePicture.prepare(url)
+                guard !Task.isCancelled, session.canChangeServerSettings else { return }
                 picture = data
                 picturePreview = NSImage(data: data)
             }
@@ -120,9 +155,20 @@ struct ProfileSettingsView: View {
 @MainActor
 enum ProfileEditSheet {
     private static weak var current: NSWindow?
+    private static weak var owner: SessionViewModel?
 
-    static func present(session: SessionViewModel) {
-        guard current == nil, let host = NSApp.keyWindow ?? NSApp.mainWindow, host.attachedSheet == nil else { return }
+    static func close(for session: SessionViewModel) {
+        guard owner === session, let sheet = current else { return }
+        sheet.sheetParent?.endSheet(sheet)
+        sheet.orderOut(nil)
+        sheet.contentViewController = nil
+        current = nil
+        owner = nil
+    }
+
+    @discardableResult
+    static func present(session: SessionViewModel, on host: NSWindow? = nil) -> NSWindow? {
+        guard session.canChangeServerSettings, current == nil, let host = host ?? NSApp.keyWindow ?? NSApp.mainWindow, host.attachedSheet == nil else { return nil }
         let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 490), styleMask: [.titled],
                              backing: .buffered, defer: false)
         sheet.isRestorable = false
@@ -134,8 +180,16 @@ enum ProfileEditSheet {
                 host?.endSheet(sheet)
             }.padding(.bottom)
         }.frame(width: 520, height: 490)
+        .onChange(of: session.isDetached) { [weak host, weak sheet] in
+            guard session.isDetached, let sheet else { return }
+            host?.endSheet(sheet)
+        }
         sheet.contentViewController = NSHostingController(rootView: content)
         current = sheet
-        host.beginSheet(sheet)
+        owner = session
+        host.beginSheet(sheet) { [weak sheet] _ in
+            if current === sheet { current = nil; owner = nil }
+        }
+        return sheet
     }
 }

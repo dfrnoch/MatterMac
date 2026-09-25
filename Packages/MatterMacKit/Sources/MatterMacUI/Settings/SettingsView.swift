@@ -106,14 +106,17 @@ struct ActiveSessionContent<Content: View>: View {
 final class ServerChangeState {
     var isSaving = false
     var error: String?
+    private var task: Task<Void, Never>?
+
+    func cancel() { task?.cancel() }
 
     /// Untyped `throws`: typed-throws closure types need the macOS 15 runtime.
     func run(_ operation: @escaping @MainActor () async throws -> Void) {
         guard !isSaving else { return }
         isSaving = true
         error = nil
-        Task {
-            defer { isSaving = false }
+        task = Task {
+            defer { isSaving = false; task = nil }
             do {
                 try await operation()
             } catch {
