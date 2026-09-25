@@ -214,7 +214,7 @@ public final class FakeMattermostService: MattermostService {
         if let handler = withState({ $0.viewChannelHandler }) { return try await Self.typed { try await handler(id) } }
         guard let id else { return [:] }
         withState { $0.viewedChannels.append(id) }
-        return [id: MattermostTimestamp(milliseconds: 1)]
+        return [id: MattermostTimestamp(milliseconds: Int64(Date.now.timeIntervalSince1970 * 1_000))]
     }
 
     public func searchChannels(team: TeamID, term: String) async throws(APIError) -> [Channel] {
