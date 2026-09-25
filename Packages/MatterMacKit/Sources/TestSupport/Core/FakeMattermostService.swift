@@ -13,6 +13,8 @@ public final class FakeMattermostService: MattermostService {
     let directory = OSAllocatedUnfairLock(initialState: DirectoryState())
     /// Custom emoji and slash-command fakes (FakeMattermostService+Emoji.swift).
     let emojiCommands = OSAllocatedUnfairLock(initialState: EmojiCommandState())
+    /// Own-profile, detailed status and file search fakes (FakeMattermostService+Profile.swift).
+    let profileState = OSAllocatedUnfairLock(initialState: ProfileFakeState())
 
     public struct State: Sendable {
         public var me: User

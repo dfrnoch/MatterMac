@@ -73,6 +73,7 @@ public struct SearchResultItem: Hashable, Sendable, Identifiable {
 /// What the results pane lists: a server search, or a server-side post list.
 public enum SearchKind: Sendable, Hashable {
     case terms
+    case files
     case recentMentions
     case saved
     case pinned(ChannelID)
@@ -90,12 +91,16 @@ public struct SearchSnapshot: Sendable, Hashable {
     public let terms: String
     public let state: State
     public let items: [SearchResultItem]
+    public let files: [FileInfo]
+    public let fileChannelNames: [ChannelID: String]
     public let isTruncated: Bool
     public let canLoadMore: Bool
     public let kind: SearchKind
 
     public init(scope: AccountScope, generation: UInt64, terms: String, state: State, items: [SearchResultItem],
-                isTruncated: Bool, canLoadMore: Bool, kind: SearchKind = .terms) {
+                isTruncated: Bool, canLoadMore: Bool, kind: SearchKind = .terms, files: [FileInfo] = [], fileChannelNames: [ChannelID: String] = [:]) {
+        self.files = files
+        self.fileChannelNames = fileChannelNames
         self.kind = kind
         self.scope = scope
         self.generation = generation
@@ -157,7 +162,11 @@ public struct UserProfilePresentation: Hashable, Sendable {
     public let displayName: String
     public let status: PresenceStatus?
     public let isCurrentUser: Bool
-    public init(user: User, displayName: String, status: PresenceStatus?, isCurrentUser: Bool = false) {
+    /// When a timed Do Not Disturb ends (`dnd_end_time`), if the server reported one.
+    public let doNotDisturbEnd: Date?
+    public init(user: User, displayName: String, status: PresenceStatus?, isCurrentUser: Bool = false,
+                doNotDisturbEnd: Date? = nil) {
+        self.doNotDisturbEnd = doNotDisturbEnd
         self.user = user
         self.displayName = displayName
         self.status = status

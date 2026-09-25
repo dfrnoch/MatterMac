@@ -187,6 +187,7 @@ enum TimelineStrings {
         case .fileUnavailable: String(localized: "A file is no longer available.")
         case .commandNotFound: String(localized: "The server doesn’t recognize that command.")
         case .commandOutcomeUnknown: String(localized: "The command’s outcome is unknown.")
+        case .profileFieldLocked: UserFacingErrorText.describe(error)
         case .unknown: String(localized: "An unknown error occurred.")
         }
     }

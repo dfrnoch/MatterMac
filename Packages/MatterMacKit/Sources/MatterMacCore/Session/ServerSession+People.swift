@@ -263,7 +263,7 @@ extension ServerSession {
     /// Sets a manual presence status on the server (visible to other users).
     public func setOwnStatus(_ status: PresenceStatus) async throws(UserFacingError) {
         guard isActiveSessionAlive else { throw .authenticationRequired }
-        guard status != .unknown else { throw .unsupportedCapability("status") }
+        guard status.isManuallySelectable else { throw .unsupportedCapability("status") }
         do {
             try await service.setStatus(status, me: me.id)
         } catch {

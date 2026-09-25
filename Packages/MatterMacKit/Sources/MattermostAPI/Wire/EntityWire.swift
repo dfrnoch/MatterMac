@@ -100,7 +100,7 @@ public struct UserWire: Decodable, Sendable {
     public let user: User
     enum Keys: String, CodingKey {
         case id, username, first_name, last_name, nickname, position, is_bot, delete_at, last_picture_update
-        case locale, roles, email, timezone, props, notify_props
+        case locale, roles, email, timezone, props, notify_props, auth_service
     }
     enum TimeZoneKeys: String, CodingKey { case useAutomaticTimezone, automaticTimezone, manualTimezone }
     enum PropKeys: String, CodingKey { case customStatus }
@@ -125,7 +125,8 @@ public struct UserWire: Decodable, Sendable {
             email: String((c.lenientString(.email, maxBytes: 320) ?? "").prefix(320)),
             timeZoneIdentifier: Self.timeZone(c),
             customStatus: Self.customStatus(c),
-            notifyProps: Self.notifyProps(c))
+            notifyProps: Self.notifyProps(c),
+            authService: String((c.lenientString(.auth_service, maxBytes: 64) ?? "").prefix(64)))
     }
 
     /// Sanitized profiles (other users, some broadcasts) carry an empty map: `nil`.
@@ -188,12 +189,22 @@ public struct StatusWire: Decodable, Sendable {
     public let userID: UserID
     public let status: PresenceStatus
     public let isManual: Bool
-    enum Keys: String, CodingKey { case user_id, status, manual }
+    /// `dnd_end_time`, in **seconds** since 1970; 0 when Do Not Disturb has no end.
+    public let dndEndTimeSeconds: Int64
+    enum Keys: String, CodingKey { case user_id, status, manual, dnd_end_time }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         userID = try c.requiredID(UserID.self, .user_id)
         status = PresenceStatus(wire: c.lenientString(.status, maxBytes: 16) ?? "")
         isManual = c.lenientBool(.manual) ?? false
+        dndEndTimeSeconds = max(0, c.lenientInt64(.dnd_end_time) ?? 0)
+    }
+
+    public var detail: UserStatusDetail {
+        // Only a Do Not Disturb status has an end; a stale value is ignored otherwise.
+        let end = status == .doNotDisturb && dndEndTimeSeconds > 0
+            ? Date(timeIntervalSince1970: TimeInterval(dndEndTimeSeconds)) : nil
+        return UserStatusDetail(userID: userID, status: status, isManual: isManual, doNotDisturbEnd: end)
     }
 }
 

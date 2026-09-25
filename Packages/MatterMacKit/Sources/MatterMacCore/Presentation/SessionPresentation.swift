@@ -168,11 +168,14 @@ public struct SidebarSnapshot: Sendable {
     public let directMessageMentions: Int
     /// Whether the server lets users browse archived channels.
     public let canBrowseArchivedChannels: Bool
+    /// The signed-in user's current `last_picture_update` (changes after Edit Profile).
+    public let myPictureRevision: Int64
 
     public init(scope: AccountScope, generation: UInt64, teams: [TeamSummary], selectedTeam: TeamID?,
                 sections: [SidebarSection], isTruncated: Bool, myStatus: PresenceStatus? = nil,
                 myCustomStatus: CustomStatus? = nil, usesServerCategories: Bool = false, groupsUnreads: Bool = false,
-                directMessageMentions: Int = 0, canBrowseArchivedChannels: Bool = false) {
+                directMessageMentions: Int = 0, canBrowseArchivedChannels: Bool = false, myPictureRevision: Int64 = 0) {
+        self.myPictureRevision = myPictureRevision
         self.usesServerCategories = usesServerCategories
         self.groupsUnreads = groupsUnreads
         self.directMessageMentions = directMessageMentions

@@ -37,6 +37,13 @@ public struct ResourceBudget: Sendable, Hashable {
     /// Combined draft and pending-send count/text. Never silently LRU-evicted.
     public var unsentText = CountAndBytes(count: 100, bytes: 4 * .mebibyte)
     public var pastedImageBytes = 8 * .mebibyte
+    /// Largest user-selected file read (by Image I/O, in place) for a new profile
+    /// picture. The upload is a small re-encoded square, not this file.
+    public var profilePictureSourceBytes = 50 * .mebibyte
+    /// Edge of the square PNG uploaded as a profile picture (the server stores 128 px).
+    public var profilePictureEdge = 512
+    /// Largest encoded profile-picture upload.
+    public var profilePictureUploadBytes = 2 * .mebibyte
     public var directoryDetails = CountAndBytes(count: 5_000, bytes: 8 * .mebibyte)
     /// Saved (`flagged_post` preference) post ids tracked per session. Saves beyond this
     /// are still on the server but show as unsaved here.

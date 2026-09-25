@@ -472,6 +472,17 @@ public protocol MattermostService: Sendable {
     /// `PUT /users/{id}/patch` with `notify_props` only. The server replaces the whole
     /// map, so `props` must be the complete, unmodified-except-for-the-change map.
     func patchNotifyProps(_ props: UserNotifyProps, me: UserID) async throws(APIError) -> User
+    /// `PUT /users/{id}/patch` with only the non-`nil` profile fields.
+    func patchProfile(_ patch: UserProfilePatch, me: UserID) async throws(APIError) -> User
+    /// `POST /users/{id}/image` (multipart field `image`) with an already bounded PNG.
+    func setProfileImage(png: Data, me: UserID) async throws(APIError)
+    /// `DELETE /users/{id}/image`: back to the server-generated default picture.
+    func removeProfileImage(me: UserID) async throws(APIError)
+    /// `GET /users/{id}/status`, including a timed Do Not Disturb's end.
+    func userStatus(_ id: UserID) async throws(APIError) -> UserStatusDetail
+    /// `PUT /users/{id}/status` with `dnd` and `dnd_end_time` (the server truncates it
+    /// to the minute).
+    func setDoNotDisturb(until end: Date, me: UserID) async throws(APIError)
 
     // Files and media
     func fileInfo(_ id: FileID) async throws(APIError) -> FileInfo
@@ -484,6 +495,9 @@ public protocol MattermostService: Sendable {
     /// Partial output is removed on failure or cancellation.
     func download(_ id: FileID, to destination: URL,
                   progress: @escaping @Sendable (TransferProgress) -> Void) async throws(APIError)
+    /// `POST /teams/{id}/files/search` (same terms grammar as post search, including
+    /// `in:`, `from:` and `ext:`).
+    func searchFiles(_ query: SearchQuery) async throws(APIError) -> FileSearchPage
 
     // Lifecycle
     /// Called at sign-out / session teardown (after an optional `logout()`): cancels

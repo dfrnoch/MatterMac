@@ -623,7 +623,8 @@ public final class MattermostHTTPClient: MattermostService {
     }
 
     public func setStatus(_ status: PresenceStatus, me: UserID) async throws(APIError) {
-        guard let value = status.wireValue else { throw .malformedResponse }
+        // `ooo` is only set by the server (automatic replies); it rejects it here.
+        guard status.isManuallySelectable, let value = status.wireValue else { throw .malformedResponse }
         _ = try await perform(.put, ["users", me.rawValue, "status"],
                               body: try RequestBodyEncoding.encode(StatusBody(user_id: me.rawValue, status: value)),
                               limit: small, priority: .interactive)
@@ -676,6 +677,48 @@ public final class MattermostHTTPClient: MattermostService {
         guard props.isComplete, !props.values.isEmpty else { throw .malformedResponse }
         return try await send(.put, ["users", me.rawValue, "patch"], body: UserNotifyPatchBody(notify_props: props.values),
                               decode: UserWire.self, limit: small).user
+    }
+
+    public func patchProfile(_ patch: UserProfilePatch, me: UserID) async throws(APIError) -> User {
+        guard !patch.isEmpty else { throw .badRequest(Self.clientError("mattermac.client.empty_profile_patch")) }
+        guard patch.fieldOverLimit == nil else { throw .badRequest(Self.clientError("mattermac.client.profile_field_too_long")) }
+        return try await send(.put, ["users", me.rawValue, "patch"], body: UserProfilePatchBody(patch: patch),
+                              decode: UserWire.self, limit: small).user
+    }
+
+    /// The body is assembled in memory: `png` is MatterMac's own bounded re-encoding
+    /// of the selected picture (`ResourceBudget.profilePictureUploadBytes`), never the
+    /// user's file. Not retried: the server may already have stored it.
+    public func setProfileImage(png: Data, me: UserID) async throws(APIError) {
+        guard !png.isEmpty, png.count <= budget.profilePictureUploadBytes else {
+            throw .responseTooLarge(limitBytes: budget.profilePictureUploadBytes)
+        }
+        guard png.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]),
+              let body = MultipartFormBody(field: "image", fileName: "profile.png", contentType: "image/png", content: png)
+        else { throw .badRequest(Self.clientError("mattermac.client.invalid_profile_image")) }
+        let request = HTTPRequest(method: .post, url: apiURL(["users", me.rawValue, "image"]),
+                                  headers: ["Content-Type": body.contentType], body: body.data, credential: credential,
+                                  allowsRedirects: false)
+        _ = try await pipeline.execute(request, priority: .interactive, limits: ResponseLimits(maximumBodyBytes: small))
+    }
+
+    public func removeProfileImage(me: UserID) async throws(APIError) {
+        _ = try await perform(.delete, ["users", me.rawValue, "image"], limit: small, priority: .interactive)
+    }
+
+    public func userStatus(_ id: UserID) async throws(APIError) -> UserStatusDetail {
+        try await get(StatusWire.self, ["users", id.rawValue, "status"], limit: small, priority: .interactive).detail
+    }
+
+    public func setDoNotDisturb(until end: Date, me: UserID) async throws(APIError) {
+        guard end.timeIntervalSince1970.isFinite, end.timeIntervalSince1970 > 0,
+              end.timeIntervalSince1970 < Double(Int64.max) else { throw .malformedResponse }
+        let seconds = Int64(end.timeIntervalSince1970.rounded(.down))
+        guard seconds > 0 else { throw .badRequest(Self.clientError("mattermac.client.invalid_dnd_end")) }
+        _ = try await perform(.put, ["users", me.rawValue, "status"],
+                              body: try RequestBodyEncoding.encode(TimedStatusBody(user_id: me.rawValue, status: "dnd",
+                                                                                   dnd_end_time: seconds)),
+                              limit: small, priority: .interactive)
     }
 
     // MARK: Files and media
@@ -804,6 +847,18 @@ public final class MattermostHTTPClient: MattermostService {
             staging.discard()
             throw error
         }
+    }
+
+    public func searchFiles(_ query: SearchQuery) async throws(APIError) -> FileSearchPage {
+        let terms = query.terms.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Empty terms are a 400 on both release lines; nothing is sent.
+        guard !terms.isEmpty else { return FileSearchPage(files: []) }
+        let perPage = min(Self.clampPage(query.perPage), max(1, budget.searchResults.count), FileInfoListWire.maximumFiles)
+        let body = PostSearchBody(terms: terms, is_or_search: query.isOrSearch, time_zone_offset: query.timeZoneOffsetSeconds,
+                                  page: max(0, query.page), per_page: perPage, include_deleted_channels: false)
+        let wire = try await send(.post, ["teams", query.team.rawValue, "files", "search"], body: body,
+                                  decode: FileInfoListWire.self, limit: large)
+        return FileSearchPage(files: wire.files, skippedMalformed: wire.skippedMalformed)
     }
 
     // MARK: Request helpers

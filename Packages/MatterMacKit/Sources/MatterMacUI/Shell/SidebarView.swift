@@ -287,7 +287,7 @@ struct SidebarRow: View {
         switch row.partnerStatus {
         case .online: .green
         case .away: .yellow
-        case .doNotDisturb: .red
+        case .doNotDisturb, .outOfOffice: .red
         default: .secondary.opacity(0.5)
         }
     }
@@ -493,7 +493,7 @@ struct AccountBar: View {
         let status = session.sidebar?.myStatus
         HStack(spacing: 8) {
             Button { isProfileVisible = true } label: {
-                ProfileAvatar(session: session, userID: user.id, revision: user.lastPictureUpdate.milliseconds,
+                ProfileAvatar(session: session, userID: user.id, revision: session.sidebar?.myPictureRevision ?? user.lastPictureUpdate.milliseconds,
                               name: user.username, size: 26, status: status)
             }
             .buttonStyle(.plain)
@@ -527,6 +527,7 @@ struct AccountBar: View {
                     Toggle("Play Sound", isOn: Binding(get: { app.notificationSounds }, set: { app.notificationSounds = $0 }))
                 }
                 Divider()
+                Button("Edit Profile…") { ProfileEditSheet.present(session: session) }
                 Button("Review Unsent Work…") { session.isUnsentRecoveryVisible = true }
                 Button("Copy Unsent Text") { session.copyUnsentText() }
                     .disabled(session.isCopyingUnsentText)

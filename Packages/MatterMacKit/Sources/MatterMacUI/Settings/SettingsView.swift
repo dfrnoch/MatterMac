@@ -13,7 +13,7 @@ public struct MatterMacSettingsView: View {
     /// tab to UserDefaults (`com_apple_SwiftUI_Settings_selectedTabIndex`, observed).
     @State private var tab: Tab = .general
 
-    enum Tab: Hashable { case general, notifications, appearance, accounts }
+    enum Tab: Hashable { case general, notifications, appearance, accounts, profile }
 
     public init(environment: AppEnvironment) {
         self.environment = environment
@@ -21,6 +21,13 @@ public struct MatterMacSettingsView: View {
 
     public var body: some View {
         TabView(selection: $tab) {
+            Group {
+                if let session = environment.appModel?.activeSession {
+                    ProfileSettingsView(session: session).id(session.slot.id)
+                } else { Text("Sign in to edit your profile.") }
+            }
+            .tabItem { Label("Profile", systemImage: "person.crop.circle") }
+            .tag(Tab.profile)
             GeneralSettingsTab(environment: environment)
                 .tabItem { Label("General", systemImage: "gearshape") }
                 .tag(Tab.general)

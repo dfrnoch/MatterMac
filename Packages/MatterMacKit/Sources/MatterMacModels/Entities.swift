@@ -174,12 +174,16 @@ public struct User: Hashable, Sendable, Identifiable {
     public var customStatus: CustomStatus?
     /// Only present for the signed-in user (the server sanitizes it for others).
     public var notifyProps: UserNotifyProps?
+    /// `auth_service`: empty (or `email`) for password accounts, else `ldap`, `saml`,
+    /// `gitlab`, `google`, `office365`, `openid`… Only reliable for the signed-in user.
+    public var authService: String
 
     public init(id: UserID, username: String, firstName: String = "", lastName: String = "",
                 nickname: String = "", position: String = "", isBot: Bool = false,
                 deleteAt: MattermostTimestamp = .zero, lastPictureUpdate: MattermostTimestamp = .zero,
                 locale: String = "", roles: [String] = [], email: String = "", timeZoneIdentifier: String? = nil,
-                customStatus: CustomStatus? = nil, notifyProps: UserNotifyProps? = nil) {
+                customStatus: CustomStatus? = nil, notifyProps: UserNotifyProps? = nil, authService: String = "") {
+        self.authService = authService
         self.id = id
         self.username = username
         self.firstName = firstName
@@ -254,6 +258,10 @@ public enum PresenceStatus: Hashable, Sendable {
     case away
     case doNotDisturb
     case offline
+    /// `ooo`: set by the server while the user's automatic replies are on. It cannot
+    /// be chosen through `PUT /users/{id}/status`; choosing another status there turns
+    /// the automatic replies off.
+    case outOfOffice
     case unknown
 
     public init(wire: String) {
@@ -262,20 +270,34 @@ public enum PresenceStatus: Hashable, Sendable {
         case "away": self = .away
         case "dnd": self = .doNotDisturb
         case "offline": self = .offline
+        case "ooo": self = .outOfOffice
         default: self = .unknown
         }
     }
 
-    /// Value accepted by `PUT /users/{id}/status`; `nil` for `.unknown`.
+    /// The server's value; `nil` for `.unknown`.
     public var wireValue: String? {
         switch self {
         case .online: "online"
         case .away: "away"
         case .doNotDisturb: "dnd"
         case .offline: "offline"
+        case .outOfOffice: "ooo"
         case .unknown: nil
         }
     }
+
+    /// Whether `PUT /users/{id}/status` accepts this value (online, away, dnd, offline).
+    public var isManuallySelectable: Bool {
+        switch self {
+        case .online, .away, .doNotDisturb, .offline: true
+        case .outOfOffice, .unknown: false
+        }
+    }
+
+    /// Do Not Disturb and Out of Office silence notifications, like the server's push
+    /// rule (`DoesStatusAllowPushNotification`).
+    public var silencesNotifications: Bool { self == .doNotDisturb || self == .outOfOffice }
 }
 
 public struct PostType: RawRepresentable, Hashable, Sendable {

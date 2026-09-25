@@ -378,6 +378,11 @@ public final class SessionViewModel {
         if selectedChannel != result.channelID { select(channel: result.channelID, thread: root) } else { openThread(root: root) }
     }
 
+    public func runFileSearch(_ terms: String) {
+        isSearchVisible = true
+        Task { await session.searchFiles(terms) }
+    }
+
     public func runSearch(_ terms: String) {
         Task { await session.search(terms) }
     }

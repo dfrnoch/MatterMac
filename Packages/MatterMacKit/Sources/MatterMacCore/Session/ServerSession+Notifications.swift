@@ -98,7 +98,7 @@ extension ServerSession {
             membership: directory.memberships[channel.id], account: me.notifyProps ?? .serverDefault,
             username: me.username, firstName: me.firstName, collapsedThreads: collapsedThreadsActive)
         guard let kind = NotificationPolicy.kind(for: input) else { return }
-        guard directory.status(of: me.id) != .doNotDisturb else { return }
+        guard directory.status(of: me.id)?.silencesNotifications != true else { return }
         if appIsActive, windowIsVisible, activeChannel == channel.id { return }
         if post.props.overrideUsername == nil, directory.peekUser(post.userID) == nil {
             // First message from someone not yet in the directory: resolve the name.

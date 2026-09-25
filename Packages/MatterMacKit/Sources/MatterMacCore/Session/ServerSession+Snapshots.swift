@@ -22,7 +22,8 @@ extension ServerSession {
                                                   usesServerCategories: usesCategories,
                                                   groupsUnreads: directory.groupsUnreads,
                                                   directMessageMentions: directMessageMentions(collapsedThreads: crt),
-                                                  canBrowseArchivedChannels: directory.viewArchivedChannels))
+                                                  canBrowseArchivedChannels: directory.viewArchivedChannels,
+                                                  myPictureRevision: me.lastPictureUpdate.milliseconds))
     }
 
     func sidebarRow(for channel: Channel, collapsedThreads: Bool, isFavorite: Bool = false) -> SidebarChannelRow {

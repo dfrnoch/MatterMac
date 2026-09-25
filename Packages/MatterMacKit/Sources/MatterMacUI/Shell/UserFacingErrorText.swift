@@ -69,6 +69,8 @@ enum UserFacingErrorText {
             String(localized: "Cancelled.")
         case .fileUnavailable:
             String(localized: "The file changed or is no longer available.")
+        case .profileFieldLocked:
+            String(localized: "The server didn’t allow this change. Your sign-in provider or administrator manages this part of your profile.")
         case .unknown:
             String(localized: "Something went wrong.")
         }

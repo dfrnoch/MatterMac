@@ -26,6 +26,9 @@ public enum UserFacingError: Hashable, Sendable, Error {
     case commandNotFound
     /// The command request was sent but no response arrived; it may have run.
     case commandOutcomeUnknown
+    /// The server refused a profile change because the field (or picture) is managed
+    /// by the sign-in provider (LDAP, SAML, OAuth) or locked by an administrator (409).
+    case profileFieldLocked
     case unknown
 
     public enum ResourceKind: Hashable, Sendable {

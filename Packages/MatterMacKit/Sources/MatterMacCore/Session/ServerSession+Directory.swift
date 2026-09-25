@@ -9,13 +9,14 @@ struct SearchModel {
     var terms = ""
     var state: SearchSnapshot.State = .idle
     var results: [PostID] = []
+    var files: [FileInfo] = []
     var page = 0
     var canLoadMore = false
     var isTruncated = false
 
     mutating func purge(channel: ChannelID) {
         // Results referencing the channel are removed by the caller via the store.
-        _ = channel
+        files.removeAll { $0.channelID == channel }
     }
 }
 
@@ -46,13 +47,14 @@ extension ServerSession {
         }
         guard let value = directory.peekUser(user) else { return nil }
         // Other users' presence is only polled; refresh it when a profile is opened.
-        if let statuses = try? await service.statuses(ids: [user]), let status = statuses[user] {
-            guard self.epoch == epoch, isActiveSessionAlive else { return nil }
-            directory.setStatus(status, for: user)
-        }
+        // The single-user status also carries a timed Do Not Disturb's end.
+        let detail = try? await service.userStatus(user)
         guard self.epoch == epoch, isActiveSessionAlive else { return nil }
+        if let detail, detail.userID == user { directory.setStatus(detail.status, for: user) }
+        let status = directory.status(of: user)
         return UserProfilePresentation(user: value, displayName: directory.nameFormat.displayName(for: value),
-                                       status: directory.status(of: user), isCurrentUser: user == me.id)
+                                       status: status, isCurrentUser: user == me.id,
+                                       doNotDisturbEnd: status == .doNotDisturb ? detail?.doNotDisturbEnd : nil)
     }
 
     // MARK: - Presence
@@ -249,6 +251,7 @@ extension ServerSession {
     public func loadMoreSearchResults() {
         guard searchState.canLoadMore, searchState.state == .results, let team = selectedTeam else { return }
         searchState.page += 1
+        if searchKind == .files { runFileSearch(team: team, page: searchState.page); return }
         if searchKind != .terms { runList(searchKind, team: team, page: searchState.page); return }
         runSearch(team: team, page: searchState.page)
     }
@@ -299,6 +302,7 @@ extension ServerSession {
     func releaseSearchResults() {
         for id in searchState.results { store.release(id) }
         searchState.results.removeAll()
+        searchState.files.removeAll()
         store.collectUnreferenced()
         reportRetention()
     }
@@ -319,7 +323,10 @@ extension ServerSession {
         searchContinuation.yield(SearchSnapshot(scope: scope, generation: searchState.generation, terms: searchState.terms,
                                                 state: searchState.state, items: items,
                                                 isTruncated: searchState.isTruncated,
-                                                canLoadMore: searchState.canLoadMore, kind: searchKind))
+                                                canLoadMore: searchState.canLoadMore, kind: searchKind, files: searchState.files,
+                                                fileChannelNames: Dictionary(uniqueKeysWithValues: Set(searchState.files.compactMap(\.channelID)).compactMap { id in
+                                                    directory.channels[id].map { (id, displayName(of: $0)) }
+                                                })))
     }
 
     /// Opens a search result (or permalink) in its real channel context.

@@ -17,6 +17,7 @@ extension PresenceStatus {
         case .away: String(localized: "Away")
         case .doNotDisturb: String(localized: "Do Not Disturb")
         case .offline: String(localized: "Offline")
+        case .outOfOffice: String(localized: "Out of Office")
         case .unknown: String(localized: "Status unknown")
         }
     }
@@ -25,7 +26,7 @@ extension PresenceStatus {
         switch self {
         case .online: .green
         case .away: .yellow
-        case .doNotDisturb: .red
+        case .doNotDisturb, .outOfOffice: .red
         case .offline, .unknown: .secondary.opacity(0.5)
         }
     }
@@ -168,7 +169,12 @@ struct UserProfileCard: View {
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 6) {
                 if let status = profile.status {
                     row("Status") {
-                        HStack(spacing: 5) { StatusDot(status: status); Text(status.label) }
+                        HStack(spacing: 5) {
+                            StatusDot(status: status)
+                            if let end = profile.doNotDisturbEnd {
+                                Text("Do Not Disturb until \(end.formatted(date: .omitted, time: .shortened))")
+                            } else { Text(status.label) }
+                        }
                     }
                 }
                 if let zone = user.timeZoneIdentifier.flatMap(TimeZone.init(identifier:)) {
@@ -238,6 +244,10 @@ struct UserProfileCard: View {
     @ViewBuilder private func actions(_ profile: UserProfilePresentation) -> some View {
         HStack {
             if profile.isCurrentUser {
+                Button("Edit Profile…") {
+                    onClose()
+                    ProfileEditSheet.present(session: session)
+                }
                 Menu("Set Status") {
                     ForEach(PresenceStatus.selectable, id: \.self) { status in
                         Button(status.label) {

@@ -18,7 +18,7 @@ struct SearchPane: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            if kind == .terms {
+            if kind == .terms || kind == .files {
                 searchField
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
@@ -27,7 +27,8 @@ struct SearchPane: View {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onAppear { if kind == .terms { fieldFocused = true } }
+        .onAppear { if kind == .terms || kind == .files { fieldFocused = true } }
+        .onChange(of: session.search?.kind) { debounce?.cancel(); terms = session.search?.terms ?? "" }
         .onDisappear { debounce?.cancel() }
     }
 
@@ -35,6 +36,7 @@ struct SearchPane: View {
         HStack(spacing: 8) {
             Menu {
                 Button { session.clearSearch(); fieldFocused = true } label: { Label("Search", systemImage: "magnifyingglass") }
+                Button { terms = ""; session.runFileSearch(""); fieldFocused = true } label: { Label("Files", systemImage: "doc") }
                 Button { session.showRecentMentions() } label: { Label("Recent Mentions", systemImage: "at") }
                 Button { session.showSavedPosts() } label: { Label("Saved Messages", systemImage: "bookmark") }
                 Button { session.showPinnedPosts() } label: { Label("Pinned Messages", systemImage: "pin") }
@@ -58,6 +60,7 @@ struct SearchPane: View {
 
     private var title: String {
         switch kind {
+        case .files: String(localized: "Files")
         case .terms: String(localized: "Search")
         case .recentMentions: String(localized: "Recent Mentions")
         case .saved: String(localized: "Saved Messages")
@@ -67,6 +70,7 @@ struct SearchPane: View {
 
     private var symbol: String {
         switch kind {
+        case .files: "doc"
         case .terms: "magnifyingglass"
         case .recentMentions: "at"
         case .saved: "bookmark"
@@ -77,14 +81,14 @@ struct SearchPane: View {
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search messages", text: $terms)
+            TextField(kind == .files ? "Search files" : "Search messages", text: $terms)
                 .textFieldStyle(.plain)
                 .focused($fieldFocused)
-                .onSubmit { session.runSearch(terms) }
+                .onSubmit { submit(terms) }
                 .onChange(of: terms) { schedule() }
                 .accessibilityLabel("Search messages")
             if !terms.isEmpty {
-                Button { terms = ""; session.clearSearch() } label: {
+                Button { terms = ""; submit("") } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -110,7 +114,9 @@ struct SearchPane: View {
                 Button("Try Again", action: retry)
             }
         case .results?:
-            if let search = session.search, !search.items.isEmpty {
+            if kind == .files {
+                FileSearchResults(session: session)
+            } else if let search = session.search, !search.items.isEmpty {
                 List {
                     ForEach(search.items) { item in
                         SearchResultRow(session: session, item: item)
@@ -147,6 +153,7 @@ struct SearchPane: View {
 
     private var emptyTitle: String {
         switch kind {
+        case .files: String(localized: "No Files")
         case .terms: String(localized: "No Results")
         case .recentMentions: String(localized: "No Recent Mentions")
         case .saved: String(localized: "No Saved Messages")
@@ -156,7 +163,7 @@ struct SearchPane: View {
 
     private var emptyDetail: String {
         switch kind {
-        case .terms: String(localized: "Try different words or fewer filters.")
+        case .files, .terms: String(localized: "Try different words or fewer filters.")
         case .recentMentions: String(localized: "Messages that mention you appear here.")
         case .saved: String(localized: "Save messages from their menu to find them here.")
         case .pinned: String(localized: "Pinned messages in this channel appear here.")
@@ -165,11 +172,16 @@ struct SearchPane: View {
 
     private func retry() {
         switch kind {
+        case .files: session.runFileSearch(terms)
         case .terms: session.runSearch(terms)
         case .recentMentions: session.showRecentMentions()
         case .saved: session.showSavedPosts()
         case .pinned: session.showPinnedPosts()
         }
+    }
+
+    private func submit(_ text: String) {
+        if kind == .files { session.runFileSearch(text) } else { session.runSearch(text) }
     }
 
     private func schedule() {
@@ -178,7 +190,7 @@ struct SearchPane: View {
         debounce = Task {
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled, text.count >= 2 else { return }
-            session.runSearch(text)
+            submit(text)
         }
     }
 }

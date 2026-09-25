@@ -40,7 +40,7 @@ extension ServerSession {
                 let result: PostPage
                 var pageSize = Self.listPageSize
                 switch kind {
-                case .terms:
+                case .terms, .files:
                     return
                 case .recentMentions:
                     // The official client searches for the user's @-mention.
