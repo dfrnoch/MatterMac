@@ -38,7 +38,7 @@ struct TimelineIntegrationTests {
         #expect(c.imageDemand.isEmpty)
     }
 
-    @Test func repeatedReloadsReuseABoundedSetOfNativeRowViews() async throws {
+    @Test func scrollingKeepsNativeRowRetentionBounded() async throws {
         let c = TimelineViewController()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 480),
                               styleMask: [.titled], backing: .buffered, defer: false)
@@ -46,32 +46,35 @@ struct TimelineIntegrationTests {
         window.isRestorable = false
         window.contentViewController = c
         defer { c.removeAllContent(); window.close() }
-        c.apply(snapshot((1...4).map { item($0) }, generation: 1))
+        c.apply(snapshot((1...100).map { item($0) }, generation: 1))
         window.orderFront(nil)
-        // An offscreen rowView(makeIfNecessary: true) can create a temporary row
-        // outside the display/reuse lifecycle. Observe only real displayed rows,
-        // allowing AppKit to finish each run-loop transaction between reloads.
+        // reloadData explicitly drops all known views, so total allocations across
+        // reloads do not measure reuse. Scroll one table and weakly observe its
+        // live displayed rows after native run-loop/autorelease transactions.
         let seen = NSHashTable<TimelineRowView>.weakObjects()
-        var allocations = 0
-        for _ in 0..<20 {
-            try await Task.sleep(for: .milliseconds(30))
+        var maximumDisplayed = 0
+        for cycle in 0..<20 {
             autoreleasepool {
+                c.tableView.scrollRowToVisible(cycle.isMultiple(of: 2) ? 0 : 99)
                 window.contentView?.layoutSubtreeIfNeeded()
                 window.displayIfNeeded()
+            }
+            try await Task.sleep(for: .milliseconds(30))
+            autoreleasepool {
                 var displayed = 0
                 c.tableView.enumerateAvailableRowViews { row, index in
-                    guard index >= 0, let row = row as? TimelineRowView else { return }
+                    guard index >= 0,
+                          c.tableView.rect(ofRow: index).intersects(c.visibleDocumentRect),
+                          let row = row as? TimelineRowView else { return }
                     displayed += 1
-                    if !seen.contains(row) {
-                        allocations += 1
-                        seen.add(row)
-                    }
+                    seen.add(row)
                 }
-                #expect(displayed == 4)
-                c.tableView.reloadData()
+                #expect(displayed > 0)
+                maximumDisplayed = max(maximumDisplayed, displayed)
+                #expect(seen.allObjects.count <= 2 * maximumDisplayed,
+                        "Repeated scrolling must not retain more than two viewports of observed rows")
             }
         }
-        #expect(allocations <= 8, "Four visible rows must reuse a bounded pool across twenty reloads")
     }
 
     @Test func floatingControlsPreserveAnchorAndExcludeCoveredMessages() throws {
