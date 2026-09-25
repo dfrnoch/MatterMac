@@ -64,10 +64,17 @@ struct ConversationIntegrationTests {
             func scrollViews(_ view: NSView) -> [NSScrollView] {
                 (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
             }
-            if let scroll = window.contentView.flatMap({ scrollViews($0).first { $0.documentView is NSTableView } }) {
+            let tables = window.contentView.map { scrollViews($0).filter { $0.documentView is NSTableView } } ?? []
+            if let scroll = tables.first {
                 let clip = scroll.contentView
                 clip.scroll(to: NSPoint(x: 0, y: max(0, clip.bounds.minY - 160)))
                 scroll.reflectScrolledClipView(clip)
+            }
+            // The channel list too, so rows pass under the sidebar's top edge.
+            if let sidebar = tables.first(where: { $0.convert($0.bounds, to: nil).minX < 100 }) {
+                let clip = sidebar.contentView
+                clip.scroll(to: NSPoint(x: 0, y: clip.bounds.minY + 90))
+                sidebar.reflectScrolledClipView(clip)
             }
             window.displayIfNeeded()
             try await Task.sleep(for: .milliseconds(400))
@@ -499,8 +506,8 @@ struct ConversationIntegrationTests {
 
     @Test func imagePreviewOpensABoundedInMemoryViewerAndReleasesItOnClose() async throws {
         let h = try await Harness()
-        ImageViewerWindowController.isPresentationSuppressedForTesting = true
-        defer { ImageViewerWindowController.isPresentationSuppressedForTesting = false }
+        MediaViewerController.isPresentationSuppressedForTesting = true
+        defer { MediaViewerController.isPresentationSuppressedForTesting = false }
         let png = CoreFixtures.png(width: 3_000, height: 1_500)
         let requests = OSAllocatedUnfairLock<[MattermostAPI.ImageResource]>(initialState: [])
         h.service.withState { state in
@@ -513,19 +520,18 @@ struct ConversationIntegrationTests {
                             size: 4_096, mimeType: "image/png", width: 3_000, height: 1_500, hasPreviewImage: true)
         h.controller.timeline(perform: .previewImage(file))
         let viewer = try #require(h.controller.imageViewer)
-        #expect(viewer.window?.isRestorable == false)
         #expect(await waitUntil { viewer.state == .loaded })
         // The server preview rendition, downsampled to the screen within the budget.
         #expect(requests.withLock { $0 } == [.filePreview(file.id)])
         let lease = try #require(viewer.lease)
-        let expectedEdge = min(3_000, ImageViewerWindowController.pixelSize(for: NSScreen.main, budget: h.app.environment.budget))
+        let expectedEdge = min(3_000, MediaViewerController.pixelSize(for: NSScreen.main, budget: h.app.environment.budget))
         #expect(lease.image.width == expectedEdge)
         #expect(lease.image.width <= h.app.environment.budget.maximumImagePixelDimension)
         #expect(await h.model.app!.images.decodedBytes >= lease.byteCost)
         #expect(viewer.imageView.image != nil)
         #expect(viewer.saveButton.isEnabled)
         // Escape closes the viewer and releases its lease and image.
-        viewer.window?.cancelOperation(nil)
+        viewer.overlay.cancelOperation(nil)
         #expect(h.controller.imageViewer == nil)
         #expect(viewer.lease == nil)
         #expect(viewer.imageView.image == nil)
@@ -543,12 +549,124 @@ struct ConversationIntegrationTests {
         let failed = try #require(h.controller.imageViewer)
         #expect(await waitUntil { failed.state == .failed })
         #expect(requests.withLock { $0.last } == .fileThumbnail(plain.id))
-        #expect(failed.messageLabel.stringValue == ImageViewerWindowController.failureText)
+        #expect(failed.messageLabel.stringValue == MediaViewerController.failureText)
         #expect(failed.lease == nil && failed.saveButton.isEnabled)
         // Leaving the channel closes the viewer.
         h.controller.update(target: .channel(h.second.id), snapshot: nil)
         #expect(h.controller.imageViewer == nil)
         await h.close()
+    }
+
+    /// A message with three images opens the in-window viewer over the whole window,
+    /// moves between them releasing each previous image, and closes with Escape.
+    /// `MM_SNAPSHOT_DIR` optionally captures only this test's window.
+    @Test func mediaViewerCoversTheWindowAndMovesBetweenAMessagesImages() async throws {
+        let files = (1...3).map { n in
+            FileInfo(id: FileID(unchecked: CoreFixtures.id("image", n)), channelID: CoreFixtures.channel(1).id,
+                     name: "screenshot-\(n).png", fileExtension: "png", size: 40_960, mimeType: "image/png",
+                     width: 1_600, height: 1_000, hasPreviewImage: true)
+        }
+        var post = CoreFixtures.post(1, channel: CoreFixtures.channel(1).id, message: "Three screenshots")
+        post.fileIDs = files.map(\.id)
+        post.files = files
+        let h = try await Harness(posts: [post])
+        let image = Self.gradientPNG(width: 1_600, height: 1_000)
+        let requests = OSAllocatedUnfairLock<[MattermostAPI.ImageResource]>(initialState: [])
+        h.service.withState { state in
+            state.imageHandler = { resource, _ in
+                requests.withLock { $0.append(resource) }
+                return image
+            }
+        }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1_000, height: 680),
+                              styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.contentViewController = h.controller
+        window.setContentSize(NSSize(width: 1_000, height: 680))
+        window.orderFrontRegardless()
+        defer { window.close() }
+        #expect(await waitUntil { h.model.timeline?.items.contains { $0.post?.postID == post.id } == true })
+        h.controller.update(target: .channel(h.first.id), snapshot: h.model.timeline)
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        h.controller.timeline(perform: .previewImage(files[1]))
+        let viewer = try #require(h.controller.imageViewer)
+        #expect(viewer.overlay.superview === window.contentView?.superview)
+        #expect(viewer.overlay.frame == window.contentView?.superview?.bounds)
+        #expect(window.firstResponder === viewer.overlay)
+        #expect(viewer.content.files.map(\.id) == files.map(\.id))
+        #expect(viewer.file.id == files[1].id)
+        #expect(viewer.content.authorName?.isEmpty == false)
+        #expect(viewer.content.timestamp == post.createAt)
+        #expect(await waitUntil { viewer.state == .loaded })
+        #expect(viewer.canMoveBackward && viewer.canMoveForward)
+        await capture(window, "media-viewer.png")
+
+        // → loads the next image and releases the previous lease.
+        let firstLease = try #require(viewer.lease)
+        viewer.overlay.keyDown(with: try #require(Self.key(.rightArrow)))
+        #expect(viewer.file.id == files[2].id)
+        #expect(!viewer.canMoveForward)
+        #expect(await waitUntil { viewer.state == .loaded })
+        #expect(viewer.lease !== firstLease)
+        #expect(requests.withLock { $0 }.contains(.filePreview(files[2].id)))
+        // Double-click zooms to actual size and back.
+        #expect(!viewer.overlay.stage.isZoomedIn)
+        viewer.overlay.stage.toggleZoom(at: nil)
+        #expect(viewer.overlay.stage.userZoomed)
+        #expect(viewer.overlay.zoomButton.accessibilityLabel() == String(localized: "Fit to Window"))
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(viewer.overlay.stage.isZoomedIn)
+        await capture(window, "media-viewer-zoomed.png")
+        viewer.overlay.stage.fit(animated: false)
+        #expect(!viewer.overlay.stage.isZoomedIn)
+
+        // Escape closes; the overlay leaves the window and releases its images.
+        viewer.overlay.cancelOperation(nil)
+        #expect(h.controller.imageViewer == nil)
+        #expect(await waitUntil { viewer.overlay.superview == nil && viewer.lease == nil })
+        #expect(viewer.imageView.image == nil)
+        await h.close()
+    }
+
+    private static func key(_ key: NSEvent.SpecialKey) -> NSEvent? {
+        let character = Unicode.Scalar(UInt32(key.rawValue)).map { String(Character($0)) } ?? ""
+        return NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+                                context: nil, characters: character, charactersIgnoringModifiers: character,
+                                isARepeat: false, keyCode: key == .rightArrow ? 124 : 123)
+    }
+
+    private static func gradientPNG(width: Int, height: Int) -> Data {
+        let space = CGColorSpaceCreateDeviceRGB()
+        let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let gradient = CGGradient(colorsSpace: space, colors: [
+            CGColor(red: 0.95, green: 0.45, blue: 0.55, alpha: 1), CGColor(red: 0.35, green: 0.4, blue: 0.95, alpha: 1),
+        ] as CFArray, locations: [0, 1])!
+        context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: width, y: height), options: [])
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.85))
+        context.fillEllipse(in: CGRect(x: width / 2 - 140, y: height / 2 - 140, width: 280, height: 280))
+        let bytes = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(bytes, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+        precondition(CGImageDestinationFinalize(destination))
+        return bytes as Data
+    }
+
+    private func capture(_ window: NSWindow, _ name: String) async {
+        guard let directory = ProcessInfo.processInfo.environment["MM_SNAPSHOT_DIR"] else { return }
+        for _ in 0..<15 {
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            try? await Task.sleep(for: .milliseconds(30))
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-x", "-o", "-l", String(window.windowNumber),
+                             URL(fileURLWithPath: directory).appendingPathComponent(name).path]
+        try? process.run()
+        process.waitUntilExit()
     }
 
     @Test func permalinksToThisServerOpenTheChannelFocusedOnThePost() async throws {

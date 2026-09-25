@@ -44,25 +44,42 @@ extension ConversationController {
         displayedImages[request] = nil
     }
 
-    /// Opens (or replaces) the in-memory viewer for an image attachment. The preview
-    /// is fetched through the same bounded pipeline and membership checks as
-    /// thumbnails; the lease is released when the viewer closes.
+    /// Opens (or replaces) the in-window viewer for an image attachment, with the
+    /// message's other images. Previews are fetched through the same bounded pipeline
+    /// and membership checks as thumbnails; the leases are released when it closes.
     func showImageViewer(for file: FileInfo) {
         guard file.isImage, let model, !model.isDetached, let pipeline = model.app?.images else { return }
         imageViewer?.close()
-        let viewer = ImageViewerWindowController(file: file)
-        viewer.onSave = { [weak self] file, window in self?.saveAttachment(file, in: window) }
+        let post = timeline.items.lazy.compactMap(\.post).first { $0.files.contains { $0.id == file.id } }
+        let images = post?.files.filter(\.isImage) ?? [file]
+        let content = MediaViewerContent(files: images.isEmpty ? [file] : images,
+                                         index: images.firstIndex { $0.id == file.id } ?? 0,
+                                         authorName: post.map { $0.author.displayName.isEmpty ? $0.author.username : $0.author.displayName },
+                                         timestamp: post?.createdAt)
+        let viewer = MediaViewerController(content: content)
+        viewer.onSave = { [weak self] file in self?.saveAttachment(file) }
         viewer.onClose = { [weak self, weak viewer] in
             guard let self, imageViewer === viewer else { return }
             imageViewer = nil
         }
+        // The timeline's thumbnail lease stays charged while it stands in.
+        viewer.placeholder = { [weak self] file in self?.displayedImages[.attachment(file)]?.lease }
         imageViewer = viewer
         let session = model.session, channel = target.channelID
-        let resource: MattermostAPI.ImageResource = file.hasPreviewImage ? .filePreview(file.id) : .fileThumbnail(file.id)
-        viewer.show(over: view.window, budget: environment.budget) { [weak model] pixels in
+        let fetch: MediaViewerController.Fetch = { [weak model] file, pixels in
             guard model?.isDetached == false else { return nil }
+            let resource: MattermostAPI.ImageResource = file.hasPreviewImage ? .filePreview(file.id) : .fileThumbnail(file.id)
             return await session.timelineImage(resource, channel: channel, maxPixelSize: pixels, pipeline: pipeline)
         }
+        var avatar: (@MainActor (Int) async -> ImagePipeline.Decoded?)?
+        if let author = post?.author {
+            avatar = { [weak model] pixels in
+                guard model?.isDetached == false else { return nil }
+                return await session.profileImage(author.userID, revision: author.avatarRevision, maxPixelSize: pixels,
+                                                  pipeline: pipeline)
+            }
+        }
+        viewer.show(in: view.window, budget: environment.budget, fetch: fetch, avatar: avatar)
     }
 
     func clearImages() {

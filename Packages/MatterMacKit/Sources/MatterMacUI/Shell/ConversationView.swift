@@ -44,7 +44,7 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
     var displayedImages: [TimelineImageRequest: (lease: ImagePipeline.Decoded, image: NSImage)] = [:]
     var imageGeneration: UInt64 = 0
     /// At most one explicitly opened image viewer per pane; closed with the pane's images.
-    var imageViewer: ImageViewerWindowController?
+    var imageViewer: MediaViewerController?
     var selectedFiles: [UploadSource] = []
     var selectionTask: Task<Void, Never>?
     var downloadTask: Task<Void, Never>?

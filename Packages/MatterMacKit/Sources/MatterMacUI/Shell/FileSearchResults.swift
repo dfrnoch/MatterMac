@@ -82,20 +82,24 @@ final class FileSearchActions {
     var saving = false
     var error: UserFacingError?
     private var task: Task<Void, Never>?
-    private(set) var viewer: ImageViewerWindowController?
+    private(set) var viewer: MediaViewerController?
     private var panel: NSSavePanel?
     private var savingFile: FileID?
 
     func preview(_ file: FileInfo, session: SessionViewModel) {
         guard let channel = file.channelID, let app = session.app, !session.isDetached else { return }
         viewer?.close()
-        let viewer = ImageViewerWindowController(file: file)
+        let viewer = MediaViewerController(content: MediaViewerContent(files: [file], timestamp: file.createAt))
         self.viewer = viewer
-        viewer.onSave = { [weak self, weak session] file, _ in
+        viewer.onSave = { [weak self, weak session] file in
             guard let session else { return }
             self?.save(file, session: session)
         }
-        viewer.show(over: NSApp.keyWindow, budget: app.environment.budget) { [weak session] pixels in
+        viewer.onClose = { [weak self, weak viewer] in
+            guard let self, self.viewer === viewer else { return }
+            self.viewer = nil
+        }
+        viewer.show(in: NSApp.keyWindow, budget: app.environment.budget) { [weak session] file, pixels in
             guard let session, !session.isDetached else { return nil }
             return await session.session.timelineImage(file.hasPreviewImage ? .filePreview(file.id) : .fileThumbnail(file.id),
                 channel: channel, maxPixelSize: pixels, pipeline: app.images)

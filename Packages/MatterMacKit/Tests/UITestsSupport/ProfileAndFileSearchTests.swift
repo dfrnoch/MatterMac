@@ -72,8 +72,8 @@ struct ProfileAndFileSearchTests {
     }
     @Test func removingFileClosesRetainedViewerAndReleasesDisplayedImage() async throws {
         let h = try await SettingsAndAttentionTests.Harness()
-        ImageViewerWindowController.isPresentationSuppressedForTesting = true
-        defer { ImageViewerWindowController.isPresentationSuppressedForTesting = false }
+        MediaViewerController.isPresentationSuppressedForTesting = true
+        defer { MediaViewerController.isPresentationSuppressedForTesting = false }
         let png = CoreFixtures.png(width: 32, height: 32)
         h.service.withState { $0.imageHandler = { _, _ in png } }
         let first = FileInfo(id: FileID(unchecked: CoreFixtures.id("file", 1)), channelID: h.channel.id,
