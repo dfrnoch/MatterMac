@@ -12,6 +12,7 @@ import MattermostAPI
 @Suite("Notification lifecycle", .serialized)
 struct NotificationLifecycleTests {
     final class Center: NotificationCenterTransport {
+        var lastInfo: [AnyHashable: Any] = [:]
         var delivered: Set<String> = []
         var pending: Set<String> = []
         var completions: [String: @Sendable () -> Void] = [:]
@@ -20,6 +21,7 @@ struct NotificationLifecycleTests {
             await withCheckedContinuation { authorization = $0 }
         }
         func add(_ request: UNNotificationRequest, completion: @escaping @Sendable () -> Void) {
+            lastInfo = request.content.userInfo
             pending.insert(request.identifier)
             completions[request.identifier] = completion
         }
@@ -84,6 +86,20 @@ struct NotificationLifecycleTests {
         #expect(center.delivered == [otherID])
         notifications.removeDelivered()
         #expect(center.delivered.isEmpty)
+    }
+
+    @Test func previousInstanceCannotNavigateReusedAccountSlot() throws {
+        let oldCenter = Center(), newCenter = Center()
+        let previous = SystemNotifications(center: oldCenter)
+        let current = SystemNotifications(center: newCenter)
+        previous.post(title: "Fixture", body: "Fixture", target: target, sound: false)
+        current.post(title: "Fixture", body: "Fixture", target: target, sound: false)
+        let currentID = try #require(newCenter.lastInfo["instance"] as? String)
+        #expect(SystemNotifications.target(from: newCenter.lastInfo, instanceID: currentID) == target)
+        #expect(SystemNotifications.target(from: oldCenter.lastInfo, instanceID: currentID) == nil)
+        var legacy = oldCenter.lastInfo
+        legacy["instance"] = nil
+        #expect(SystemNotifications.target(from: legacy, instanceID: currentID) == nil)
     }
 
     @Test func shutdownWithdrawsDeliveredAndPendingNotifications() async {

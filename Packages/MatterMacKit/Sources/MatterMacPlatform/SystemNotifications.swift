@@ -9,7 +9,9 @@ import UserNotifications
 /// user separately opted in to previews; only the conversation identity is attached
 /// so a click can open it. Delivery
 /// stops (and delivered notifications are removed) when the user turns it off or
-/// the process ends; there is no push service after quitting.
+/// the app quits normally; there is no push service after quitting. macOS can keep
+/// delivered notifications after a crash or forced termination, when cleanup cannot
+/// run. Their navigation identities are valid only for this notification instance.
 @MainActor
 public final class SystemNotifications: NSObject {
     /// Where a clicked notification should navigate.
@@ -37,7 +39,8 @@ public final class SystemNotifications: NSObject {
     private var posted: [AccountScope: [String]] = [:]
     static let trackedPerAccount = 64
     private let injectedCenter: (any NotificationCenterTransport)?
-    private lazy var delegate = NotificationDelegate { [weak self] target in self?.onOpen?(target) }
+    private let instanceID = UUID().uuidString
+    private lazy var delegate = NotificationDelegate(instanceID: instanceID) { [weak self] target in self?.onOpen?(target) }
     private var center: (any NotificationCenterTransport)? {
         injectedCenter ?? (Bundle.main.bundleIdentifier == nil ? nil : NativeNotificationCenter(delegate: delegate))
     }
@@ -70,6 +73,7 @@ public final class SystemNotifications: NSObject {
         content.threadIdentifier = target.channel.rawValue
         if sound { content.sound = .default }
         var info: [String: String] = [
+            "instance": instanceID,
             "server": String(target.scope.server.rawValue), "user": target.scope.user.rawValue,
             "channel": target.channel.rawValue,
         ]
@@ -103,8 +107,9 @@ public final class SystemNotifications: NSObject {
         }
     }
 
-    fileprivate nonisolated static func target(from info: [AnyHashable: Any]) -> Target? {
-        guard let server = (info["server"] as? String).flatMap(UInt64.init),
+    nonisolated static func target(from info: [AnyHashable: Any], instanceID: String) -> Target? {
+        guard info["instance"] as? String == instanceID,
+              let server = (info["server"] as? String).flatMap(UInt64.init),
               let user = (info["user"] as? String).flatMap(UserID.init(rawValue:)),
               let channel = (info["channel"] as? String).flatMap(ChannelID.init(rawValue:)) else { return nil }
         return Target(scope: AccountScope(server: ServerSlotID(server), user: user), channel: channel,
@@ -114,14 +119,16 @@ public final class SystemNotifications: NSObject {
 
 /// Kept separate so the public type does not expose UserNotifications.
 private final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    private let instanceID: String
     private let open: @MainActor @Sendable (SystemNotifications.Target) -> Void
 
-    init(open: @escaping @MainActor @Sendable (SystemNotifications.Target) -> Void) {
+    init(instanceID: String, open: @escaping @MainActor @Sendable (SystemNotifications.Target) -> Void) {
+        self.instanceID = instanceID
         self.open = open
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        guard let target = SystemNotifications.target(from: response.notification.request.content.userInfo) else { return }
+        guard let target = SystemNotifications.target(from: response.notification.request.content.userInfo, instanceID: instanceID) else { return }
         let open = self.open
         await MainActor.run {
             NSApp.activate()
