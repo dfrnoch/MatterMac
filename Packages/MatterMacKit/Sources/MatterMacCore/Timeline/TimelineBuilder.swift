@@ -290,7 +290,8 @@ public enum TimelineBuilder {
         let actions = PostActionHints(canReply: interactive, canReact: interactive,
                                       canEdit: canEdit, canDelete: canDelete, canCopyLink: permalink != nil,
                                       canPin: interactive && !isPlugin, canSave: !post.isDeleted && !post.type.isSystem,
-                                      canMarkUnread: !isThread && !post.isDeleted)
+                                      canMarkUnread: !isThread && !post.isDeleted,
+                                      canForward: !post.isDeleted && !post.type.isSystem && permalink != nil)
         return PostPresentation(
             postID: post.id, pendingID: nil, channelID: post.channelID, rootID: post.rootID, author: author,
             createdAt: post.createAt, isContinuation: isContinuation, body: body, isEdited: post.isEdited,

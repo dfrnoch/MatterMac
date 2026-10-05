@@ -2107,3 +2107,41 @@ showcase test skips without its variable).
 - The sidebar still shows group DMs by username while the switcher uses display
   names.
 - The old live `LiveReadmeScreenshotsTests` no longer matches the README.
+
+### Native message forwarding (2026-10-05)
+
+- Added **Forward Message…** to the message context menu, hover More menu and
+  VoiceOver actions. The native sheet shows a bounded source excerpt, searches
+  existing conversations/people, accepts an optional comment and opens the
+  destination after queue admission. Choosing a person creates/opens their DM.
+- Checked the official v11.11.1 web client source. Forwarding posts a source
+  permalink with an optional comment, without duplicating message text or files;
+  private-channel, direct and group messages stay in their original conversation.
+  Core rechecks source access, that privacy rule, destination access/archive state,
+  message size and the text reservation at admission. See decision 0036.
+- Forwarding drafts have a separate `DraftKey.forwardingPostID`, use the shared
+  unsent budget, and cannot overwrite conversation/thread drafts. Failed admission
+  restores the draft/reservation. Forced dismissal and access-loss notices retain
+  comments for recovery; explicit Cancel discards only the forwarding draft.
+  Confirmed/failed/uncertain sends use the existing pending-send machinery.
+- Native tests cover menu/VoiceOver dispatch, opening/cancelling the actual SwiftUI
+  sheet, comment/link creation, ordinary-draft preservation, a new recipient DM,
+  rejected-send recovery/reopening and draft-budget refusal. Core tests cover
+  private/DM/group restrictions, comment-free forwarding and access/archive
+  revalidation. The synthetic sheet screenshot was inspected at
+  `/tmp/mattermac-forward-snapshots/forward-message.png` (not committed).
+- `swift test --package-path Packages/MatterMacKit` passed on the final code:
+  Swift Testing reported 213 UI-support, 183 Core, 61 API, 29 Models and 18 Realtime
+  tests; opt-in live/showcase tests stayed disabled. No Swift compiler warnings.
+- Debug `xcodebuild` and ad-hoc universal Release `xcodebuild` succeeded.
+  `xcrun lipo -archs` reports `x86_64 arm64`; `codesign --verify --strict` passes.
+  Xcode's App Intents metadata tool emitted its “no AppIntents.framework dependency”
+  extraction warning. No macOS 14 or Intel execution, notarization or live
+  forwarding interoperability is claimed. Docker/OrbStack was unavailable (no
+  daemon socket), so live forwarding was not run.
+- Preserved the pre-existing signing-team edits in `project.pbxproj`, excluding
+  them from the forwarding commit.
+
+**Next:** run forwarding against the repository's live deployments and official
+web client; decode server-generated embedded original-post previews (MatterMac
+currently displays forwarded posts as their comment/link).

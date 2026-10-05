@@ -48,6 +48,7 @@ public final class SessionViewModel {
     public private(set) var threadActivity: ThreadActivity?
     /// Browse/create channels, new direct or group message, add members.
     public var directorySheet: DirectorySheet?
+    var forwardMessage: ForwardMessageModel?
     /// The channel details inspector (members, favorite/mute, leave).
     public var isChannelInfoVisible = false {
         didSet {
@@ -83,6 +84,7 @@ public final class SessionViewModel {
 
     /// Stops consuming snapshots (called when the session is removed).
     func detach() {
+        forwardMessage?.close(discard: false)
         isDetached = true
         ProfileEditSheet.close(for: self)
         ProfilePopover.close(for: self)
@@ -204,7 +206,15 @@ public final class SessionViewModel {
 
     func handleNotice(_ notice: SessionNotice) async {
         guard !isDetached else { return }
+        switch notice {
+        case .accessRevoked(let channel) where forwardMessage?.context.channelID == channel:
+            forwardMessage?.close(discard: false)
+        case .teamRemoved:
+            forwardMessage?.close(discard: false)
+        default: break
+        }
         if notice == .signedOutByServer || notice == .identityChanged {
+            forwardMessage?.close(discard: false)
             saveDrafts()
             requiresAuthentication = true
             connection = .authenticationRequired

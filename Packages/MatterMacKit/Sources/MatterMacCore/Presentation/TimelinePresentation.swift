@@ -167,6 +167,7 @@ public struct PostActionHints: Hashable, Sendable {
     public var canEdit: Bool
     public var canDelete: Bool
     public var canCopyLink: Bool
+    public var canForward: Bool
     /// Pin/unpin (`POST /posts/{id}/pin`); needs only read access on the server.
     public var canPin: Bool
     /// Save/unsave (`flagged_post` preference).
@@ -175,12 +176,14 @@ public struct PostActionHints: Hashable, Sendable {
     public var canMarkUnread: Bool
 
     public init(canReply: Bool = false, canReact: Bool = false, canEdit: Bool = false, canDelete: Bool = false,
-                canCopyLink: Bool = false, canPin: Bool = false, canSave: Bool = false, canMarkUnread: Bool = false) {
+                canCopyLink: Bool = false, canPin: Bool = false, canSave: Bool = false, canMarkUnread: Bool = false,
+                canForward: Bool = false) {
         self.canReply = canReply
         self.canReact = canReact
         self.canEdit = canEdit
         self.canDelete = canDelete
         self.canCopyLink = canCopyLink
+        self.canForward = canForward
         self.canPin = canPin
         self.canSave = canSave
         self.canMarkUnread = canMarkUnread

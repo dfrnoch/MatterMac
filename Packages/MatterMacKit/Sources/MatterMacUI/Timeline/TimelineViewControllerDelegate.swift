@@ -10,6 +10,7 @@ nonisolated public enum TimelineAction: Hashable, Sendable {
     case toggleReaction(PostID, emojiName: String)
     case edit(PostID)
     case delete(PostID)
+    case forward(PostID)
     /// Delivered after the timeline has written the message's plain text
     /// (`MessageDocument.plainText`) to the general pasteboard. The delegate may
     /// overwrite the pasteboard (for example with the original markup) or ignore it.

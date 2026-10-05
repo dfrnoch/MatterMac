@@ -142,7 +142,8 @@ struct UnsentRecoveryView: View {
                 Section("Drafts") {
                     ForEach(model.draftItems) { item in
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(title(channel: item.id.channelID, root: item.id.rootID, kind: item.draft.editingPost == nil ? "Draft" : "Edited message"))
+                            Text(title(channel: item.id.channelID, root: item.id.rootID,
+                                       kind: item.id.forwardingPostID != nil ? "Forwarding draft" : item.draft.editingPost == nil ? "Draft" : "Edited message"))
                                 .font(.headline)
                             summary(text: item.draft.text, attachments: item.draft.attachments.count)
                             if !item.canDiscard { Text("Being submitted — discard is unavailable.").font(.caption) }

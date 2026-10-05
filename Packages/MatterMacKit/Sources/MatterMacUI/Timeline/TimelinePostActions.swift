@@ -35,6 +35,9 @@ enum TimelinePostActions {
         if post.actions.canReact {
             first.append(Entry(title: TimelineStrings.actionAddReaction, action: .addReaction(id), symbol: "face.smiling"))
         }
+        if post.actions.canForward {
+            first.append(Entry(title: TimelineStrings.actionForward, action: .forward(id), symbol: "arrowshape.turn.up.right"))
+        }
         sections.append(first)
         var state: [Entry] = []
         if post.actions.canMarkUnread {

@@ -34,7 +34,7 @@ struct MessageActionsTests {
     }
 
     static let actions = PostActionHints(canReply: true, canReact: true, canEdit: true, canDelete: true, canCopyLink: true,
-                                         canPin: true, canSave: true, canMarkUnread: true)
+                                         canPin: true, canSave: true, canMarkUnread: true, canForward: true)
 
     func presentation(_ post: Post, continuation: Bool = false, pinned: Bool = false, saved: Bool = false,
                       edited: Bool = false, reactions: [ReactionGroup] = [], preview: LinkPreview? = nil,
@@ -204,12 +204,15 @@ struct MessageActionsTests {
         f.controller.populate(context, row: 0)
         #expect(more.items.map(\.title) == context.items.map(\.title))
         #expect(more.items.filter { !$0.isSeparatorItem }.map(\.title) == [
-            "Reply in Thread", "Add Reaction…", "Mark as Unread", "Save Message", "Pin to Channel", "Copy Link",
+            "Reply in Thread", "Add Reaction…", "Forward Message…", "Mark as Unread", "Save Message", "Pin to Channel", "Copy Link",
             "Copy Text", "Edit Message", "Delete Message…", "View Profile of Bob",
         ])
         let pin = try #require(more.items.first { $0.title == "Pin to Channel" })
         _ = (pin.target as? NSObject)?.perform(pin.action, with: pin)
         #expect(f.spy.actions.last == .setPinned(id, true))
+        let forward = try #require(more.items.first { $0.title == "Forward Message…" })
+        _ = (forward.target as? NSObject)?.perform(forward.action, with: forward)
+        #expect(f.spy.actions.last == .forward(id))
         let unread = try #require(more.items.first { $0.title == "Mark as Unread" })
         _ = (unread.target as? NSObject)?.perform(unread.action, with: unread)
         #expect(f.spy.actions.last == .markUnread(id))
@@ -237,12 +240,15 @@ struct MessageActionsTests {
         let actions = try #require(try cell(f).accessibilityCustomActions())
         #expect(actions.map(\.name) == [
             "React with :+1:", "React with :white_check_mark:", "React with :heart:", "Reply in Thread", "Add Reaction…",
-            "Mark as Unread", "Save Message", "Pin to Channel", "Copy Link", "Copy Text", "Edit Message",
+            "Forward Message…", "Mark as Unread", "Save Message", "Pin to Channel", "Copy Link", "Copy Text", "Edit Message",
             "Delete Message…", "View Profile of Bob",
         ])
         let save = try #require(actions.first { $0.name == "Save Message" })
         #expect(save.handler?() == true)
         #expect(f.spy.actions == [.setSaved(p.id, true)])
+        let forward = try #require(actions.first { $0.name == "Forward Message…" })
+        #expect(forward.handler?() == true)
+        #expect(f.spy.actions.last == .forward(p.id))
         let react = try #require(actions.first)
         #expect(react.handler?() == true)
         #expect(f.spy.actions.last == .toggleReaction(p.id, emojiName: "+1"))

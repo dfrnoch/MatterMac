@@ -28,6 +28,7 @@ enum TimelineStrings {
     static let actionReplyInThread = String(localized: "Reply in Thread")
     static let actionReply = String(localized: "Reply")
     static let actionAddReaction = String(localized: "Add Reaction…")
+    static let actionForward = String(localized: "Forward Message…")
     static let actionMarkUnread = String(localized: "Mark as Unread")
     static let actionSave = String(localized: "Save Message")
     static let actionUnsave = String(localized: "Remove from Saved")

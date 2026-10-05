@@ -30,6 +30,16 @@ Exact commands and dated outcomes are in [progress.md](progress.md).
 
 ## Authentication and endpoint coverage
 
+Message forwarding uses the normal post-create endpoint and the source permalink,
+with an optional comment, following the official v11.11.1 client. The native sheet
+selects known channels or people (opening a DM when needed). Private channels,
+DMs and group messages can only be forwarded within their original conversation.
+It preserves ordinary drafts and uses the normal pending-send failure/retry flow.
+Forwarded posts render as comment/link in MatterMac; embedded original-post cards
+are not decoded. Forwarding has native fake-service and Core coverage; live server
+and official-client forwarding interoperability have not been run. See
+[decision 0036](decisions/0036-message-forwarding.md).
+
 All REST paths below are relative to the configured server's `/api/v4` prefix,
 including any reverse-proxy subpath. This groups implemented routes; it does not
 claim that every endpoint has a live test on every server configuration.

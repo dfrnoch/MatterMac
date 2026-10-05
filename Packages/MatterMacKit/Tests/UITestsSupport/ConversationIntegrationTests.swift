@@ -12,6 +12,129 @@ import TestSupport
 @MainActor
 @Suite("Native conversation integration", .serialized)
 struct ConversationIntegrationTests {
+    @Test func forwardingSheetPresentsTheNativePickerAndCancelKeepsTheConversationDraft() async throws {
+        let post = CoreFixtures.post(1, channel: CoreFixtures.channel(1).id, message: "A message to share")
+        let h = try await Harness(posts: [post])
+        #expect(await waitUntil { h.model.timeline?.items.contains { $0.post?.postID == post.id } == true })
+        let context = try await h.model.session.forwardingContext(post.id)
+        let forward = try ForwardMessageModel(session: h.model, context: context)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1_000, height: 680),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        window.contentViewController = NSHostingController(rootView: MainWindowView(app: h.app, session: h.model))
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        h.model.forwardMessage = forward
+        #expect(await waitUntil { window.attachedSheet != nil })
+        let sheet = try #require(window.attachedSheet)
+        sheet.contentView?.layoutSubtreeIfNeeded()
+        #expect(sheet.frame.width >= 520)
+        #expect(await waitUntil { !forward.isSearching && !forward.results.isEmpty })
+        forward.selection = .channel(h.second.id)
+        forward.composer.textView.insertText("Sharing this for review", replacementRange: NSRange(location: 0, length: 0))
+        await capture(window, "forward-message.png")
+        forward.close(discard: true)
+        #expect(await waitUntil { window.attachedSheet == nil })
+        #expect(h.service.withState { $0.createdPosts.isEmpty })
+        #expect(h.app.environment.drafts.draft(for: forward.key) == nil)
+        await h.close()
+    }
+
+    @Test func forwardingFromTheTimelineKeepsTheConversationDraftAndQueuesTheLink() async throws {
+        let post = CoreFixtures.post(1, channel: CoreFixtures.channel(1).id)
+        let h = try await Harness(posts: [post])
+        #expect(await waitUntil { h.model.timeline?.items.contains { $0.post?.postID == post.id } == true })
+        h.controller.composer.load(draft: Draft(text: "Keep this conversation draft"))
+        h.controller.saveDraft()
+        h.controller.timeline(perform: .forward(post.id))
+        #expect(await waitUntil { h.model.forwardMessage != nil })
+        let forward = try #require(h.model.forwardMessage)
+        forward.search()
+        #expect(await waitUntil { forward.results.contains { $0.kind == .channel(h.second.id) } })
+        #expect(!forward.canForward)
+        forward.selection = .channel(h.second.id)
+        forward.composer.textView.insertText("A useful comment", replacementRange: NSRange(location: 0, length: 0))
+        let expected = "A useful comment\n" + forward.context.permalink.absoluteString
+        #expect(h.app.environment.drafts.draft(for: forward.key)?.text == expected)
+        #expect(h.app.environment.drafts.draft(for: h.controller.key)?.text == "Keep this conversation draft")
+        forward.forward()
+        #expect(await waitUntil { h.model.forwardMessage == nil })
+        #expect(await waitUntil { !h.service.withState { $0.createdPosts.isEmpty } })
+        #expect(h.service.withState { $0.createdPosts.first?.message } == expected)
+        #expect(h.service.withState { $0.createdPosts.first?.channelID } == h.second.id)
+        #expect(h.model.selectedChannel == h.second.id)
+        #expect(h.app.environment.drafts.draft(for: forward.key) == nil)
+        #expect(h.app.environment.drafts.draft(for: h.controller.key)?.text == "Keep this conversation draft")
+        await h.close()
+    }
+
+    @Test func rejectedForwardRetainsItsCommentAndReservationAndCanBeReopened() async throws {
+        let post = CoreFixtures.post(1, channel: CoreFixtures.channel(1).id)
+        let h = try await Harness(posts: [post])
+        #expect(await waitUntil { h.model.timeline?.items.contains { $0.post?.postID == post.id } == true })
+        let context = try await h.model.session.forwardingContext(post.id)
+        let forward = try ForwardMessageModel(session: h.model, context: context)
+        h.model.forwardMessage = forward
+        forward.selection = .channel(h.second.id)
+        let comment = String(repeating: "x", count: context.maximumPostCharacters)
+        forward.composer.load(draft: Draft(text: comment))
+        forward.composerUserDidType()
+        let usage = h.app.environment.unsentLedger.usage.totalBytes
+        forward.forward()
+        #expect(await waitUntil { forward.error != nil && !forward.isSending })
+        #expect(forward.composer.text == comment)
+        #expect(h.app.environment.drafts.draft(for: forward.key)?.text == context.message(comment: comment))
+        #expect(h.app.environment.unsentLedger.usage.totalBytes == usage)
+        #expect(h.service.withState { $0.createdPosts.isEmpty })
+        await h.model.handleNotice(.accessRevoked(channel: h.first.id))
+        #expect(h.model.forwardMessage == nil)
+        let reopened = try ForwardMessageModel(session: h.model, context: context)
+        h.model.forwardMessage = reopened
+        #expect(reopened.composer.text == comment)
+        reopened.close(discard: true)
+        #expect(h.app.environment.drafts.draft(for: reopened.key) == nil)
+        #expect(h.app.environment.unsentLedger.usage.totalBytes == 0)
+        await h.close()
+    }
+
+    @Test func forwardingRefusesANewDraftWhenTheUnsentBudgetIsFull() async throws {
+        var budget = ResourceBudget.standard
+        budget.unsentText.count = 1
+        let post = CoreFixtures.post(1, channel: CoreFixtures.channel(1).id)
+        let h = try await Harness(budget: budget, posts: [post])
+        #expect(await waitUntil { h.model.timeline?.items.contains { $0.post?.postID == post.id } == true })
+        h.controller.composer.load(draft: Draft(text: "Keep this draft"))
+        h.controller.saveDraft()
+        let context = try await h.model.session.forwardingContext(post.id)
+        #expect(throws: UnsentWorkLedger.Refusal.tooManyPendingOperations(limit: 1)) {
+            try ForwardMessageModel(session: h.model, context: context)
+        }
+        #expect(h.app.environment.drafts.draft(for: h.controller.key)?.text == "Keep this draft")
+        await h.close()
+    }
+
+    @Test func forwardingToAPersonCreatesTheirDMAndQueuesTheLink() async throws {
+        let post = CoreFixtures.post(1, channel: CoreFixtures.channel(1).id)
+        let h = try await Harness(posts: [post])
+        h.service.withState { $0.users[CoreFixtures.bob.id] = CoreFixtures.bob }
+        #expect(await waitUntil { h.model.timeline?.items.contains { $0.post?.postID == post.id } == true })
+        let context = try await h.model.session.forwardingContext(post.id)
+        let forward = try ForwardMessageModel(session: h.model, context: context)
+        h.model.forwardMessage = forward
+        forward.selection = .user(CoreFixtures.bob.id)
+        forward.forward()
+        #expect(await waitUntil { h.model.forwardMessage == nil })
+        #expect(await waitUntil { !h.service.withState { $0.createdPosts.isEmpty } })
+        let sent = try #require(h.service.withState { $0.createdPosts.last })
+        let destination = try #require(h.service.withState { $0.channels[sent.channelID] })
+        #expect(destination.type == .direct)
+        #expect(destination.directPartner(of: CoreFixtures.me.id) == CoreFixtures.bob.id)
+        #expect(sent.message == context.permalink.absoluteString)
+        #expect(h.model.selectedChannel == destination.id)
+        await h.close()
+    }
+
     @Test func discardedPaneDoesNotRunQueuedCommands() async throws {
         let post = CoreFixtures.post(1, channel: CoreFixtures.channel(1).id)
         let h = try await Harness(posts: [post])

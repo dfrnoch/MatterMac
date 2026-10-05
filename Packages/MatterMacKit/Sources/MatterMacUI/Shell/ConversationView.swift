@@ -389,6 +389,12 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
             }
         case .copyLink(let url): Pasteboard.copy(url)
         case .copyText(let id): run { session in if let post = await session.post(id), !Task.isCancelled { Pasteboard.copy(post.message) } }
+        case .forward(let id): run { [weak self] session in
+            let context = try await session.forwardingContext(id)
+            guard !Task.isCancelled, let model = self?.model, model.forwardMessage == nil,
+                  !model.isDetached, !model.requiresAuthentication else { return }
+            model.forwardMessage = try ForwardMessageModel(session: model, context: context)
+        }
         case .expand(let id): run { [target] in await $0.expand(id, in: target) }
         case .edit(let id): run { [weak self] session in if let post = await session.post(id), !Task.isCancelled { self?.beginEditing(post) } }
         case .delete(let id):

@@ -247,6 +247,7 @@ struct MainWindowView: View {
         .environment(\.matterMacTheme, app.environment.settings.theme)
         .focusedSceneValue(\.matterMacSession, session)
         .sheet(isPresented: $session.isUnsentRecoveryVisible) { UnsentRecoveryView(session: session) }
+        .sheet(item: $session.forwardMessage) { ForwardMessageView(model: $0) }
     }
 }
 

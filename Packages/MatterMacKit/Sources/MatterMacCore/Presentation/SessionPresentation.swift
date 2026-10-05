@@ -233,10 +233,13 @@ public struct DraftKey: Hashable, Sendable {
     public let scope: AccountScope
     public let channelID: ChannelID
     public let rootID: PostID?
+    /// Separates a forwarding comment from the channel's ordinary or thread draft.
+    public let forwardingPostID: PostID?
 
-    public init(scope: AccountScope, channelID: ChannelID, rootID: PostID?) {
+    public init(scope: AccountScope, channelID: ChannelID, rootID: PostID?, forwardingPostID: PostID? = nil) {
         self.scope = scope
         self.channelID = channelID
         self.rootID = rootID
+        self.forwardingPostID = forwardingPostID
     }
 }
