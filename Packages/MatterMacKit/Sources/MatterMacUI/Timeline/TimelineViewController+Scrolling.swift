@@ -45,10 +45,9 @@ extension TimelineViewController {
             content.top = top
             scrollView.automaticallyAdjustsContentInsets = false
             scrollView.contentInsets = content
-            var scrollers = scrollView.scrollerInsets
-            scrollers.bottom = height
-            scrollers.top = top
-            scrollView.scrollerInsets = scrollers
+            // The scroller already follows `contentInsets`; `scrollerInsets` would add
+            // the same inset a second time and float the track above the composer.
+            scrollView.scrollerInsets = NSEdgeInsetsZero
             scrollView.tile()
             settle(target)
             afterScrollPositionSettled()

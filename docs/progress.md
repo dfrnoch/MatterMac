@@ -2161,4 +2161,14 @@ currently displays forwarded posts as their comment/link).
   running app with a physical trackpad/mouse.
 - Preserved the pre-existing signing-team edits in `project.pbxproj` (not committed).
 
-**Next:** confirm the scroll behavior by hand with trackpad momentum and a wheel mouse.
+- Fixed the timeline scroller floating above the composer: `setBottomOverlayInset`
+  set `scrollerInsets` equal to `contentInsets`, but NSScrollView already positions
+  the scroller inside `contentInsets`, so the inset applied twice (verified with a
+  standalone NSScrollView: 30/100 insets gave a 470 pt track alone, 340 pt doubled).
+  `scrollerInsets` is now zero; `floatingControlsPreserveAnchorAndExcludeCoveredMessages`
+  asserts the track ends at the floating controls (fails without the fix).
+  Full `swift test` passed (214 UI-support, 183 Core, 61 API, 29 Models, 18 Realtime);
+  Debug `xcodebuild` succeeded.
+
+**Next:** confirm the scroll behavior and scroller placement by hand with trackpad
+momentum and a wheel mouse.

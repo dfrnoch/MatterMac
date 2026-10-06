@@ -100,6 +100,13 @@ struct TimelineIntegrationTests {
         #expect(c.captureAnchor()?.itemID == anchor.itemID)
         #expect(abs((c.captureAnchor()?.offset ?? 0) - anchor.offset) < 1)
         #expect(c.scrollView.contentView.bounds.height - c.visibleDocumentRect.height >= 180)
+        // The scroller track ends at the floating controls, not one inset above them.
+        c.scrollView.scrollerStyle = .overlay
+        c.scrollView.tile()
+        let scroller = try #require(c.scrollView.verticalScroller)
+        let track = c.scrollView.convert(scroller.frame, from: scroller.superview)
+        let viewport = c.scrollView.convert(c.scrollView.contentView.frame, from: c.scrollView.contentView.superview)
+        #expect(abs(track.height - (viewport.height - c.scrollView.contentInsets.top - 180)) < 1)
         let report = c.currentVisibilityReport(state)
         let coveredRange = c.tableView.rows(in: NSRect(x: 0, y: c.visibleDocumentRect.maxY + 1,
             width: c.tableView.bounds.width, height: 150))
