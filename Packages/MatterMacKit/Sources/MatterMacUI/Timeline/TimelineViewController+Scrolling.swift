@@ -278,6 +278,7 @@ extension TimelineViewController {
             if distanceFromBottom() > TimelineMetrics.liveEdgeTolerance { explicitLiveEdgeJump = false }
             // Outside `performUpdate`, a bounds change is the user scrolling.
             userScrolledSinceReport = true
+            suspendHoverForScroll()
             afterScrollPositionSettled()
         }
     }

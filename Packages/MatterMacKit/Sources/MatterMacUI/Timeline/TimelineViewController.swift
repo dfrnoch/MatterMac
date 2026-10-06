@@ -72,6 +72,10 @@ public final class TimelineViewController: NSViewController {
     var hoverPointerLocation: NSPoint?
     var hoverHighlightedID: TimelineItemID?
     var hoverTimestampID: TimelineItemID?
+    /// The user is scrolling: no hover bar or highlight until the scroll settles.
+    var isHoverSuspendedByScroll = false
+    var isLiveScrolling = false
+    var hoverScrollSettleTask: Task<Void, Never>?
 
     // MARK: Row model (parallel arrays, bounded by the snapshot size)
 
@@ -201,6 +205,10 @@ public final class TimelineViewController: NSViewController {
         NotificationCenter.default.addObserver(self, selector: #selector(clipViewBoundsDidChange(_:)),
                                                name: NSView.boundsDidChangeNotification,
                                                object: scrollView.contentView)
+        NotificationCenter.default.addObserver(self, selector: #selector(liveScrollWillStart(_:)),
+                                               name: NSScrollView.willStartLiveScrollNotification, object: scrollView)
+        NotificationCenter.default.addObserver(self, selector: #selector(liveScrollDidEnd(_:)),
+                                               name: NSScrollView.didEndLiveScrollNotification, object: scrollView)
         layouter.appearance = RenderAppearance(container.effectiveAppearance)
         currentToken = LayoutToken(bucket: widthBucket(), scaleKey: layouter.fontScaleKey)
         lastClipSize = scrollView.contentView.bounds.size

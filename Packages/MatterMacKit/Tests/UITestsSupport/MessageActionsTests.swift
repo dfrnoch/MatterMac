@@ -392,6 +392,30 @@ struct MessageActionsTests {
         f.window.orderOut(nil)
     }
 
+    /// Scrolling hides the hover bar and highlight instead of jumping them from row to
+    /// row under a still pointer; they return once the scroll settles.
+    @Test func scrollingHidesTheHoverBarUntilItSettles() async throws {
+        let posts = (1...40).map { post($0, "message \($0) " + String(repeating: "text ", count: 20)) }
+        let f = makeTimeline(posts.map { presentation($0) }, height: 300)
+        defer { f.close() }
+        let clip = f.controller.scrollView.contentView
+        let row = f.controller.tableView.row(at: NSPoint(x: 10, y: f.controller.visibleDocumentRect.midY))
+        try hover(f, row: row)
+        #expect(!f.controller.hoverBar.isHidden)
+        clip.scroll(to: NSPoint(x: 0, y: max(0, clip.bounds.origin.y - 200)))
+        f.controller.scrollView.reflectScrolledClipView(clip)
+        #expect(f.controller.hoverBar.isHidden, "no bar while scrolling")
+        #expect(f.controller.hoverHighlightedID == nil)
+        try hover(f, row: row)
+        #expect(f.controller.hoverBar.isHidden, "pointer moves during a scroll do not bring it back")
+        let deadline = ContinuousClock.now + .seconds(2)
+        while f.controller.isHoverSuspendedByScroll, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        try hover(f, row: row)
+        #expect(!f.controller.hoverBar.isHidden, "the bar returns after the scroll settles")
+    }
+
     @Test func userScrollsAreReportedSeparatelyFromContentUpdates() async throws {
         let posts = (1...40).map { post($0, "message \($0) " + String(repeating: "text ", count: 20)) }
         let f = makeTimeline(posts.map { presentation($0) }, height: 300)

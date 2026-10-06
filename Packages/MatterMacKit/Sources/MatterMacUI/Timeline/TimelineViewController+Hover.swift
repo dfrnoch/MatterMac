@@ -6,7 +6,9 @@ import MatterMacCore
 /// the pointer is not over a message, the single selected row), a subtle hover
 /// background, and the continuation-row timestamp. Driven by a mouse-moved tracking area
 /// on the container, scrolling, snapshot application and selection changes; there is
-/// no timer. Nothing here changes row heights.
+/// no repeating timer. While the user scrolls, the bar and highlight stay hidden and
+/// return once the scroll settles (live-scroll end, or a short one-shot delay after the
+/// last wheel step). Nothing here changes row heights.
 extension TimelineViewController {
     func installHoverBar(in container: NSView) {
         hoverBar.onAction = { [weak self] action in self?.performPrepared(action) }
@@ -34,6 +36,44 @@ extension TimelineViewController {
             hoverPointerLocation = window.mouseLocationOutsideOfEventStream
         }
         updateHover()
+    }
+
+    // MARK: - Scrolling
+
+    static let hoverScrollSettleDelay: Duration = .milliseconds(200)
+
+    /// A user scroll moved the rows: hide the hover until scrolling settles, so the bar
+    /// does not flicker from row to row under a still pointer.
+    func suspendHoverForScroll() {
+        hoverScrollSettleTask?.cancel()
+        hoverScrollSettleTask = nil
+        isHoverSuspendedByScroll = true
+        // A live (trackpad) scroll ends with `didEndLiveScroll`, after any momentum.
+        guard !isLiveScrolling else { return }
+        hoverScrollSettleTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.hoverScrollSettleDelay)
+            guard !Task.isCancelled else { return }
+            self?.resumeHoverAfterScroll()
+        }
+    }
+
+    func resumeHoverAfterScroll() {
+        hoverScrollSettleTask?.cancel()
+        hoverScrollSettleTask = nil
+        guard isHoverSuspendedByScroll, !isLiveScrolling else { return }
+        isHoverSuspendedByScroll = false
+        refreshHover()
+    }
+
+    @objc func liveScrollWillStart(_ notification: Notification) {
+        isLiveScrolling = true
+        suspendHoverForScroll()
+        updateHover()
+    }
+
+    @objc func liveScrollDidEnd(_ notification: Notification) {
+        isLiveScrolling = false
+        resumeHoverAfterScroll()
     }
 
     // MARK: - State
@@ -69,6 +109,12 @@ extension TimelineViewController {
     }
 
     func updateHover() {
+        if isHoverSuspendedByScroll {
+            setHoverHighlight(nil)
+            setHoverTimestamp(nil)
+            hoverBar.reset()
+            return
+        }
         let target = hoverTargetRow()
         let pointerID = target.flatMap { $0.isPointer ? items[$0.row].id : nil }
         setHoverHighlight(pointerID)

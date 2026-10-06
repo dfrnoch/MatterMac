@@ -2145,3 +2145,20 @@ showcase test skips without its variable).
 **Next:** run forwarding against the repository's live deployments and official
 web client; decode server-generated embedded original-post previews (MatterMac
 currently displays forwarded posts as their comment/link).
+
+## 2026-10-06 — Hide the hover action bar while scrolling
+
+- User report: scrolling under a still pointer made the hover action bar jump from
+  row to row and flicker. A user scroll (clip bounds change outside `performUpdate`,
+  or `willStartLiveScroll`) now suspends the bar, row highlight and continuation
+  timestamp; they return after `didEndLiveScroll` (trackpad, after momentum) or a
+  200 ms one-shot delay after the last wheel step. Programmatic scrolls (jumps,
+  live-edge follow) do not suspend it. No repeating timer.
+- New `scrollingHidesTheHoverBarUntilItSettles` test. `swift test` passed 214 UI-support
+  tests except one run of `mediaViewerCoversTheWindowAndMovesBetweenAMessagesImages`
+  (`isZoomedIn` timing under full-suite load); it passed alone three times, with and
+  without this change. Debug `xcodebuild` succeeded. Not verified by hand in the
+  running app with a physical trackpad/mouse.
+- Preserved the pre-existing signing-team edits in `project.pbxproj` (not committed).
+
+**Next:** confirm the scroll behavior by hand with trackpad momentum and a wheel mouse.
