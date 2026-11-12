@@ -195,8 +195,6 @@ struct MainWindowView: View {
             subtitle: session.isThreadsViewVisible ? "" : ChannelHeaderText.subtitle(session.header, parse: app.environment.markupParse),
             header: session.isThreadsViewVisible ? nil : session.header, session: session))
         .toolbarBackground(.ultraThinMaterial, for: .windowToolbar)
-        .navigationTitle(session.isThreadsViewVisible ? String(localized: "Threads") : ChannelHeaderText.title(session.header))
-        .navigationSubtitle(session.isThreadsViewVisible ? "" : ChannelHeaderText.subtitle(session.header, parse: app.environment.markupParse))
         .toolbar {
             // macOS 26 shows these beside the title (ConversationTitleToolbar), so the
             // trailing controls keep their place when switching conversations.
@@ -336,6 +334,11 @@ private struct ThreadFollowButton: View {
 /// The conversation's name at the leading edge of its part of the toolbar (after the
 /// sidebar toggle), with one secondary line: presence or member count, archived
 /// state, then the channel header or who is typing. It replaces the centered title.
+///
+/// The window title stays visible but empty instead of being removed: with
+/// `.toolbar(removing: .title)` (or a hidden title) macOS 26 drops the toolbar's
+/// scroll edge backing in the key window, so messages scrolled under the toolbar
+/// show through with no blur behind the title or controls.
 private struct ConversationTitleToolbar: ViewModifier {
     let title: String
     let subtitle: String
@@ -349,7 +352,7 @@ private struct ConversationTitleToolbar: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(macOS 26.0, *) {
-            content.toolbar(removing: .title)
+            content.navigationTitle("")
                 .toolbar {
                     ToolbarItem(placement: .navigation) {
                         titleView
@@ -363,7 +366,7 @@ private struct ConversationTitleToolbar: ViewModifier {
                     .sharedBackgroundVisibility(.hidden)
                 }
         } else {
-            content
+            content.navigationTitle(title).navigationSubtitle(subtitle)
         }
     }
 

@@ -2172,3 +2172,28 @@ currently displays forwarded posts as their comment/link).
 
 **Next:** confirm the scroll behavior and scroller placement by hand with trackpad
 momentum and a wheel mouse.
+
+## 2026-11-12 — Keep the toolbar's scroll edge backing in the key window
+
+- User report: after a while the title bar turned transparent and messages showed
+  through behind the channel title and toolbar controls. Reproduced in process with
+  the README showcase fixture (window captured by number): the timeline's
+  `NSScrollPocket` was enabled but its `ThinFilmBackgroundReplay` layer sat at
+  opacity 0 and had no separator whenever the window was key; inactive windows
+  showed it, which is why it seemed to come and go.
+- Bisected with a minimal `NavigationSplitView` + AppKit scroll view:
+  `.toolbar(removing: .title)` (and equally `titleVisibility = .hidden`) drops the
+  backing in the active window; content insets, the table, `drawsBackground`, the
+  `ignoresSafeArea` wrapper and the custom title item are not involved. On macOS 26
+  `ConversationTitleToolbar` now sets an empty `navigationTitle` instead (as
+  SakuraCord does) and keeps its leading title item; the pocket's replay returns to
+  0.6 with the separator, matching a plain AppKit window. Earlier systems keep the
+  real title and subtitle.
+- Tradeoff: on macOS 26 the window's own title is empty (Window menu, Mission
+  Control); the channel name stays in the toolbar title item.
+- Full `swift test` passed (214 UI-support, 183 Core, 61 API, 29 Models, 18 Realtime);
+  Debug `xcodebuild` succeeded. Not watched by hand over a long session in the
+  running app.
+
+**Next:** confirm by hand that the backing stays while switching channels, threads
+and focus over a long session.
