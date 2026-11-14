@@ -194,7 +194,7 @@ struct MainWindowView: View {
             title: session.isThreadsViewVisible ? String(localized: "Threads") : ChannelHeaderText.title(session.header),
             subtitle: session.isThreadsViewVisible ? "" : ChannelHeaderText.subtitle(session.header, parse: app.environment.markupParse),
             header: session.isThreadsViewVisible ? nil : session.header, session: session))
-        .toolbarBackground(.ultraThinMaterial, for: .windowToolbar)
+        .modifier(ToolbarBacking())
         .toolbar {
             // macOS 26 shows these beside the title (ConversationTitleToolbar), so the
             // trailing controls keep their place when switching conversations.
@@ -338,7 +338,7 @@ private struct ThreadFollowButton: View {
 /// The window title stays visible but empty instead of being removed: with
 /// `.toolbar(removing: .title)` (or a hidden title) macOS 26 drops the toolbar's
 /// scroll edge backing in the key window, so messages scrolled under the toolbar
-/// show through with no blur behind the title or controls.
+/// show through with no blur behind the title or controls (see `ToolbarBacking`).
 private struct ConversationTitleToolbar: ViewModifier {
     let title: String
     let subtitle: String
@@ -412,6 +412,47 @@ private struct ConversationTitleToolbar: ViewModifier {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("conversationWindowTitle")
             .transaction { $0.animation = nil }
+        }
+    }
+}
+
+/// What sits behind the toolbar where messages scroll under it.
+///
+/// macOS 26 uses AppKit's own scroll edge backing: frosted glass over the conversation
+/// only, while the sidebar keeps its own top. A SwiftUI toolbar background style would
+/// replace it with one band across the whole window, make the title bar transparent
+/// and switch AppKit's backing off; once SwiftUI then resolved its automatic
+/// visibility to hidden (seen after switching conversations) nothing was left behind
+/// the title and controls. So no style is set, the visibility is explicit, and
+/// `TitlebarBackingGuard` keeps the title bar opaque for AppKit.
+private struct ToolbarBacking: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.toolbarBackground(.visible, for: .windowToolbar)
+                .background(TitlebarBackingGuard())
+        } else {
+            content.toolbarBackground(.ultraThinMaterial, for: .windowToolbar)
+        }
+    }
+}
+
+/// AppKit draws the toolbar's scroll edge backing only while the window's title bar is
+/// not transparent. SwiftUI sets `titlebarAppearsTransparent` when it hides its toolbar
+/// background; this turns it back off for the window showing the conversation.
+struct TitlebarBackingGuard: NSViewRepresentable {
+    func makeNSView(context: Context) -> GuardView { GuardView() }
+    func updateNSView(_ view: GuardView, context: Context) {}
+
+    final class GuardView: NSView {
+        private var observation: NSKeyValueObservation?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observation = window?.observe(\.titlebarAppearsTransparent, options: [.initial, .new]) { window, _ in
+                MainActor.assumeIsolated {
+                    if window.titlebarAppearsTransparent { window.titlebarAppearsTransparent = false }
+                }
+            }
         }
     }
 }

@@ -2197,3 +2197,46 @@ momentum and a wheel mouse.
 
 **Next:** confirm by hand that the backing stays while switching channels, threads
 and focus over a long session.
+
+## 2026-11-14 — Toolbar backing in the real window scene
+
+- User report: with nightly build 55 (which has the 2026-11-12 change) the bar behind
+  the title is frosted at launch and turns transparent after switching channels or
+  DMs. The earlier fix was only ever exercised in `NSHostingController` fixtures,
+  where SwiftUI's `.toolbarBackground` has no effect and AppKit's scroll pocket does
+  all the work.
+- Probed with a temporary executable (not kept) that hosts `MatterMacRootView` in a
+  SwiftUI `Window` scene over the TestSupport fakes, dumping the title bar views and
+  the timeline's `NSScrollPocket` and capturing its own window. SwiftPM stamps such a
+  binary with SDK 14.0, which gives the pre-Liquid-Glass look; it was restamped with
+  `vtool -set-build-version macos 14.0 27.0` and ad-hoc signed.
+- In the real scene `.toolbarBackground(.ultraThinMaterial, for: .windowToolbar)` made
+  SwiftUI own the bar: an `NSHostingView<PlatformBarBackground>` band across the whole
+  window (sidebar included), `titlebarAppearsTransparent = true`, and the pocket's
+  backing off (`v8` opacity 0, no `ThinFilm` layers). With
+  `.toolbarBackground(.hidden, …)` the band is gone and the pocket stays off: sharp
+  messages behind the title and the sidebar back to its own top, which is the state
+  in the user's screenshot. Setting `titlebarAppearsTransparent = false` in that state
+  brings the pocket straight back (`ThinFilmBackgroundReplay` 0.6).
+- **Not reproduced:** the step where SwiftUI's automatic visibility goes from the band
+  to hidden. Sidebar clicks, channel/DM/team switches, short and long conversations,
+  delayed pages, Threads, Channel Info, Search, a revoked channel, sidebar and
+  timeline scroll positions and deactivation all kept the band in the probe.
+- Change (macOS 26 only): no toolbar background style, explicit
+  `.toolbarBackground(.visible, for: .windowToolbar)`, and `TitlebarBackingGuard`,
+  which observes `titlebarAppearsTransparent` on the window and turns it back off.
+  The pocket then backs the toolbar over the conversation only and the sidebar keeps
+  its own top (the split look the user prefers). Earlier systems keep the material
+  style; they were not run.
+- Probe results with the change: pocket backing on at launch and after channel, DM,
+  Threads, Channel Info and Search changes; with `.visible` swapped for `.hidden` to
+  stand in for the unreproduced step, the guard kept it on (without the guard: off).
+- `TitlebarBackingTests` covers the guard. `swift test`: 215 UI-support, 183 Core, 61
+  API, 29 Models, 18 Realtime passed; one earlier full run had a single failure in
+  "Native conversation integration" that did not recur (suite alone and a second full
+  run passed; the failing test was not identified). Debug `xcodebuild` succeeded.
+- Not run: the app itself against a server (Docker was not running), so the fix is
+  unconfirmed in the user's session.
+
+**Next:** confirm in a nightly that the bar stays frosted over a working session; if
+it does, find what flips SwiftUI's automatic visibility or drop the guard.
