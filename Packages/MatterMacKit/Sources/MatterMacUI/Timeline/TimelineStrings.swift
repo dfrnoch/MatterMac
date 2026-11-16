@@ -9,7 +9,9 @@ enum TimelineStrings {
     static let edited = String(localized: "(edited)")
     static let bot = String(localized: "BOT")
     static let showMore = String(localized: "Show more")
-    static let repliedToThread = String(localized: "Replied to a thread")
+    static let replyContextLoading = String(localized: "Loading original message…")
+    static let replyContextDeleted = String(localized: "Original message was deleted")
+    static let replyContextUnavailable = String(localized: "Original message could not be loaded")
     static let newMessagesSeparator = String(localized: "New messages")
     static let loadOlder = String(localized: "Load older messages")
     static let loadNewer = String(localized: "Load newer messages")
@@ -102,6 +104,42 @@ enum TimelineStrings {
     static func replies(_ count: Int) -> String {
         count == 1 ? String(localized: "1 reply") : String(localized: "\(count) replies")
     }
+
+    static func replyContextAttachments(_ count: Int) -> String {
+        count == 1 ? String(localized: "1 attachment") : String(localized: "\(count) attachments")
+    }
+
+    /// Reply line spoken by VoiceOver: "Reply to NAME: TEXT".
+    static func replyContextAccessibility(_ context: ReplyContextPresentation) -> String {
+        let preview = replyContextPreview(context.preview)
+        guard let author = context.author else { return preview }
+        return String(localized: "Reply to \(author.displayName): \(preview)")
+    }
+
+    static func replyContextPreview(_ preview: ReplyContextPresentation.Preview) -> String {
+        switch preview {
+        case .text(let text): text
+        case .attachments(let count): replyContextAttachments(count)
+        case .deleted: replyContextDeleted
+        case .unavailable: replyContextUnavailable
+        case .loading: replyContextLoading
+        }
+    }
+
+    /// "Last reply 14:05" on the root's day, otherwise with the date. Absolute, like
+    /// every other timeline time.
+    static func lastReply(_ timestamp: MattermostTimestamp, rootCreatedAt: MattermostTimestamp) -> String {
+        let calendar = Calendar.current
+        let sameDay = calendar.isDate(timestamp.date, inSameDayAs: rootCreatedAt.date)
+        let text = sameDay ? time(timestamp) : shortDateTimeFormatter.string(from: timestamp.date)
+        return String(localized: "Last reply \(text)")
+    }
+
+    private static let shortDateTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("MMMdjmm")
+        return formatter
+    }()
 
     static func reactions(_ count: Int) -> String {
         count == 1 ? String(localized: "1 reaction") : String(localized: "\(count) reactions")
@@ -267,9 +305,10 @@ enum TimelineStrings {
     /// stays reachable through the body text view.
     static let accessibilityTextLimit = 600
 
-    /// "author, time, message text, N reactions, N replies, send state".
+    /// "author, time, reply context, message text, N reactions, N replies, send state".
     static func accessibilityLabel(for post: PostPresentation) -> String {
         var parts: [String] = [post.author.displayName, fullDateTime(post.createdAt)]
+        if let context = post.replyContext { parts.append(replyContextAccessibility(context)) }
         var text = plainText(of: post.body)
         if text.count > accessibilityTextLimit { text = String(text.prefix(accessibilityTextLimit)) + "…" }
         parts.append(text)

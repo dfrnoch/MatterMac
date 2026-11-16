@@ -23,6 +23,16 @@ struct CreatePostBody: Encodable {
     let pending_post_id: String
 }
 
+/// `POST /posts/schedule` and `PUT /posts/schedule/{id}` (a flattened draft).
+struct ScheduledPostBody: Encodable {
+    let id: String?
+    let channel_id: String
+    let root_id: String
+    let message: String
+    let file_ids: [String]
+    let scheduled_at: Int64
+}
+
 /// `PUT /posts/{id}/patch`: only `message` is patched.
 struct PatchPostBody: Encodable {
     let message: String

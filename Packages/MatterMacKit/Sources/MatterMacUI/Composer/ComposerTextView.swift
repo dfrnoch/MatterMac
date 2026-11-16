@@ -9,6 +9,10 @@ protocol ComposerTextViewHost: AnyObject {
     /// Returns `false` when nothing could be accepted (the popup is then closed).
     func composerTextViewAcceptCompletion(_ textView: ComposerTextView) -> Bool
     func composerTextViewDismissCompletion(_ textView: ComposerTextView)
+    /// A reply suggestion is showing in the empty composer.
+    var isSuggestionVisible: Bool { get }
+    /// Tab with a suggestion showing: insert it as the user's text.
+    func composerTextViewAcceptSuggestion(_ textView: ComposerTextView)
     func composerTextViewRequestsSend(_ textView: ComposerTextView)
     func composerTextViewDidPressEscape(_ textView: ComposerTextView)
     func composerTextViewRequestsEditLastMessage(_ textView: ComposerTextView)
@@ -286,6 +290,8 @@ final class ComposerTextView: NSTextView {
             insertPlainNewline()
         case #selector(insertTab(_:)) where completionVisible:
             _ = host?.composerTextViewAcceptCompletion(self)
+        case #selector(insertTab(_:)) where host?.isSuggestionVisible == true:
+            host?.composerTextViewAcceptSuggestion(self)
         case #selector(moveDown(_:)) where completionVisible:
             host?.composerTextView(self, moveCompletionSelectionBy: 1)
         case #selector(moveUp(_:)) where completionVisible:

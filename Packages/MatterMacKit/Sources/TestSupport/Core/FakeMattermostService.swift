@@ -58,6 +58,9 @@ public final class FakeMattermostService: MattermostService {
         public var collapsedThreadsConfig = "disabled"
         public var nextID: Int = 1
         public var pinChanges: [(PostID, Bool)] = []
+        public var scheduledPosts: [ScheduledPostID: ScheduledPost] = [:]
+        /// When set, every scheduled-post call fails with it (e.g. an unlicensed server's 400).
+        public var scheduledPostsError: APIError?
         public var unreadMarks: [PostID] = []
         public var markUnreadHandler: (@Sendable (PostID) async throws -> ChannelUnreadState)?
         public var pinHandler: (@Sendable (PostID, Bool) async throws -> Void)?
@@ -455,6 +458,38 @@ public final class FakeMattermostService: MattermostService {
         withState { $0.executedCommands.append(command) }
         if let handler = withState({ $0.commandHandler }) { return try await Self.typed { try await handler(command) } }
         return CommandResult(isEphemeral: true, text: "", gotoLocation: nil)
+    }
+
+    public func createScheduledPost(channel: ChannelID, rootID: PostID?, message: String, at time: MattermostTimestamp)
+        async throws(APIError) -> ScheduledPost {
+        record("createScheduledPost")
+        if let error = withState({ $0.scheduledPostsError }) { throw error }
+        let post = ScheduledPost(id: ScheduledPostID(unchecked: makeID("s")), channelID: channel, rootID: rootID,
+                                 message: message, scheduledAt: time)
+        withState { $0.scheduledPosts[post.id] = post }
+        return post
+    }
+
+    public func scheduledPosts(team: TeamID) async throws(APIError) -> [ScheduledPost] {
+        record("scheduledPosts")
+        if let error = withState({ $0.scheduledPostsError }) { throw error }
+        return withState { Array($0.scheduledPosts.values) }.sorted { $0.scheduledAt < $1.scheduledAt }
+    }
+
+    public func updateScheduledPost(_ post: ScheduledPost) async throws(APIError) -> ScheduledPost {
+        record("updateScheduledPost")
+        if let error = withState({ $0.scheduledPostsError }) { throw error }
+        guard withState({ $0.scheduledPosts[post.id] }) != nil else {
+            throw .notFound(ServerErrorInfo(id: "app.scheduled_post.get.app_error", statusCode: 404, requestID: nil))
+        }
+        withState { $0.scheduledPosts[post.id] = post }
+        return post
+    }
+
+    public func deleteScheduledPost(_ id: ScheduledPostID) async throws(APIError) {
+        record("deleteScheduledPost")
+        if let error = withState({ $0.scheduledPostsError }) { throw error }
+        withState { $0.scheduledPosts[id] = nil }
     }
 
     public func setPinned(_ id: PostID, pinned: Bool) async throws(APIError) {

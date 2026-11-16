@@ -2240,3 +2240,108 @@ and focus over a long session.
 
 **Next:** confirm in a nightly that the bar stays frosted over a working session; if
 it does, find what flips SwiftUI's automatic visibility or drop the guard.
+
+## 2026-11-16 — Discord-style replies (decision 0037)
+
+- User request: replies like Discord (UI too), with the thread still reachable.
+- Added the reply line above channel-timeline replies (connector, root author's
+  mini avatar and name, one-line preview; opens the thread), the thread-summary chip
+  under roots, inline Reply from the channel composer when collapsed reply threads
+  are off, and a separate Open Thread hover button and menu entry.
+- Core: `ReplyRootCache` (bounded by `ResourceBudget.replyRootSummaries`), filled
+  from page loads and fetched with `posts(ids:)` when missing;
+  `ReplyContextPresentation` on `PostPresentation`;
+  `TimelineSnapshot.showsRepliesInline`; `Draft.replyRoot`.
+- Tests: `ReplyContextTests` (cache, builder, session fetch) and
+  `ReplyContextViewTests` (line placement and press, summary chip, inline actions,
+  hover bar). `swift test`: everything new passed. Full-suite failures were
+  `mediaViewerCoversTheWindowAndMovesBetweenAMessagesImages` once, and
+  `URLSessionTransport (loopback)` `timeoutAfterTransmissionIsOutcomeUnknown` /
+  `cancelledWriteThatWasTransmittedIsOutcomeUnknown` in some runs; all three passed
+  when rerun alone. Debug `xcodebuild` succeeded with no compiler warnings.
+- Checked visually with an offscreen render of the timeline (light appearance) in a
+  temporary test that was not kept.
+- Not run: the app against a server, so inline sending and root fetching are
+  verified only against the fake service.
+
+**Next:** try inline replies against the local v11 server with collapsed threads off
+(Settings → Collapsed reply threads).
+
+## 2026-11-16 — Jumbo emoji and scheduled messages (decision 0038)
+
+- Jumbo emoji: emoji-only messages (≤ 10) render 2.4× larger. `JumboEmojiTests`.
+- Scheduled messages through the server API: Send Later button and presets, custom
+  time, a per-conversation scheduled bar (reschedule, edit, delete), and
+  unlicensed/old servers detected and the button hidden.
+  `ScheduledPostWireTests`, `ScheduledPostSessionTests`, `SendLaterOptionsTests`.
+  Request shapes come from the server source (`api4/scheduled_post.go`); they were
+  not run against a live licensed server (Docker was not running, and the local test
+  servers are unlicensed, so they would only show the "unsupported" path).
+- Still open from the same request (needs design, see the session notes): AI reply
+  suggestions (ghost text), thread and today summaries with on-device, Claude API
+  and Claude/Codex subscription providers, and a read+send MCP server.
+
+## 2026-11-16 — Assistant and agent control (decisions 0039, 0040)
+
+- Assistant: provider interface, prompts and summarizer in Core
+  (`MatterMacCore/Assistant`); on-device, Claude API and script providers in
+  Platform; ghost-text reply suggestions in the composer; thread summary popover;
+  Go ▸ Summarize Today; Settings › Assistant.
+- Agent control instead of an MCP server (user's choice): `AgentControlServer`
+  (Unix socket), `AgentCLI` (`MatterMac agent …` in the app executable),
+  `AgentController` (commands), plain read/send session API
+  (`ServerSession+Plain`).
+- Probes (not kept): an ad-hoc signed sandboxed binary bound and connected a Unix
+  socket in its container; ran a script from Application Scripts unsandboxed; got an
+  answer from the on-device model in 1.3 s on this Mac; a quarantined script failed
+  with error 3587. `claude -p` (Haiku) answered in about 2.5 s and `codex exec` in
+  about 7 s; both installed script templates were run by hand and answered.
+- Defects found by the new tests and fixed: `FileHandle.nullDevice` as a script's
+  standard error crashed the XPC encoder; writing to an agent socket whose peer had
+  already closed raised SIGPIPE because macOS refuses `SO_NOSIGPIPE` on a
+  disconnected socket (now such connections are closed unanswered); a script's
+  input pipe is marked no-SIGPIPE; NSUserUnixTask gives no usable exit status.
+- Tests: `AssistantTests`, `PlainSessionTests`, `AgentControlTests`,
+  `ComposerSuggestionTests`, `AssistantIntegrationTests`; settings persistence
+  tests cover the four new keys.
+- `swift test`: 235 UI-support, 204 Core, 29 Models and 18 Realtime tests passed.
+  API: 62 of 63; `timeoutAfterTransmissionIsOutcomeUnknown` (URLSessionTransport
+  loopback) failed, and also fails on an untouched checkout of `d4604c8` (3 of 3
+  runs), so it is not from this work. It passed in some runs earlier the same day.
+  Debug `xcodebuild` succeeded with no compiler warnings. `MatterMac agent help`
+  and `agent status` (app not listening: exit 2) were run from the built app.
+- Not run: the Claude API provider against the real API (no key was used; request
+  and response shapes are unit-tested); the assistant and `agent` commands in the
+  real app against a server; the Settings pane by hand.
+
+**Next:** try each provider from Settings › Assistant (Test button), then
+`MatterMac agent status` with agent control on.
+
+## 2026-11-16 — Reply suggestions in the user's voice
+
+- User feedback: suggestions sounded like a "LinkedIn robot". Added a style
+  reference (the user's own recent messages, this conversation first, then
+  elsewhere), cut context to the last 20 messages, and rewrote the reply
+  instructions to copy language, casing, punctuation, length and tone.
+- Tried one invented Czech conversation with invented style samples: Claude Code
+  (Haiku) and Codex answered in the sample voice; the on-device model repeated a
+  sample or wrote nonsense, and reports Czech as unsupported. Settings now lists the
+  languages it handles. Not tried on the user's real conversations.
+- `swift test`: all UI-support, Core, Models and Realtime tests passed; API 61 of
+  63 (the two `URLSessionTransport (loopback)` outcome-unknown tests, which also fail
+  without this work). Debug `xcodebuild` succeeded.
+
+## 2026-11-16 — Learn from My Writing; suggestions opt-in
+
+- User direction: all AI off by default; a button to learn the writing style with a
+  stronger model, then a fast model writes the suggestions.
+- `assistantSuggestsReplies` now defaults to off. Added `AssistantTask.style`,
+  `AssistantSummarizer.learnStyle`, `StyleProfile`, `KeychainStyleProfiles`,
+  `SessionViewModel.learnStyle/forgetStyle`, the Settings rows, and per-task Claude
+  API models (Haiku replies, Sonnet learning). The per-request `from:` search for
+  style samples is gone; learning uses it instead.
+- Tried with 30 invented Czech messages through the installed Claude Code script:
+  Sonnet wrote a 200-word profile in about 6 s; Haiku then answered a new direct
+  message in that voice ("jj, koukam na to"). Not tried on real conversations, and
+  the Claude API provider is still untested against the real API.
+

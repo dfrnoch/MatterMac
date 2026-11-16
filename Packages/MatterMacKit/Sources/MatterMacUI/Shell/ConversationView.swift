@@ -9,12 +9,24 @@ struct ConversationView: NSViewControllerRepresentable {
     let session: SessionViewModel
     let target: TimelineTarget
     let snapshot: TimelineSnapshot?
+    /// Read while the parent's body runs, so list changes update the pane.
+    let scheduled: [ScheduledPost]
+    let schedulingAvailable: Bool
+
+    init(session: SessionViewModel, target: TimelineTarget, snapshot: TimelineSnapshot?) {
+        self.session = session
+        self.target = target
+        self.snapshot = snapshot
+        scheduled = session.scheduledPosts(for: target)
+        schedulingAvailable = session.schedulingAvailable == true
+    }
 
     func makeNSViewController(context: Context) -> ConversationController {
         ConversationController(session: session, target: target)
     }
     func updateNSViewController(_ controller: ConversationController, context: Context) {
         controller.update(target: target, snapshot: snapshot)
+        controller.updateScheduled(scheduled, available: schedulingAvailable)
     }
     static func dismantleNSViewController(_ controller: ConversationController, coordinator: ()) {
         controller.saveDraft()
@@ -34,12 +46,20 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
     let composer: ComposerViewController
     private(set) var target: TimelineTarget
     private var commandTask: Task<Void, Never>?
-    private var sendTask: Task<Void, Never>?
+    var sendTask: Task<Void, Never>?
     private var visibilityTask: Task<Void, Never>?
-    private var generation: UInt64 = 0
+    private(set) var generation: UInt64 = 0
     private var typingTask: Task<Void, Never>?
-    private var editingPost: PostID?
-    private var editingStateDiscarded = false
+    private(set) var editingPost: PostID?
+    /// Thread root a channel draft replies to (inline replies, collapsed threads off).
+    var replyRoot: PostID?
+    private(set) var editingStateDiscarded = false
+    /// The snapshot last applied to this pane's timeline.
+    private(set) var currentSnapshot: TimelineSnapshot?
+    var suggestionTask: Task<Void, Never>?
+    var suggestionKey: SuggestionKey?
+    /// Newest message whose suggestion the user accepted or dismissed.
+    var consumedSuggestion: PostID?
     var imageTasks: [TimelineImageRequest: Task<Void, Never>] = [:]
     var displayedImages: [TimelineImageRequest: (lease: ImagePipeline.Decoded, image: NSImage)] = [:]
     var imageGeneration: UInt64 = 0
@@ -54,6 +74,8 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
     private let bottomOverlay = NSStackView()
     private var reactionPicker: NSPopover?
     private var pendingUserScroll = false
+    var scheduled: [ScheduledPost] = []
+    let scheduledBar = NSButton()
 
     let scope: AccountScope
 
@@ -83,10 +105,14 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         loadDraft()
         attachDraftProvider()
         bindDisplaySettings()
+        session.refreshScheduledPosts()
+        NotificationCenter.default.addObserver(self, selector: #selector(applicationDidBecomeActive(_:)),
+                                               name: NSApplication.didBecomeActiveNotification, object: nil)
     }
+    @objc private func applicationDidBecomeActive(_ notification: Notification) { refreshSuggestion() }
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
-    deinit { commandTask?.cancel(); sendTask?.cancel(); visibilityTask?.cancel(); typingTask?.cancel(); selectionTask?.cancel(); downloadTask?.cancel(); for task in imageTasks.values { task.cancel() } }
+    deinit { suggestionTask?.cancel(); commandTask?.cancel(); sendTask?.cancel(); visibilityTask?.cancel(); typingTask?.cancel(); selectionTask?.cancel(); downloadTask?.cancel(); for task in imageTasks.values { task.cancel() } }
 
     override func loadView() {
         let drop = ConversationDropView()
@@ -116,7 +142,9 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         downloadBar.isHidden = true
         timeline.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(timeline.view)
+        configureScheduledBar()
         bottomOverlay.addArrangedSubview(downloadBar)
+        bottomOverlay.addArrangedSubview(scheduledBar)
         bottomOverlay.addArrangedSubview(composer.view)
         bottomOverlay.detachesHiddenViews = true
         bottomOverlay.orientation = .vertical
@@ -144,10 +172,11 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         updateOverlayInset()
     }
 
-    private func updateOverlayInset() {
+    func updateOverlayInset() {
         let controlsHeight = max(60, composer.preferredHeight)
         let downloadHeight = downloadBar.isHidden ? 0 : downloadBar.fittingSize.height
-        timeline.setBottomOverlayInset(controlsHeight + downloadHeight)
+        let scheduledHeight = scheduledBar.isHidden ? 0 : scheduledBar.fittingSize.height
+        timeline.setBottomOverlayInset(controlsHeight + downloadHeight + scheduledHeight)
     }
 
     override func viewDidAppear() {
@@ -175,13 +204,19 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
             cancelFileWork()
             reactionPicker?.close()
             self.target = target
+            currentSnapshot = nil
             loadDraft()
             timeline.removeAllContent()
+            model?.refreshScheduledPosts()
         }
         attachDraftProvider()
         composer.sendBehavior = environment.sendBehavior == .returnSends ? .returnSends : .commandReturnSends
         updateComposerAvailability()
-        if let snapshot, snapshot.target == target { timeline.apply(snapshot) }
+        if let snapshot, snapshot.target == target {
+            timeline.apply(snapshot)
+            currentSnapshot = snapshot
+        }
+        refreshSuggestion()
     }
 
     private func loadDraft() {
@@ -194,7 +229,14 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         selectedFiles = draft.attachments
         refreshAttachmentChips()
         editingPost = draft.editingPost
-        composer.mode = draft.editingPost.map { .edit(postID: $0, original: "") } ?? .compose
+        replyRoot = root == nil && draft.editingPost == nil ? draft.replyRoot : nil
+        if let editing = draft.editingPost {
+            composer.mode = .edit(postID: editing, original: "")
+        } else if let replyRoot {
+            composer.mode = .reply(authorName: replyAuthorName(replyRoot))
+        } else {
+            composer.mode = .compose
+        }
         composer.load(draft: draft)
         updateComposerAvailability()
     }
@@ -235,6 +277,7 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         guard !editingStateDiscarded, model?.isDetached == false, model?.requiresAuthentication == false, !environment.drafts.isSubmitting(key) else { return }
         var draft = composer.currentDraft()
         draft.editingPost = editingPost
+        draft.replyRoot = replyRoot
         draft.attachments = selectedFiles
         do { try environment.drafts.save(draft, for: key) }
         catch { model?.inlineError = "The draft count or memory limit has been reached. Keep this conversation open and copy or send the text." }
@@ -252,13 +295,19 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         composer.clear()
         composer.completionProvider = nil
         timeline.removeAllContent()
+        currentSnapshot = nil
+        refreshSuggestion()
         editingPost = nil
         updateComposerAvailability()
     }
-    func composerDraftDidChange() { saveDraft() }
+    func composerDraftDidChange() {
+        saveDraft()
+        refreshSuggestion()
+    }
     func composerRemainingDraftBytes() -> Int {
         guard model != nil else { return 0 }
-        return environment.drafts.remainingBytes(for: key) - composer.draftByteCount - (editingPost?.rawValue.utf8.count ?? 0) - Draft(text: "", attachments: selectedFiles).attachmentByteCost
+        return environment.drafts.remainingBytes(for: key) - composer.draftByteCount - (editingPost?.rawValue.utf8.count ?? 0)
+            - (replyRoot?.rawValue.utf8.count ?? 0) - Draft(text: "", attachments: selectedFiles).attachmentByteCost
     }
     func composerDidRefuseInput(_ refusal: ComposerRefusal) {
         model?.inlineError = "Input exceeds a message, draft count, or session memory limit. Existing text has been kept."
@@ -267,6 +316,7 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         guard sendTask == nil, selectionTask == nil, !environment.drafts.isSubmitting(key), let model else { return }
         let key = key, target = target, generation = generation
         let edit = editingPost
+        let rootID = key.rootID ?? replyRoot
         let attachments = selectedFiles
         let isCommand = edit == nil && ServerSession.isSlashCommand(text)
         if isCommand, !attachments.isEmpty {
@@ -298,13 +348,13 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
                 do {
                     if let edit { try await model.session.edit(edit, text: text) }
                     else if isCommand {
-                        let result = try await model.session.executeCommand(text, channel: target.channelID, rootID: key.rootID)
+                        let result = try await model.session.executeCommand(text, channel: target.channelID, rootID: rootID)
                         if !Task.isCancelled, self.generation == generation, !model.isDetached,
                            model.selectedChannel == target.channelID, result.isEphemeral, !result.text.isEmpty {
                             model.commandFeedback = result.text
                         }
                     } else {
-                        try await model.session.enqueueSend(text: text, channel: target.channelID, rootID: key.rootID,
+                        try await model.session.enqueueSend(text: text, channel: target.channelID, rootID: rootID,
                                                             attachments: attachments, reservation: reservation)
                     }
                     environment.drafts.finishSending(key, reservation: reservation, accepted: true)
@@ -327,6 +377,13 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
     func composerDidPressEscape() { composer.dismissTransientUI() }
     func composerDidRequestCancelMode() {
         guard !environment.drafts.isSubmitting(key) else { return }
+        if editingPost == nil, replyRoot != nil {
+            // Cancelling a reply keeps the text as a plain channel message.
+            replyRoot = nil
+            composer.mode = .compose
+            saveDraft()
+            return
+        }
         editingPost = nil
         composer.mode = .compose
         composer.clear()
@@ -345,15 +402,34 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
         guard post.channelID == target.channelID, !environment.drafts.isSubmitting(key),
               post.message.utf8.count + post.id.rawValue.utf8.count <= composerRemainingDraftBytes() else { return }
         editingPost = post.id
+        replyRoot = nil
         composer.mode = .edit(postID: post.id, original: post.message)
         composer.load(draft: Draft(text: post.message))
         saveDraft()
         composer.focus()
     }
+    /// Discord-style reply: the channel composer answers the thread and the reply stays
+    /// in the channel. Existing text is kept and becomes the reply.
+    private func beginReply(to threadRoot: PostID) {
+        guard editingPost == nil else {
+            model?.inlineError = "Save or cancel your edit before replying."
+            return
+        }
+        guard !environment.drafts.isSubmitting(key), !editingStateDiscarded,
+              threadRoot.rawValue.utf8.count <= composerRemainingDraftBytes() + (replyRoot?.rawValue.utf8.count ?? 0)
+        else { return }
+        replyRoot = threadRoot
+        composer.mode = .reply(authorName: replyAuthorName(threadRoot))
+        saveDraft()
+        composer.focus()
+    }
+    private func replyAuthorName(_ threadRoot: PostID) -> String {
+        timeline.threadRootAuthorName(threadRoot) ?? String(localized: "a thread")
+    }
     func composerUserDidType() {
         saveDraft() // Account immediately; the composer's other callback is coalesced.
         guard typingTask == nil, let session = model?.session else { return }
-        let channel = target.channelID, root = root
+        let channel = target.channelID, root = root ?? replyRoot
         typingTask = Task { [weak self] in
             await session.userIsTyping(channel: channel, root: root)
             self?.typingTask = nil
@@ -379,7 +455,9 @@ final class ConversationController: NSViewController, DraftProviding, ComposerVi
     }
     func timeline(perform action: TimelineAction) {
         switch action {
-        case .reply(let id), .openThread(let id): model?.openThread(root: id)
+        case .reply(let id):
+            if root == nil, timeline.showsRepliesInline { beginReply(to: id) } else { model?.openThread(root: id) }
+        case .openThread(let id): model?.openThread(root: id)
         case .openLink(let link):
             // Links into this server open inside MatterMac; everything else in the browser.
             if let model, let serverLink = MattermostLink(url: link.url, endpoint: model.session.endpoint) {

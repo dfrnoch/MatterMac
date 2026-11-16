@@ -475,6 +475,31 @@ public final class MattermostHTTPClient: MattermostService {
         return try await send(.post, ["posts"], body: body, decode: PostWire.self, limit: small).post
     }
 
+    public func createScheduledPost(channel: ChannelID, rootID: PostID?, message: String, at time: MattermostTimestamp)
+        async throws(APIError) -> ScheduledPost {
+        let body = ScheduledPostBody(id: nil, channel_id: channel.rawValue, root_id: rootID?.rawValue ?? "", message: message,
+                                     file_ids: [], scheduled_at: time.milliseconds)
+        return try await send(.post, ["posts", "schedule"], body: body, decode: ScheduledPostWire.self, limit: small).post
+    }
+
+    public func scheduledPosts(team: TeamID) async throws(APIError) -> [ScheduledPost] {
+        try await get(ScheduledPostListWire.self, ["posts", "scheduled", "team", team.rawValue],
+                      query: [URLQueryItem(name: "includeDirectChannels", value: "true")], limit: large,
+                      priority: .background).posts
+    }
+
+    public func updateScheduledPost(_ post: ScheduledPost) async throws(APIError) -> ScheduledPost {
+        let body = ScheduledPostBody(id: post.id.rawValue, channel_id: post.channelID.rawValue,
+                                     root_id: post.rootID?.rawValue ?? "", message: post.message,
+                                     file_ids: post.fileIDs.map(\.rawValue), scheduled_at: post.scheduledAt.milliseconds)
+        return try await send(.put, ["posts", "schedule", post.id.rawValue], body: body, decode: ScheduledPostWire.self,
+                              limit: small).post
+    }
+
+    public func deleteScheduledPost(_ id: ScheduledPostID) async throws(APIError) {
+        _ = try await perform(.delete, ["posts", "schedule", id.rawValue], limit: small, priority: .interactive)
+    }
+
     public func editPost(_ id: PostID, message: String) async throws(APIError) -> Post {
         try await send(.put, ["posts", id.rawValue, "patch"], body: PatchPostBody(message: message), decode: PostWire.self,
                        limit: small).post

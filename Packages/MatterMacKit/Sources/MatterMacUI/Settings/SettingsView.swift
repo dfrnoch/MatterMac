@@ -13,7 +13,7 @@ public struct MatterMacSettingsView: View {
     /// tab to UserDefaults (`com_apple_SwiftUI_Settings_selectedTabIndex`, observed).
     @State private var tab: Tab = .general
 
-    enum Tab: Hashable { case general, notifications, appearance, accounts, profile }
+    enum Tab: Hashable { case general, notifications, appearance, assistant, accounts, profile }
 
     public init(environment: AppEnvironment) {
         self.environment = environment
@@ -37,6 +37,9 @@ public struct MatterMacSettingsView: View {
             AppearanceSettingsTab(settings: environment.settings)
                 .tabItem { Label("Appearance", systemImage: "paintpalette") }
                 .tag(Tab.appearance)
+            AssistantSettingsTab(environment: environment)
+                .tabItem { Label("Assistant", systemImage: "sparkles") }
+                .tag(Tab.assistant)
             AccountsSettingsTab(environment: environment)
                 .tabItem { Label("Accounts", systemImage: "person.crop.circle") }
                 .tag(Tab.accounts)

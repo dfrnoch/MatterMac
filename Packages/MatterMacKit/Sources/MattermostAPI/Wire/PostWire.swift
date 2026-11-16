@@ -430,3 +430,44 @@ public struct PostListWire: Decodable, Sendable {
     /// Posts in `order` sequence.
     public var orderedPosts: [Post] { order.compactMap { posts[$0] } }
 }
+
+/// One scheduled post (`model.ScheduledPost`, which flattens `model.Draft`).
+struct ScheduledPostWire: Decodable, Sendable {
+    let post: ScheduledPost
+
+    enum Keys: String, CodingKey {
+        case id, channel_id, root_id, message, file_ids, scheduled_at, processed_at, error_code, update_at
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        var message = (try? c.decodeIfPresent(String.self, forKey: .message)) ?? ""
+        if message.utf8.count > PostDecodingLimits.maximumMessageBytes {
+            message = String(decoding: message.utf8.prefix(PostDecodingLimits.maximumMessageBytes), as: UTF8.self)
+        }
+        let error = c.lenientString(.error_code, maxBytes: 64).flatMap { $0.isEmpty ? nil : $0 }
+        post = ScheduledPost(
+            id: try c.requiredID(ScheduledPostID.self, .id), channelID: try c.requiredID(ChannelID.self, .channel_id),
+            rootID: c.optionalID(PostID.self, .root_id), message: message,
+            fileIDs: c.idList(FileID.self, .file_ids, limit: PostDecodingLimits.maximumFileIDs),
+            scheduledAt: c.timestamp(.scheduled_at), processedAt: c.timestamp(.processed_at), errorCode: error,
+            updateAt: c.timestamp(.update_at))
+    }
+}
+
+/// `GET /posts/scheduled/team/{team}?includeDirectChannels=true` →
+/// `{"<team_id>": [...], "directChannels": [...]}`, flattened and bounded.
+struct ScheduledPostListWire: Decodable, Sendable {
+    static let maximumPosts = 500
+    let posts: [ScheduledPost]
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: DynamicKey.self)
+        var posts: [ScheduledPost] = []
+        for key in c.allKeys {
+            let list = (try? c.decode(LossyArray<ScheduledPostWire>.self, forKey: key))?.elements ?? []
+            for wire in list where posts.count < Self.maximumPosts { posts.append(wire.post) }
+        }
+        self.posts = posts.sorted { $0.scheduledAt < $1.scheduledAt }
+    }
+}

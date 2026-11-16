@@ -1,4 +1,4 @@
-public import Foundation
+public import AppKit
 public import MatterMacModels
 
 // Public value types and protocols of the native composer (SPEC §4, §11, §13).
@@ -163,6 +163,19 @@ public protocol ComposerViewControllerDelegate: AnyObject {
     /// A user edit happened (typing, paste, completion, composition update). Not
     /// throttled here; the caller throttles typing events to the server.
     func composerUserDidType()
+    /// Tab inserted the suggested reply into the text.
+    func composerDidAcceptSuggestion()
+    /// Escape removed the suggested reply; the host should not offer it again.
+    func composerDidDismissSuggestion()
+    /// Send Later was pressed (only shown while `isSchedulingAllowed`).
+    func composerRequestsScheduleMenu(from button: NSView)
     /// The user pressed the remove button on an attachment chip.
     func composerDidRemoveAttachment(id: String)
+}
+
+extension ComposerViewControllerDelegate {
+    /// Send Later was pressed; the host shows its time choices anchored to `button`.
+    public func composerRequestsScheduleMenu(from button: NSView) {}
+    public func composerDidAcceptSuggestion() {}
+    public func composerDidDismissSuggestion() {}
 }

@@ -12,7 +12,7 @@ MatterMac backend or embedded browser interface, and no external runtime depende
 | `MattermostAPI` | Ephemeral HTTP transport, request admission and bounds, authentication, DTO decoding, explicit file transfers. |
 | `MattermostRealtime` | WebSocket lifecycle, ordered events, liveness and reconnect. |
 | `MatterMacCore` | Sessions, scoped stores, bounded history, drafts, send reconciliation, unsent-work accounting, images. |
-| `MatterMacPlatform` | System authentication presentation and native Keychain storage. |
+| `MatterMacPlatform` | System authentication presentation and native Keychain storage; assistant providers (on-device model, Claude API, user script) and the agent-control socket and command line. |
 | `MatterMacUI` | Main-actor SwiftUI shell, AppKit timeline/composer, view models and user interaction. |
 | `Apps/MatterMac` | Composition root, scenes, menus and application lifecycle. |
 | `TestSupport` | Test-only fakes and fixtures; never linked into the app. |

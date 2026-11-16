@@ -43,6 +43,7 @@ public final class ComposerViewController: NSViewController {
     public var mode: ComposerMode = .compose {
         didSet {
             guard mode != oldValue else { return }
+            updateSuggestionVisibility()
             updateModeBanner()
             updateSendButton()
             updatePreferredHeight()
@@ -105,12 +106,30 @@ public final class ComposerViewController: NSViewController {
     private let scrollView = NSScrollView()
     private let inputBox = NSBox()
     private let placeholderLabel = PassthroughLabel(labelWithString: "")
+    private let suggestionView = ComposerSuggestionView(frame: .zero)
     let sendButton = ComposerIconButton()
     let attachButton = ComposerIconButton()
+    let scheduleButton = ComposerIconButton()
     /// Both icon buttons are exactly as tall as the one-line input box and bottom-aligned
     /// with it: centered on a single line, beside the last line when the box grows.
     private var iconButtonHeightConstraints: [NSLayoutConstraint] = []
     public var isAttachmentSelectionAllowed = true { didSet { updateSendButton() } }
+    /// A reply offered as ghost text while the composer is empty (never part of the
+    /// draft). Tab inserts it as the user's own text; Escape or the host removes it.
+    public var suggestion: String? {
+        didSet {
+            guard suggestion != oldValue else { return }
+            updateSuggestion()
+        }
+    }
+    /// The ghost text is on screen: a suggestion exists, nothing is typed, not editing.
+    public var isSuggestionVisible: Bool {
+        guard suggestion != nil, (textView.textStorage?.length ?? 0) == 0 else { return false }
+        if case .edit = mode { return false }
+        return true
+    }
+    /// Shows Send Later (the host checked the server offers scheduled messages).
+    public var isSchedulingAllowed = false { didSet { updateSendButton() } }
     private let bannerView = NSStackView()
     private let bannerIcon = NSImageView()
     private let bannerLabel = NSTextField(labelWithString: "")
@@ -253,11 +272,23 @@ public final class ComposerViewController: NSViewController {
         attachButton.contentTintColor = .secondaryLabelColor
         attachButton.translatesAutoresizingMaskIntoConstraints = false
         attachButton.widthAnchor.constraint(equalToConstant: Self.attachButtonWidth).isActive = true
-        iconButtonHeightConstraints = [attachButton, sendButton].map {
+        scheduleButton.image = NSImage(systemSymbolName: "clock", accessibilityDescription: nil)
+        scheduleButton.isBordered = false
+        scheduleButton.target = self
+        scheduleButton.action = #selector(scheduleButtonPressed(_:))
+        scheduleButton.setAccessibilityLabel(String(localized: "Send Later"))
+        scheduleButton.toolTip = String(localized: "Send Later…")
+        scheduleButton.imagePosition = .imageOnly
+        scheduleButton.contentTintColor = .secondaryLabelColor
+        scheduleButton.translatesAutoresizingMaskIntoConstraints = false
+        scheduleButton.widthAnchor.constraint(equalToConstant: Self.attachButtonWidth).isActive = true
+        scheduleButton.isHidden = true
+        iconButtonHeightConstraints = [attachButton, scheduleButton, sendButton].map {
             $0.heightAnchor.constraint(equalToConstant: singleLineBoxHeight)
         }
         NSLayoutConstraint.activate(iconButtonHeightConstraints)
-        let inputRow = NSStackView(views: [attachButton, inputBox, sendButton])
+        let inputRow = NSStackView(views: [attachButton, inputBox, scheduleButton, sendButton])
+        inputRow.detachesHiddenViews = true
         inputRow.orientation = .horizontal
         inputRow.alignment = .bottom
         inputRow.spacing = 6
@@ -396,10 +427,13 @@ public final class ComposerViewController: NSViewController {
         placeholderLabel.maximumNumberOfLines = 1
         placeholderLabel.setAccessibilityElement(false)
         placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
+        suggestionView.isHidden = true
+        suggestionView.translatesAutoresizingMaskIntoConstraints = false
 
         guard let content = inputBox.contentView else { return }
         content.addSubview(scrollView)
         content.addSubview(placeholderLabel)
+        content.addSubview(suggestionView)
         let heightConstraint = scrollView.heightAnchor.constraint(equalToConstant: minimumInputHeight)
         heightConstraint.priority = NSLayoutConstraint.Priority(999)
         inputHeightConstraint = heightConstraint
@@ -415,6 +449,11 @@ public final class ComposerViewController: NSViewController {
             placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: scrollView.trailingAnchor),
             placeholderLabel.topAnchor.constraint(equalTo: scrollView.topAnchor,
                                                   constant: textView.textContainerInset.height),
+            suggestionView.leadingAnchor.constraint(equalTo: placeholderLabel.leadingAnchor),
+            suggestionView.topAnchor.constraint(equalTo: placeholderLabel.topAnchor),
+            suggestionView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor,
+                                                     constant: -(padding + textView.textContainerInset.width)),
+            suggestionView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
         ])
     }
 
@@ -490,8 +529,21 @@ public final class ComposerViewController: NSViewController {
             .location == NSNotFound
     }
 
+    private func updateSuggestion() {
+        guard isViewLoaded else { return }
+        suggestionView.configure(suggestion, font: textView.font ?? .preferredFont(forTextStyle: .body))
+        refreshAfterTextChange()
+        updatePlaceholder()
+    }
+
+    private func updateSuggestionVisibility() {
+        guard isViewLoaded else { return }
+        suggestionView.isHidden = !isSuggestionVisible
+        placeholderLabel.isHidden = (textView.textStorage?.length ?? 0) > 0 || isSuggestionVisible
+    }
+
     private func refreshAfterTextChange() {
-        placeholderLabel.isHidden = (textView.textStorage?.length ?? 0) > 0
+        updateSuggestionVisibility()
         refreshLengthState()
         updateSendButton()
         updatePreferredHeight()
@@ -545,6 +597,10 @@ public final class ComposerViewController: NSViewController {
     private func updateSendButton() {
         guard isViewLoaded else { return }
         attachButton.isEnabled = isAttachmentSelectionAllowed
+        let isEditing: Bool
+        if case .edit = mode { isEditing = true } else { isEditing = false }
+        scheduleButton.isHidden = !isSchedulingAllowed || isEditing
+        scheduleButton.isEnabled = canSend && attachments.isEmpty
         sendButton.isEnabled = canSend
         sendButton.contentTintColor = canSend ? .controlAccentColor : .tertiaryLabelColor
         let isEdit: Bool
@@ -557,7 +613,10 @@ public final class ComposerViewController: NSViewController {
     private func updatePlaceholder() {
         placeholderLabel.stringValue = placeholder
         textView.setAccessibilityLabel(placeholder)
-        textView.setAccessibilityPlaceholderValue(placeholder)
+        // VoiceOver reads the suggestion in place of the placeholder.
+        textView.setAccessibilityPlaceholderValue(suggestion.map {
+            String(localized: "Suggested reply: \($0). Press Tab to insert it.")
+        } ?? placeholder)
     }
 
     private func updateModeBanner() {
@@ -637,7 +696,13 @@ public final class ComposerViewController: NSViewController {
         layoutManager.ensureLayout(forBoundingRect: NSRect(x: 0, y: 0, width: max(1, container.size.width),
                                                            height: maximum + lineHeight),
                                    in: container)
-        let used = layoutManager.usedRect(for: container).height
+        var used = layoutManager.usedRect(for: container).height
+        if isSuggestionVisible {
+            // The ghost text is not in the text view; make room for it (a few lines).
+            let width = container.size.width - 2 * container.lineFragmentPadding
+            used = max(used, min(suggestionView.height(forWidth: width),
+                                 lineHeight * CGFloat(ComposerSuggestionView.maximumLines)))
+        }
         return min(max(ceil(used + textView.textContainerInset.height * 2), minimumInputHeight), maximum)
     }
 
@@ -688,6 +753,11 @@ public final class ComposerViewController: NSViewController {
 
     @objc private func sendButtonPressed(_ sender: Any?) {
         requestSend()
+    }
+
+    @objc private func scheduleButtonPressed(_ sender: NSButton) {
+        guard canSend else { return }
+        delegate?.composerRequestsScheduleMenu(from: sender)
     }
 
     @objc private func cancelModePressed(_ sender: Any?) {
@@ -743,7 +813,19 @@ extension ComposerViewController: ComposerTextViewHost {
         requestSend()
     }
 
+    func composerTextViewAcceptSuggestion(_ textView: ComposerTextView) {
+        guard isSuggestionVisible, let text = suggestion else { return }
+        suggestion = nil
+        // A user edit: counted against the draft budget, undoable, saved as a draft.
+        if textView.insertAtCaret(text) { delegate?.composerDidAcceptSuggestion() }
+    }
+
     func composerTextViewDidPressEscape(_ textView: ComposerTextView) {
+        if isSuggestionVisible {
+            suggestion = nil
+            delegate?.composerDidDismissSuggestion()
+            return
+        }
         if mode == .compose {
             delegate?.composerDidPressEscape()
         } else {
@@ -806,6 +888,51 @@ final class ComposerRootView: NSView {
 
 /// A label that never intercepts clicks, so clicking the placeholder focuses the
 /// text view underneath.
+/// Ghost text for a suggested reply: drawn over the empty text view in a quieter
+/// colour, with a "Tab" hint, at most `maximumLines` lines. Never takes clicks.
+final class ComposerSuggestionView: NSView {
+    static let maximumLines = 4
+    private var text = NSAttributedString()
+
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func configure(_ suggestion: String?, font: NSFont) {
+        guard let suggestion else {
+            text = NSAttributedString()
+            needsDisplay = true
+            return
+        }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        let result = NSMutableAttributedString(string: suggestion, attributes: [
+            .font: font, .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: paragraph,
+        ])
+        result.append(NSAttributedString(string: "   ⇥ Tab", attributes: [
+            .font: NSFont.systemFont(ofSize: max(9, font.pointSize - 2), weight: .medium),
+            .foregroundColor: NSColor.quaternaryLabelColor, .paragraphStyle: paragraph,
+        ]))
+        text = result
+        needsDisplay = true
+    }
+
+    func height(forWidth width: CGFloat) -> CGFloat {
+        guard text.length > 0 else { return 0 }
+        return ceil(text.boundingRect(with: NSSize(width: max(1, width), height: .greatestFiniteMagnitude),
+                                      options: [.usesLineFragmentOrigin, .usesFontLeading]).height)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard text.length > 0 else { return }
+        text.draw(with: bounds, options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine])
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
 final class PassthroughLabel: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

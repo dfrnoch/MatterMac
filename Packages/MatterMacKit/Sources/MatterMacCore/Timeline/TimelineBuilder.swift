@@ -55,6 +55,10 @@ public enum TimelineBuilder {
         public var missingUsers: Set<UserID>
         /// Custom emoji candidate names not looked up yet (bounded, first-seen order).
         public var missingEmojiNames: [String] = []
+        /// Thread roots of displayed replies found in neither the store nor the cache.
+        public var missingRoots: [PostID] = []
+        /// Cached root summaries this build displayed (for LRU recency).
+        public var shownRoots: [PostID] = []
     }
 
     /// Most names reported missing by one build.
@@ -62,7 +66,8 @@ public enum TimelineBuilder {
 
     public static func build(window: HistoryWindow, store: PostStore, directory: DirectoryStore,
                              pending: [PendingSend], context: TimelineBuildContext,
-                             customEmoji: CustomEmojiStore? = nil) -> Output {
+                             customEmoji: CustomEmojiStore? = nil, replyRoots: ReplyRootCache? = nil) -> Output {
+        var roots = ReplyRootLookup(cache: replyRoots)
         var missingEmoji: [String] = []
         var missingEmojiSet = Set<String>()
         var items: [TimelineItem] = []
@@ -117,6 +122,13 @@ public enum TimelineBuilder {
                 post: post, document: stored.document, author: author, isContinuation: isContinuation,
                 showsThreadContext: showsThreadContext, expanded: window.expanded.contains(post.id),
                 context: context, isThread: isThread, directory: directory, missing: &missing)
+            if showsThreadContext, let root = post.rootID {
+                presentation.replyContext = replyContext(root: root, store: store, roots: &roots, directory: directory,
+                                                         me: context.me, missing: &missing)
+            }
+            if post.rootID == nil, post.replyCount > 0, !post.lastReplyAt.isZero {
+                presentation.lastReplyAt = post.lastReplyAt
+            }
             if context.customEmojiEnabled, let customEmoji {
                 resolveCustomEmoji(in: &presentation, post: post, candidates: stored.customEmojiCandidates,
                                    store: customEmoji, now: context.now.date, missing: &missingEmoji,
@@ -129,6 +141,8 @@ public enum TimelineBuilder {
             hasher.combine(presentation.actions)
             hasher.combine(window.expanded.contains(post.id))
             hasher.combine(showsThreadContext)
+            hasher.combine(presentation.replyContext)
+            hasher.combine(presentation.lastReplyAt)
             // Directory-derived state (reactor names, saved flag, preview visibility).
             hasher.combine(presentation.reactions)
             hasher.combine(presentation.isSaved)
@@ -152,8 +166,10 @@ public enum TimelineBuilder {
             }
             var groupRoot = previous?.rootID
             for send in pending {
+                // A reply written from the channel composer shows its context right away.
+                let showsThreadContext = !isThread && !context.collapsedThreads && send.rootID != nil
                 let sameDay = previousDay == nil || previousDay == dayNumber(send.createdAt, timeZone: context.timeZone)
-                let continuesGroup = sameDay && (groupRoot == send.rootID || isThread) && groupStart.map {
+                let continuesGroup = sameDay && !showsThreadContext && (groupRoot == send.rootID || isThread) && groupStart.map {
                     send.createdAt.milliseconds - $0.milliseconds < groupingIntervalMilliseconds
                         && send.createdAt >= $0
                 } == true
@@ -166,22 +182,73 @@ public enum TimelineBuilder {
                     blocks.append(.paragraph([.emphasis([.text("Attachments: \(send.attachments.count) (not yet sent)")])]))
                 }
                 let document = MessageDocument(blocks: blocks)
-                let presentation = PostPresentation(
+                var presentation = PostPresentation(
                     postID: nil, pendingID: send.pendingID, channelID: send.channelID, rootID: send.rootID,
                     author: author, createdAt: send.createdAt, isContinuation: continuesGroup,
                     body: .document(document, isCollapsed: send.message.count > context.collapsedMessageCharacters),
                     isEdited: false, isPinned: false, files: [], reactions: [], replyCount: 0,
-                    showsThreadContext: false, sendState: send.presentationState, actions: .none, permalink: nil)
+                    showsThreadContext: showsThreadContext, sendState: send.presentationState, actions: .none,
+                    permalink: nil)
+                if showsThreadContext, let root = send.rootID {
+                    presentation.replyContext = replyContext(root: root, store: store, roots: &roots,
+                                                             directory: directory, me: context.me, missing: &missing)
+                }
                 var hasher = Hasher()
                 hasher.combine(send.presentationState)
                 hasher.combine(send.attachments.count)
                 hasher.combine(continuesGroup)
+                hasher.combine(presentation.replyContext)
                 items.append(TimelineItem(id: TimelineItemID(.pending(send.pendingID)),
                                           revision: UInt64(bitPattern: Int64(hasher.finalize())),
                                           content: .post(presentation)))
             }
         }
-        return Output(items: items, missingUsers: missing, missingEmojiNames: missingEmoji)
+        return Output(items: items, missingUsers: missing, missingEmojiNames: missingEmoji,
+                      missingRoots: roots.missing, shownRoots: roots.shown)
+    }
+
+    /// Reply-context lookups of one build.
+    struct ReplyRootLookup {
+        let cache: ReplyRootCache?
+        var missing: [PostID] = []
+        var missingSet = Set<PostID>()
+        var shown: [PostID] = []
+    }
+
+    /// The reply line for a reply to `root`: the retained post when there is one, else
+    /// the cached summary, else `.loading` with the root reported missing.
+    static func replyContext(root: PostID, store: PostStore, roots: inout ReplyRootLookup, directory: DirectoryStore,
+                             me: UserID, missing: inout Set<UserID>) -> ReplyContextPresentation {
+        if let entry = store.entry(root) {
+            let post = entry.post
+            let author = authorPresentation(post.userID, post: post, directory: directory, me: me, missing: &missing)
+            return ReplyContextPresentation(
+                rootID: root, author: author,
+                preview: replyPreview(isDeleted: post.isDeleted, text: ReplyRootCache.preview(entry.document.plainText),
+                                      fileCount: max(post.files.count, post.fileIDs.count)))
+        }
+        guard let summary = roots.cache?.peek(root) else {
+            if roots.missingSet.insert(root).inserted { roots.missing.append(root) }
+            return ReplyContextPresentation(rootID: root, author: nil, preview: .loading)
+        }
+        roots.shown.append(root)
+        guard let user = summary.userID else {
+            return ReplyContextPresentation(rootID: root, author: nil, preview: .unavailable)
+        }
+        var author = authorPresentation(user, post: nil, directory: directory, me: me, missing: &missing)
+        if summary.fromWebhook, let name = summary.nameOverride, !name.isEmpty {
+            author = AuthorPresentation(userID: author.userID, displayName: name, username: author.username, isBot: true,
+                                        isCurrentUser: author.isCurrentUser, avatarRevision: author.avatarRevision)
+        }
+        return ReplyContextPresentation(
+            rootID: root, author: author,
+            preview: replyPreview(isDeleted: summary.isDeleted, text: summary.preview, fileCount: summary.fileCount))
+    }
+
+    static func replyPreview(isDeleted: Bool, text: String, fileCount: Int) -> ReplyContextPresentation.Preview {
+        if isDeleted { return .deleted }
+        if !text.isEmpty { return .text(text) }
+        return fileCount > 0 ? .attachments(fileCount) : .text(String(localized: "(no text)"))
     }
 
     /// Fills `customEmoji` (message) and `customEmojiID` (reactions) from the post's

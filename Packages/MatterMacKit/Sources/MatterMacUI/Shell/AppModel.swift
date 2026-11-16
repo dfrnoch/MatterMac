@@ -279,10 +279,12 @@ public final class AppModel {
                 } catch LoginCoordinator.RestoreError.invalidCredential {
                     try await accounts.remove(endpoint: account.endpoint, userID: account.userID)
                     await environment.contentCache?.removeAll(for: CacheAccount(endpoint: account.endpoint, user: account.userID))
+                    environment.styleProfiles?.removeProfile(for: CacheAccount(endpoint: account.endpoint, user: account.userID))
                     lastSignOutMessage = "A saved sign-in has expired or was revoked. Sign in again."
                 } catch LoginCoordinator.RestoreError.accountChanged {
                     try await accounts.remove(endpoint: account.endpoint, userID: account.userID)
                     await environment.contentCache?.removeAll(for: CacheAccount(endpoint: account.endpoint, user: account.userID))
+                    environment.styleProfiles?.removeProfile(for: CacheAccount(endpoint: account.endpoint, user: account.userID))
                     lastSignOutMessage = "A saved sign-in returned a different account and was removed. Sign in again."
                 } catch {
                     canRetrySavedSignIn = true
@@ -362,6 +364,7 @@ public final class AppModel {
         layoutCaches.purge(scope: model.scope)
         await images.purge(scope: model.scope)
         await environment.contentCache?.removeAll(for: model.cacheAccount)
+        model.forgetStyle()
         let outcome = await registry.remove(slot, revokeServerSession: true)
         lastSignOutMessage = outcome.map(SignOutText.describe)
         updateDockBadge()

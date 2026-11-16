@@ -21,5 +21,7 @@ extension ConversationController {
         let behavior: ComposerSendBehavior = settings.sendBehavior == .returnSends ? .returnSends : .commandReturnSends
         if composer.sendBehavior != behavior { composer.sendBehavior = behavior }
         timeline.drawsThemedBackground = !settings.theme.isSystem
+        // Reads the assistant settings, so changing them takes effect here.
+        refreshSuggestion()
     }
 }

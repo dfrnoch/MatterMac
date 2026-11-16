@@ -185,6 +185,8 @@ extension ServerSession {
             return
         }
         deps.unsent.release(send.reservation)
+        confirmedSends.append((id, post.id))
+        if confirmedSends.count > 32 { confirmedSends.removeFirst(confirmedSends.count - 32) }
         tasks[.sendRetry(id)]?.cancel()
         var canonical = post
         canonical.pendingPostID = id

@@ -96,6 +96,9 @@ public struct ResourceBudget: Sendable, Hashable {
     public var smallResponseBytes = 1 * .mebibyte
     /// Search results retained per query.
     public var searchResults = CountAndBytes(count: 200, bytes: 2 * .mebibyte)
+    /// Thread-root summaries (author, ≤ 160-character preview) kept for the reply line
+    /// above channel-timeline replies, per session (LRU).
+    public var replyRootSummaries = 1_000
     /// Posts retained for one open thread (part of `retainedPosts`).
     public var threadWindow = CountAndBytes(count: 200, bytes: 4 * .mebibyte)
     /// Text the composer accepts from one paste before refusing with an explanation.

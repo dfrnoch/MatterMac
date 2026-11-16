@@ -24,13 +24,20 @@ enum TimelinePostActions {
         return result
     }
 
-    static func entries(for post: PostPresentation) -> [Entry?] {
+    /// With `repliesInline`, Reply answers from the channel composer and the thread
+    /// opens separately; otherwise replying opens the thread.
+    static func entries(for post: PostPresentation, repliesInline: Bool = false) -> [Entry?] {
         guard let id = post.postID else { return [] }
         var sections: [[Entry]] = []
         var first: [Entry] = []
+        let root = post.rootID ?? id
         if post.actions.canReply {
-            first.append(Entry(title: TimelineStrings.actionReplyInThread, action: .reply(post.rootID ?? id),
-                               symbol: "arrowshape.turn.up.left"))
+            first.append(Entry(title: repliesInline ? TimelineStrings.actionReply : TimelineStrings.actionReplyInThread,
+                               action: .reply(root), symbol: "arrowshape.turn.up.left"))
+        }
+        if repliesInline, post.rootID != nil || post.replyCount > 0 {
+            first.append(Entry(title: TimelineStrings.menuOpenThread, action: .openThread(root: root),
+                               symbol: "bubble.left.and.bubble.right"))
         }
         if post.actions.canReact {
             first.append(Entry(title: TimelineStrings.actionAddReaction, action: .addReaction(id), symbol: "face.smiling"))
@@ -77,7 +84,8 @@ enum TimelinePostActions {
     }
 
     /// Accessibility custom actions: quick reactions first, then every menu entry.
-    static func accessibilityEntries(for post: PostPresentation, quickReactions: [String] = quickReactions) -> [Entry] {
+    static func accessibilityEntries(for post: PostPresentation, quickReactions: [String] = quickReactions,
+                                     repliesInline: Bool = false) -> [Entry] {
         guard let id = post.postID else { return [] }
         var result: [Entry] = []
         if post.actions.canReact {
@@ -86,7 +94,7 @@ enum TimelinePostActions {
                                     symbol: nil))
             }
         }
-        result.append(contentsOf: entries(for: post).compactMap { $0 })
+        result.append(contentsOf: entries(for: post, repliesInline: repliesInline).compactMap { $0 })
         return result
     }
 

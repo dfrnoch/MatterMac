@@ -452,6 +452,17 @@ public protocol MattermostService: Sendable {
     /// `POST /commands/execute`. Not idempotent: a lost response is `.outcomeUnknown`.
     func executeCommand(_ command: String, channel: ChannelID, team: TeamID?, rootID: PostID?)
         async throws(APIError) -> CommandResult
+    /// `POST /posts/schedule`. Needs a licensed server with `ServiceSettings.ScheduledPosts`
+    /// on; otherwise the server answers 400 (`api.scheduled_posts.feature_disabled` /
+    /// `api.scheduled_posts.license_error`).
+    func createScheduledPost(channel: ChannelID, rootID: PostID?, message: String, at time: MattermostTimestamp)
+        async throws(APIError) -> ScheduledPost
+    /// `GET /posts/scheduled/team/{team}?includeDirectChannels=true`, soonest first.
+    func scheduledPosts(team: TeamID) async throws(APIError) -> [ScheduledPost]
+    /// `PUT /posts/schedule/{id}`: message and time.
+    func updateScheduledPost(_ post: ScheduledPost) async throws(APIError) -> ScheduledPost
+    /// `DELETE /posts/schedule/{id}`.
+    func deleteScheduledPost(_ id: ScheduledPostID) async throws(APIError)
     /// `POST /posts/{id}/pin` (or `/unpin`). Needs read access; the edit time limit
     /// applies unless the call is a no-op.
     func setPinned(_ id: PostID, pinned: Bool) async throws(APIError)

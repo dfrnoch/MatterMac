@@ -36,6 +36,38 @@ public final class AppEnvironment {
         get { settings.sendBehavior }
         set { settings.sendBehavior = newValue }
     }
+    /// Learned writing-style profiles between launches; `nil` keeps them in memory.
+    public let styleProfiles: (any StyleProfileStore)?
+    /// Command-line agent control; listens only while the setting is on, and only when
+    /// the app gave it a socket path (tests and UI testing give none).
+    private(set) lazy var agent = AgentController(environment: self, socketPath: agentSocketPath)
+    private let agentSocketPath: String?
+    /// Reply suggestions already computed this run (memory only).
+    let suggestions = SuggestionCache()
+    /// A broken assistant setup is reported once per run.
+    var assistantProblemReported = false
+    /// Stands in for `NSApp.isActive` (tests run in an inactive process).
+    var isAppActiveOverride: Bool?
+    var isAppActive: Bool { isAppActiveOverride ?? NSApp.isActive }
+    /// Replaces the provider chosen in Settings (tests).
+    public var assistantOverride: (any AssistantProvider)?
+    private var claudeAPI: (model: ClaudeAPIAssistant.Model, provider: ClaudeAPIAssistant)?
+    /// The provider chosen in Settings; `nil` when the assistant is off.
+    public var assistant: (any AssistantProvider)? {
+        if let assistantOverride { return assistantOverride }
+        switch settings.assistant {
+        case .off: return nil
+        case .onDevice: return OnDeviceAssistant()
+        case .claudeAPI:
+            // One URL session per chosen summary model, kept while it stays chosen.
+            if let claudeAPI, claudeAPI.model == settings.assistantClaudeModel { return claudeAPI.provider }
+            let provider = ClaudeAPIAssistant(summaryModel: settings.assistantClaudeModel)
+            claudeAPI = (settings.assistantClaudeModel, provider)
+            return provider
+        case .claudeCode: return ScriptAssistant(kind: .claudeCode)
+        case .codex: return ScriptAssistant(kind: .codex)
+        }
+    }
     /// The window's model, created by `MatterMacRootView` (weak: the view owns it).
     public internal(set) weak var appModel: AppModel?
 
@@ -46,7 +78,8 @@ public final class AppEnvironment {
 
     public init(budget: ResourceBudget = .standard, allowsInsecureLoopback: Bool = false,
                 accounts: KeychainAccounts? = nil, cacheStorage: ContentCache.Storage? = nil,
-                settingsStorage: (any LocalSettingsStorage)? = nil,
+                settingsStorage: (any LocalSettingsStorage)? = nil, agentSocketPath: String? = nil,
+                styleProfiles: (any StyleProfileStore)? = nil,
                 serviceFactory: any MattermostServiceFactory,
                 makeRealtime: @escaping @Sendable (ServerEndpoint, BearerCredential, UserID) -> any RealtimeConnection,
                 markupParse: @escaping @Sendable (String, MarkupLimits) -> MessageDocument) {
@@ -63,7 +96,10 @@ public final class AppEnvironment {
         self.markupParse = markupParse
         self.allowsInsecureLoopback = allowsInsecureLoopback
         self.settings = LocalSettings(storage: settingsStorage)
+        self.agentSocketPath = agentSocketPath
+        self.styleProfiles = styleProfiles
         diagnostics.record(.lifecycle, .info, "environment created")
+        agent.bind()
     }
 
     var sessionDependencies: SessionDependencies {

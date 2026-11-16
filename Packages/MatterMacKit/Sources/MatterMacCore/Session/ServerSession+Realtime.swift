@@ -83,6 +83,10 @@ extension ServerSession {
             pendingAlerts.removeAll { $0.event.post.id == post.id }
             journal.append(.upsert(post))
             if store.upsert(post, insertIfMissing: false) != .notPresent { markDirty([.timeline, .thread, .search]) }
+            if post.rootID == nil, replyRoots.contains(post.id) {
+                replyRoots.record(post, plainText: deps.documents.document(for: post).plainText)
+                markDirty(.timeline)
+            }
             if collapsedThreadsActive, let root = post.rootID { updateThreadRoot(root) }
         case .postDeleted(let post):
             handleDeleted(post)
@@ -269,6 +273,10 @@ extension ServerSession {
         let at = now()
         journal.append(.deleted(post.id, rootOf: post.rootID, at: at))
         var changed = store.markDeleted(post.id, at: at)
+        if replyRoots.contains(post.id) {
+            replyRoots.markDeleted(post.id)
+            changed = true
+        }
         if post.rootID == nil {
             // Deleting a root deletes its thread on the server (no per-reply events).
             for reply in store.replies(to: post.id) { changed = store.markDeleted(reply, at: at) || changed }

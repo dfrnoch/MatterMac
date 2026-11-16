@@ -24,16 +24,31 @@ durable rules and commands that have actually been run in this repository.
   per decision 0035) are saved in `UserDefaults.standard` under `MatterMac.*` keys
   (user request 2026-09-25, decision 0032): typed, validated on load, injected via
   `AppEnvironment(settingsStorage:)`; tests and `-MatterMacUITesting` keep them in
-  memory. Drafts stay session-only.
+  memory. Drafts stay session-only. The assistant's Claude API key (user request
+  2026-11-16, decision 0039) is a Keychain item; reply suggestions and summaries
+  are kept in memory only. The learned writing-style profile (same request) is one
+  Keychain item per account, at most 2,400 characters, deleted at Sign Out or Forget.
   Notifications and message previews are on by default; authorization is asked at
   most once per launch, after a sign-in, only while macOS reports `.notDetermined`.
 - Networking: `URLSessionConfiguration.ephemeral` with `urlCache = nil`,
   `httpCookieStorage = nil`, `httpShouldSetCookies = false`,
   `urlCredentialStorage = nil`. Never `URLSession.shared`. Bearer header only; never
   tokens in URLs. Credentials never follow a cross-origin redirect. The only
-  non-Mattermost host is GitHub, for in-app updates (decision 0034); the embedded
-  `MatterMacUpdateInstaller` XPC service is the only unsandboxed code — keep its
-  checks in `MatterMacUpdateSupport`.
+  non-Mattermost hosts are GitHub, for in-app updates (decision 0034), and
+  `api.anthropic.com`, only when the user chose the Claude API assistant (decision
+  0039). The embedded `MatterMacUpdateInstaller` XPC service is the only unsandboxed
+  code MatterMac ships — keep its checks in `MatterMacUpdateSupport`.
+- **Assistant** (user request 2026-11-16, decision 0039): everything off by default,
+  and reply suggestions have their own switch that is also off by default. Conversation
+  text goes only to the provider the user picked in Settings › Assistant (on-device
+  model, Claude API, or a user-installed script in Application Scripts run with
+  `NSUserUnixTask`, which macOS runs outside the sandbox). Suggestions are never sent
+  or saved as drafts until the user accepts them. Message text is treated as data in
+  every prompt; assistant output is only ever shown to the user.
+- **Agent control** (user request 2026-11-16, decision 0040): off by default.
+  `MatterMac agent …` talks to the running app over a user-only Unix socket in the
+  container; agents never get credentials, reads mark nothing read, and sends go
+  through the normal pending queue.
 - Every buffer, cache, queue, window, and task set is bounded by
   `MatterMacModels.ResourceBudget`. Unsent text (drafts + pending sends) is never
   evicted — refuse new input instead.

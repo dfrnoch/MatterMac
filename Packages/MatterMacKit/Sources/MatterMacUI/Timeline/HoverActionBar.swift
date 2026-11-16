@@ -3,8 +3,8 @@ import MatterMacModels
 import MatterMacCore
 
 /// The floating message action bar shown at the top-right of the hovered (or, without
-/// a hovered row, the selected) message: three quick reactions, Add Reaction, Reply and
-/// More (the context-menu items). One instance per timeline, overlaid above the scroll
+/// a hovered row, the selected) message: three quick reactions, Add Reaction, Reply,
+/// Open Thread (when replies show inline) and More (the context-menu items). One instance per timeline, overlaid above the scroll
 /// view, so it never changes row heights or allocates per row.
 ///
 /// Appearance: Liquid Glass (`NSGlassEffectView`) on macOS 26 and later, otherwise a
@@ -17,6 +17,7 @@ final class HoverActionBar: NSView {
         case quickReaction(String)
         case addReaction
         case reply
+        case openThread
         case more
     }
 
@@ -83,7 +84,7 @@ final class HoverActionBar: NSView {
     /// no hover actions (pending, deleted, system).
     @discardableResult
     func configure(item: TimelineItemID, post: PostPresentation,
-                   quickReactions: [String] = TimelinePostActions.quickReactions,
+                   quickReactions: [String] = TimelinePostActions.quickReactions, repliesInline: Bool = false,
                    emojiText: (String) -> String) -> Bool {
         guard let id = post.postID, post.sendState == nil else { return false }
         switch post.body {
@@ -96,6 +97,8 @@ final class HoverActionBar: NSView {
             kinds.append(.addReaction)
         }
         if post.actions.canReply { kinds.append(.reply) }
+        // Reply stays in the channel; the thread is one more click away.
+        if repliesInline, post.rootID != nil || post.replyCount > 0 { kinds.append(.openThread) }
         kinds.append(.more)
         if buttons.map(\.kind) != kinds {
             rebuild(kinds, emojiText: emojiText)
@@ -138,6 +141,10 @@ final class HoverActionBar: NSView {
                 button.image = Self.symbol("arrowshape.turn.up.left", TimelineStrings.actionReply)
                 button.toolTip = TimelineStrings.actionReply
                 button.setAccessibilityLabel(TimelineStrings.actionReply)
+            case .openThread:
+                button.image = Self.symbol("bubble.left.and.bubble.right", TimelineStrings.menuOpenThread)
+                button.toolTip = TimelineStrings.menuOpenThread
+                button.setAccessibilityLabel(TimelineStrings.menuOpenThread)
             case .more:
                 button.image = Self.symbol("ellipsis", TimelineStrings.actionMore)
                 button.toolTip = TimelineStrings.actionMore
@@ -186,6 +193,7 @@ final class HoverActionBar: NSView {
         case .quickReaction(let name): onAction?(.toggleReaction(postID, emojiName: name))
         case .addReaction: onAction?(.addReaction(postID))
         case .reply: onAction?(.reply(replyRoot ?? postID))
+        case .openThread: onAction?(.openThread(root: replyRoot ?? postID))
         case .more: onMore?(sender)
         }
     }

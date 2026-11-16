@@ -30,7 +30,10 @@ struct MainWindowView: View {
                     if showsBothPanes { Divider() }
                     TrailingPane(title: "Thread", systemImage: "bubble.left.and.text.bubble.right",
                                  close: { session.closeThread() },
-                                 accessory: { ThreadFollowButton(session: session, target: thread.target) }) {
+                                 accessory: {
+                                     ThreadSummaryButton(session: session, target: thread.target)
+                                     ThreadFollowButton(session: session, target: thread.target)
+                                 }) {
                         ConversationView(session: session, target: thread.target, snapshot: thread)
                     }
                     .frame(minWidth: 300, idealWidth: 480)
@@ -53,7 +56,10 @@ struct MainWindowView: View {
                     if showsBothPanes { Divider() }
                     TrailingPane(title: "Thread", systemImage: "bubble.left.and.text.bubble.right",
                                  close: { session.closeThread() },
-                                 accessory: { ThreadFollowButton(session: session, target: thread.target) }) {
+                                 accessory: {
+                                     ThreadSummaryButton(session: session, target: thread.target)
+                                     ThreadFollowButton(session: session, target: thread.target)
+                                 }) {
                         ConversationView(session: session, target: thread.target, snapshot: thread)
                     }
                     .frame(minWidth: 240, idealWidth: 360)
@@ -246,6 +252,7 @@ struct MainWindowView: View {
         .focusedSceneValue(\.matterMacSession, session)
         .sheet(isPresented: $session.isUnsentRecoveryVisible) { UnsentRecoveryView(session: session) }
         .sheet(item: $session.forwardMessage) { ForwardMessageView(model: $0) }
+        .sheet(isPresented: $session.isTodaySummaryVisible) { TodaySummarySheet(session: session) }
     }
 }
 

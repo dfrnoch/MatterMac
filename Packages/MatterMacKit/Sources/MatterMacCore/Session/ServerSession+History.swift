@@ -461,6 +461,39 @@ extension ServerSession {
         for post in page.posts + page.related {
             if directory.peekUser(post.userID) == nil { missingUsers.insert(post.userID) }
         }
+        recordReplyRoots(page.posts + page.related)
+        replyRoots.allowRetries()
+    }
+
+    /// Keeps summaries of roots that replies point at (or that are already cached),
+    /// so reply lines survive the store's retention.
+    func recordReplyRoots(_ posts: [Post]) {
+        let needed = Set(posts.compactMap(\.rootID))
+        for post in posts where post.rootID == nil && (needed.contains(post.id) || replyRoots.contains(post.id)) {
+            let plainText = store.entry(post.id)?.document.plainText ?? deps.documents.document(for: post).plainText
+            replyRoots.record(post, plainText: plainText)
+        }
+    }
+
+    /// Fetches thread roots that displayed replies point at, in batches.
+    func scheduleReplyRootFetch() {
+        guard !isRunning(.replyRootFetch), !replyRoots.wanted.isEmpty else { return }
+        run(.replyRootFetch) { session in
+            let epoch = session.epoch
+            while !session.replyRoots.wanted.isEmpty, !Task.isCancelled {
+                let batch = session.replyRoots.takeWanted(100)
+                guard let posts = try? await session.service.posts(ids: batch), session.epoch == epoch,
+                      !Task.isCancelled else { return }
+                var returned = Set<PostID>()
+                for post in posts where batch.contains(post.id) {
+                    returned.insert(post.id)
+                    session.replyRoots.record(post, plainText: session.deps.documents.document(for: post).plainText)
+                    if session.directory.peekUser(post.userID) == nil { session.missingUsers.insert(post.userID) }
+                }
+                for id in batch where !returned.contains(id) { session.replyRoots.recordUnavailable(id) }
+                session.markDirty([.timeline, .thread])
+            }
+        }
     }
 
     func replay(_ record: EventJournal.Record) {
@@ -551,6 +584,7 @@ extension ServerSession {
         if restoredChannel == id { restoredChannel = nil }
         for target in windows.keys where target.channelID == id { closeWindow(target) }
         _ = store.purge(channel: id)
+        replyRoots.purge(channel: id)
         searchState.purge(channel: id)
         // An in-flight page may have been authorized before this revocation.
         // Keep unrelated hits, but require a fresh search before paginating again.

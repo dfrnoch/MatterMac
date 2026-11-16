@@ -71,6 +71,9 @@ public struct MatterMacCommands: Commands {
             .disabled(session == nil)
             Button("Close Thread") { session?.closeThread() }
                 .disabled(session?.isThreadVisible != true)
+            Button("Summarize Today") { session?.isTodaySummaryVisible = true }
+                .keyboardShortcut("y", modifiers: [.command, .shift])
+                .disabled(session == nil || environment.settings.assistant == .off)
             Divider()
             // ⌥↑/⌥↓ take precedence over the composer's paragraph moves, as in the
             // official client (decision 0023).

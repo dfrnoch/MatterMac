@@ -86,6 +86,19 @@ extension TimelineViewController: TimelineCellHost {
         return TimelinePostActions.quickReactions(recent: recent)
     }
 
+    var showsRepliesInline: Bool { snapshot?.showsRepliesInline ?? false }
+
+    /// Display name of a thread root's author, from the root's row or a reply line.
+    func threadRootAuthorName(_ root: PostID) -> String? {
+        for item in items {
+            guard let post = item.post else { continue }
+            if post.postID == root { return post.author.displayName }
+            if let context = post.replyContext, context.rootID == root, let author = context.author {
+                return author.displayName
+            }
+        }
+        return nil
+    }
     var renderer: MessageRenderer { layouter.renderer }
     var rowMetrics: TimelineRowMetrics { layouter.metrics }
     func perform(_ action: TimelineAction) { delegate?.timeline(perform: action) }
@@ -183,7 +196,7 @@ extension TimelineViewController: TimelineCellHost {
         populate(menu, post: post)
     }
     func populate(_ menu: NSMenu, post: PostPresentation) {
-        for entry in TimelinePostActions.entries(for: post) {
+        for entry in TimelinePostActions.entries(for: post, repliesInline: showsRepliesInline) {
             guard let entry else {
                 menu.addItem(.separator())
                 continue

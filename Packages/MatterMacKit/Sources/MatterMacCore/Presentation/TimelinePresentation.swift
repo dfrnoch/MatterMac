@@ -192,6 +192,33 @@ public struct PostActionHints: Hashable, Sendable {
     public static let none = PostActionHints()
 }
 
+/// The message a channel-timeline reply answers: drawn as a single line above the
+/// reply (the thread root's author and the start of its text). Opens the thread.
+public struct ReplyContextPresentation: Hashable, Sendable {
+    public enum Preview: Hashable, Sendable {
+        /// Single-line plain text (never empty).
+        case text(String)
+        /// The root has no text, only files.
+        case attachments(Int)
+        case deleted
+        /// The root could not be loaded (inaccessible or removed).
+        case unavailable
+        /// Not known yet; the session is fetching it.
+        case loading
+    }
+
+    public let rootID: PostID
+    /// `nil` while loading or when unavailable.
+    public let author: AuthorPresentation?
+    public let preview: Preview
+
+    public init(rootID: PostID, author: AuthorPresentation?, preview: Preview) {
+        self.rootID = rootID
+        self.author = author
+        self.preview = preview
+    }
+}
+
 public struct PostPresentation: Hashable, Sendable {
     /// Confirmed server post ID; `nil` while a send is pending.
     public let postID: PostID?
@@ -208,8 +235,12 @@ public struct PostPresentation: Hashable, Sendable {
     public let files: [FileInfo]
     public var reactions: [ReactionGroup]
     public let replyCount: Int
-    /// In a channel timeline, a reply shows a small "replied to a thread" context.
+    /// In a channel timeline, a reply shows the message it answers above its header.
     public let showsThreadContext: Bool
+    /// What `showsThreadContext` draws; set by the builder for confirmed and pending replies.
+    public var replyContext: ReplyContextPresentation?
+    /// Newest reply time of a thread root (`replyCount > 0`), when known.
+    public var lastReplyAt: MattermostTimestamp?
     public let sendState: SendState?
     public let actions: PostActionHints
     /// Server permalink, when the team context is known.
@@ -270,6 +301,9 @@ public struct TimelineSnapshot: Sendable {
     public let items: [TimelineItem]
     /// Whether the newest retained post is the channel's newest known post.
     public let isAtLiveEdge: Bool
+    /// Replies appear in this channel timeline (collapsed reply threads off), so a
+    /// reply can be written from the channel composer and stays visible there.
+    public var showsRepliesInline = false
     /// Content may be outdated (offline, reconnecting, or awaiting reconciliation).
     public let isStale: Bool
     public let scrollRequest: TimelineScrollRequest?

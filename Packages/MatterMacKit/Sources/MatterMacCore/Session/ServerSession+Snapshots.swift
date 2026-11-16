@@ -81,8 +81,10 @@ extension ServerSession {
         context.customEmojiEnabled = customEmojiEnabled
         let output = TimelineBuilder.build(window: window, store: store, directory: directory,
                                            pending: pending.items(for: target), context: context,
-                                           customEmoji: customEmoji)
+                                           customEmoji: customEmoji, replyRoots: replyRoots)
         missingUsers.formUnion(output.missingUsers)
+        replyRoots.touch(output.shownRoots)
+        replyRoots.want(output.missingRoots)
         wantCustomEmoji(output.missingEmojiNames)
         var items = output.items
         if !window.isLoaded, case .loading = window.initialLoad {
@@ -95,10 +97,11 @@ extension ServerSession {
         // Cached posts have no unread line; the jump waits for the server's page.
         let scroll = window.isCached && pendingScroll[target] == .unreadBoundary
             ? nil : pendingScroll.removeValue(forKey: target)
-        let snapshot = TimelineSnapshot(scope: scope, target: target, generation: generation, items: items,
+        var snapshot = TimelineSnapshot(scope: scope, target: target, generation: generation, items: items,
                                         isAtLiveEdge: !window.hasNewer,
                                         isStale: window.isStale || connection != .connected,
                                         scrollRequest: scroll, recentReactions: directory.recentReactions)
+        if case .channel = target { snapshot.showsRepliesInline = !collapsedThreadsActive }
         switch target {
         case .channel: timelineContinuation.yield(snapshot)
         case .thread: threadContinuation.yield(snapshot)

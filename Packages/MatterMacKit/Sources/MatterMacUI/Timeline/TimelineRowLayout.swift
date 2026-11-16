@@ -38,6 +38,7 @@ struct PendingLayout: Equatable {
 struct MessageRowLayout: Equatable {
     var height: CGFloat = 0
     var avatar: CGRect?
+    /// Reply line (`ReplyContextView`): starts at the avatar column for its connector.
     var threadContext: CGRect?
     var header: CGRect?
     var body: CGRect = .zero
@@ -75,6 +76,7 @@ struct TimelineRowMetrics {
     static let bottomPadding: CGFloat = 4
     static let componentSpacing: CGFloat = 6
     static let buttonHeight: CGFloat = 22
+    static let threadSummaryHeight: CGFloat = 24
     static let fileChipHeight: CGFloat = 44
     static let fileChipMaximumWidth: CGFloat = 320
     static let chipSpacing: CGFloat = 4
@@ -162,8 +164,10 @@ struct TimelineRowMetrics {
         var y = showsHeader ? Self.headerTopPadding : Self.continuationTopPadding
 
         if post.showsThreadContext {
-            layout.threadContext = CGRect(x: contentX, y: y, width: contentWidth, height: fonts.metaLineHeight)
-            y += fonts.metaLineHeight + 2
+            let height = ceil(max(fonts.metaLineHeight, ReplyContextView.avatarSize) + 2)
+            layout.threadContext = CGRect(x: Self.horizontalInset, y: y, width: contentX + contentWidth - Self.horizontalInset,
+                                          height: height)
+            y += height + 2
         }
         if showsHeader {
             layout.avatar = CGRect(x: Self.horizontalInset, y: y, width: Self.avatarSize, height: Self.avatarSize)
@@ -236,8 +240,8 @@ struct TimelineRowMetrics {
 
         if post.replyCount > 0 {
             y += Self.componentSpacing
-            layout.replies = CGRect(x: contentX, y: y, width: contentWidth, height: Self.buttonHeight)
-            y += Self.buttonHeight
+            layout.replies = CGRect(x: contentX, y: y, width: contentWidth, height: Self.threadSummaryHeight)
+            y += Self.threadSummaryHeight
         }
 
         if let state = post.sendState {

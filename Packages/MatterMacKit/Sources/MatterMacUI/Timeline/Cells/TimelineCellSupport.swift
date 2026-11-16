@@ -10,6 +10,9 @@ protocol TimelineCellHost: AnyObject {
     func perform(_ action: TimelineAction)
     /// The quick reactions offered for a message (the user's recent ones first).
     var quickReactions: [String] { get }
+    /// Replies show in this channel timeline, so Reply writes from the channel composer
+    /// and Open Thread is a separate action.
+    var showsRepliesInline: Bool { get }
     /// Performs a user-chosen action, first writing pasteboard content it implies
     /// (Copy Link). Used by menus, the hover bar and accessibility actions.
     func performPrepared(_ action: TimelineAction)

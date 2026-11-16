@@ -9,17 +9,25 @@ public struct Draft: Hashable, Sendable {
     /// UTF-16 selection range in `text`, so the composer restores the caret exactly.
     public var selectedRange: NSRange
     public var editingPost: PostID?
+    /// A channel draft that replies to this thread root (written from the channel
+    /// composer while replies are shown inline).
+    public var replyRoot: PostID?
     public var attachments: [UploadSource]
 
-    public init(text: String, selectedRange: NSRange? = nil, editingPost: PostID? = nil, attachments: [UploadSource] = []) {
+    public init(text: String, selectedRange: NSRange? = nil, editingPost: PostID? = nil, replyRoot: PostID? = nil,
+                attachments: [UploadSource] = []) {
         self.text = text
         self.selectedRange = selectedRange ?? NSRange(location: (text as NSString).length, length: 0)
         self.editingPost = editingPost
+        self.replyRoot = replyRoot
         self.attachments = attachments
     }
 
-    public var isEmpty: Bool { text.isEmpty && editingPost == nil && attachments.isEmpty }
-    public var byteCost: Int { text.utf8.count + (editingPost?.rawValue.utf8.count ?? 0) + attachmentByteCost }
+    public var isEmpty: Bool { text.isEmpty && editingPost == nil && replyRoot == nil && attachments.isEmpty }
+    public var byteCost: Int {
+        text.utf8.count + (editingPost?.rawValue.utf8.count ?? 0) + (replyRoot?.rawValue.utf8.count ?? 0)
+            + attachmentByteCost
+    }
     public var attachmentByteCost: Int { attachments.reduce(0) { $0 + $1.metadataBytes } }
 }
 

@@ -47,6 +47,8 @@ struct LocalSettingsPersistenceTests {
             #expect(settings.sendBehavior == .returnSends && settings.textSize == .standard && settings.appearance == .system)
             #expect(settings.checksForUpdates && settings.updateChannel == nil)
             #expect(settings.theme == .system)
+            // Nothing is sent to an assistant and no agent can connect until the user says so.
+            #expect(settings.assistant == .off && !settings.assistantSuggestsReplies && !settings.agentControlEnabled)
         }
         // Loading defaults writes nothing.
         #expect(storage.writes == 0 && storage.values.isEmpty)
@@ -68,6 +70,10 @@ struct LocalSettingsPersistenceTests {
         first.checksForUpdates = false
         first.updateChannel = .nightly
         first.theme = .preset(.dusk)
+        first.assistant = .onDevice
+        first.assistantClaudeModel = .haiku
+        first.assistantSuggestsReplies = true
+        first.agentControlEnabled = true
         #expect(storage.values["MatterMac.notificationsEnabled"] as? Bool == false)
         #expect(storage.values["MatterMac.textSize"] as? String == "extraLarge")
         #expect(Set(storage.values.keys) == Set(LocalSettings.Key.allCases.map(\.rawValue)))
@@ -80,6 +86,8 @@ struct LocalSettingsPersistenceTests {
         #expect(restored.appearance == .dark)
         #expect(!restored.checksForUpdates && restored.updateChannel == .nightly)
         #expect(restored.theme == .preset(.dusk))
+        #expect(restored.assistant == .onDevice && restored.assistantClaudeModel == .haiku)
+        #expect(restored.assistantSuggestsReplies && restored.agentControlEnabled)
         // The saved appearance is applied at launch, not only on change.
         #expect(NSApplication.shared.appearance?.name == .darkAqua)
         #expect(environment(storage).sendBehavior == .commandReturnSends)

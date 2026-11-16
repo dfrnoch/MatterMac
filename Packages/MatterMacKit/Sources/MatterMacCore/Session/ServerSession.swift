@@ -116,6 +116,12 @@ public actor ServerSession {
     var pendingAlerts: [(event: PostedEvent, cost: Int)] = []
     /// Custom emoji name → id, misses and queued lookups (ServerSession+CustomEmoji.swift).
     var customEmoji: CustomEmojiStore
+    /// The last few confirmed sends (pending id → post id), for callers that wait on one.
+    var confirmedSends: [(pending: PendingPostID, post: PostID)] = []
+    /// Whether the server offers scheduled messages; learned from its first answer.
+    var scheduledPostsAvailable: Bool?
+    /// Thread-root summaries for reply lines in channel timelines.
+    var replyRoots: ReplyRootCache
     // On-device cache (ServerSession+Cache.swift).
     var cacheDirectoryPending = false
     var cacheChannelsPending: Set<ChannelID> = []
@@ -149,6 +155,7 @@ public actor ServerSession {
         case teamUnreads
         case alertSender
         case emojiFetch
+        case replyRootFetch
         case cacheWrite
     }
 
@@ -170,6 +177,7 @@ public actor ServerSession {
         self.realtime = dependencies.makeRealtime(endpoint, credential, me.id)
         self.directory = DirectoryStore(budget: dependencies.budget)
         self.customEmoji = CustomEmojiStore(budget: dependencies.budget)
+        self.replyRoots = ReplyRootCache(capacity: dependencies.budget.replyRootSummaries)
         let documents = dependencies.documents
         self.store = PostStore(render: { documents.document(for: $0) })
         (sidebarUpdates, sidebarContinuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
@@ -255,6 +263,7 @@ public actor ServerSession {
         store.removeAll()
         directory.removeAll()
         customEmoji.removeAll()
+        replyRoots.removeAll()
         journal.removeAll()
         typing.removeAll()
         searchState = SearchModel()
@@ -354,6 +363,7 @@ public actor ServerSession {
         if flags.contains(.settings) { publishAccountSettings() }
         if !missingUsers.isEmpty { scheduleUserFetch() }
         if !customEmoji.wanted.isEmpty { scheduleEmojiFetch() }
+        if !replyRoots.wanted.isEmpty { scheduleReplyRootFetch() }
     }
 
     func setConnection(_ status: ConnectionStatus) {
@@ -380,6 +390,7 @@ public actor ServerSession {
             store.removeAll()
             directory.removeAll()
             customEmoji.removeAll()
+            replyRoots.removeAll()
             journal.removeAll()
             typing.removeAll()
             missingUsers.removeAll()

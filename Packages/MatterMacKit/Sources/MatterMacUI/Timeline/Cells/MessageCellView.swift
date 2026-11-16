@@ -2,7 +2,7 @@ import AppKit
 import MatterMacModels
 import MatterMacCore
 
-/// A post row: avatar, header, TextKit 1 body, attachments, reactions, reply count,
+/// A post row: reply line, avatar, header, TextKit 1 body, attachments, reactions, thread summary,
 /// and pending-send accessory. Frames come from a precomputed `MessageRowLayout` (the
 /// same one that produced the row height), so there is no Auto Layout pass per row.
 ///
@@ -38,9 +38,10 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
     let nameLabel = TimelineLabel(frame: .zero)
     let metaLabel = TimelineLabel(frame: .zero)
     let bodyTextView: MessageBodyTextView
-    private var threadContextLabel: TimelineLabel?
+    private var replyContextView: ReplyContextView?
+    private var replyAvatarRequest: TimelineImageRequest?
     private var showMoreButton: TimelineTextButton?
-    private var repliesButton: TimelineTextButton?
+    private var threadSummaryView: ThreadSummaryView?
     private var thumbnailViews: [ImageThumbnailView] = []
     private var fileChipViews: [FileChipView] = []
     private var attachmentOverflowLabel: TimelineLabel?
@@ -122,13 +123,8 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
             metaLabel.toolTip = Self.timeToolTip(post)
         }
 
-        if let frame = layout.threadContext {
-            let label = threadContextLabel ?? makeLabel(\.threadContextLabel)
-            label.isHidden = false
-            label.frame = frame
-            label.attributedText = NSAttributedString(string: "↳ " + TimelineStrings.repliedToThread, attributes: [
-                .font: fonts.meta, .foregroundColor: NSColor.secondaryLabelColor,
-            ])
+        if let frame = layout.threadContext, let context = post.replyContext {
+            configureReplyContext(context, frame: frame, fonts: fonts)
         }
 
         // Attachments in the render cache hold geometry only. Each displayed cell
@@ -165,10 +161,16 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
         configureReactions(post: post, fonts: fonts)
 
         if layout.replies != nil {
-            let button = repliesButton ?? makeButton(\.repliesButton, style: .link)
-            button.isHidden = false
-            button.configure(title: TimelineStrings.replies(post.replyCount), font: fonts.metaBold)
-            button.onPress = { [weak self] in
+            let view = threadSummaryView ?? {
+                let view = ThreadSummaryView(frame: .zero)
+                addSubview(view)
+                threadSummaryView = view
+                return view
+            }()
+            view.isHidden = false
+            view.configure(replyCount: post.replyCount, lastReplyAt: post.lastReplyAt, rootCreatedAt: post.createdAt,
+                           fonts: fonts)
+            view.onPress = { [weak self] in
                 guard let self, let post = self.post, let root = post.rootID ?? post.postID else { return }
                 self.host?.perform(.openThread(root: root))
             }
@@ -177,7 +179,8 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
         configurePending(post: post, fonts: fonts)
         setAccessibilityLabel(TimelineStrings.accessibilityLabel(for: post))
         let quick = host.quickReactions
-        setAccessibilityCustomActions(TimelinePostActions.accessibilityEntries(for: post, quickReactions: quick).map { entry in
+        setAccessibilityCustomActions(TimelinePostActions.accessibilityEntries(
+            for: post, quickReactions: quick, repliesInline: host.showsRepliesInline).map { entry in
             NSAccessibilityCustomAction(name: entry.title) { [weak self] in
                 guard let host = self?.host else { return false }
                 host.performPrepared(entry.action)
@@ -212,6 +215,25 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
         ])
         label.toolTip = Self.timeToolTip(post)
         needsLayout = true
+    }
+
+    private func configureReplyContext(_ context: ReplyContextPresentation, frame: CGRect, fonts: TimelineFonts) {
+        let view = replyContextView ?? {
+            let view = ReplyContextView(frame: .zero)
+            addSubview(view)
+            replyContextView = view
+            return view
+        }()
+        view.frame = frame
+        view.isHidden = false
+        view.configure(context, fonts: fonts, drawsConnector: rowLayout.avatar != nil)
+        if let author = context.author {
+            let request = TimelineImageRequest.avatar(author.userID, revision: author.avatarRevision)
+            replyAvatarRequest = request
+            view.avatarImage = resolveImage(request)
+        }
+        let root = context.rootID
+        view.onPress = { [weak self] in self?.host?.perform(.openThread(root: root)) }
     }
 
     private func configureLinkPreview(post: PostPresentation, host: any TimelineCellHost) {
@@ -409,6 +431,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
     func imageDidBecomeAvailable(_ request: TimelineImageRequest) {
         guard outstandingRequests.contains(request), let host, let image = host.image(for: request) else { return }
         if request == avatarRequest { avatarView.image = image }
+        if request == replyAvatarRequest { replyContextView?.avatarImage = image }
         if emojiRequests.contains(request) { setEmojiImage(image, for: request) }
         if request == linkPreviewRequest { linkPreviewView?.setImage(image) }
         if let index = thumbnailRequests[request], index < thumbnailViews.count {
@@ -421,6 +444,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
         guard host != nil else { return }
         for request in emojiRequests { setEmojiImage(resolveImage(request), for: request) }
         if let request = avatarRequest { avatarView.image = resolveImage(request) }
+        if let request = replyAvatarRequest { replyContextView?.avatarImage = resolveImage(request) }
         if let request = linkPreviewRequest { linkPreviewView?.setImage(resolveImage(request)) }
         for (request, index) in thumbnailRequests where index < thumbnailViews.count {
             thumbnailViews[index].setImage(resolveImage(request))
@@ -452,6 +476,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
 
     func releaseImageDemand() {
         avatarView.image = nil
+        replyContextView?.avatarImage = nil
         for request in emojiRequests { setEmojiImage(nil, for: request) }
         for view in thumbnailViews { view.setImage(nil) }
         linkPreviewView?.setImage(nil)
@@ -473,6 +498,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
         itemID = nil
         post = nil
         avatarRequest = nil
+        replyAvatarRequest = nil
         linkPreviewRequest = nil
         thumbnailRequests.removeAll()
         emojiRequests.removeAll()
@@ -492,9 +518,11 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
         nameLabel.attributedText = NSAttributedString()
         metaLabel.attributedText = NSAttributedString()
         bodyTextView.clear()
-        threadContextLabel?.isHidden = true
-        threadContextLabel?.attributedText = NSAttributedString()
-        for button in [showMoreButton, repliesButton, retryButton, discardButton] {
+        replyContextView?.reset()
+        replyContextView?.isHidden = true
+        threadSummaryView?.reset()
+        threadSummaryView?.isHidden = true
+        for button in [showMoreButton, retryButton, discardButton] {
             button?.reset()
             button?.isHidden = true
             button?.isEnabled = true
@@ -534,7 +562,7 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
             metaLabel.frame = CGRect(x: metaX, y: header.minY + baseline, width: max(0, header.maxX - metaX),
                                      height: fonts.metaLineHeight)
         }
-        if let frame = layout.threadContext { threadContextLabel?.frame = frame }
+        if let frame = layout.threadContext { replyContextView?.frame = frame }
         bodyTextView.frame = layout.body
         if let label = hoverTimeLabel, !label.isHidden, let fonts = host?.rowMetrics.fonts {
             let height = ceil(fonts.metaLineHeight)
@@ -547,9 +575,8 @@ final class MessageCellView: NSTableCellView, NSTextViewDelegate {
             button.frame = CGRect(x: frame.minX, y: frame.minY, width: min(frame.width, button.fittingWidth + 4),
                                   height: frame.height)
         }
-        if let frame = layout.replies, let button = repliesButton {
-            button.frame = CGRect(x: frame.minX, y: frame.minY, width: min(frame.width, button.fittingWidth + 4),
-                                  height: frame.height)
+        if let frame = layout.replies, let view = threadSummaryView {
+            view.frame = CGRect(x: frame.minX, y: frame.minY, width: min(frame.width, view.fittingWidth), height: frame.height)
         }
         if let pending = layout.pending {
             if let frame = pending.spinner { pendingSpinner?.frame = frame }

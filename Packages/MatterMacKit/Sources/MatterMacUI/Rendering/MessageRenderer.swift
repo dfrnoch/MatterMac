@@ -102,7 +102,14 @@ public final class MessageRenderer {
     /// Renders a document, stopping after `characterLimit` UTF-16 units (plus an ellipsis).
     public func render(_ document: MessageDocument, characterLimit: Int? = nil, customEmoji: [String: String] = [:]) -> NSAttributedString {
         let state = RenderState(limit: characterLimit ?? ResourceBudget.standard.maximumRenderedCharacters, customEmoji: customEmoji)
-        renderBlocks(document.blocks, context: BlockContext(), state: state)
+        if case .paragraph(let inlines)? = document.blocks.first, document.blocks.count == 1,
+           isJumboEmoji(inlines, customEmoji: customEmoji) {
+            let style = baseParagraphStyle(indent: 0, blocks: [], spacingBefore: 0)
+            state.setParagraph(first: style, continuation: style)
+            renderInlines(inlines, style: InlineStyle(size: jumboEmojiSize, color: .labelColor), depth: 0, state: state)
+        } else {
+            renderBlocks(document.blocks, context: BlockContext(), state: state)
+        }
         let ellipsisStyle = state.lastParagraphStyle ?? baseParagraphStyle(indent: 0, blocks: [], spacingBefore: 0)
         return state.finish(ellipsisAttributes: [
             .font: fonts.body, .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: ellipsisStyle,
@@ -128,6 +135,36 @@ public final class MessageRenderer {
             .matterMacEditedMarker: true,
         ]))
         return result
+    }
+
+    // MARK: - Jumbo emoji
+
+    /// Messages of only this many emoji (or fewer) render large, like other chat apps.
+    static let maximumJumboEmoji = 10
+    var jumboEmojiSize: CGFloat { (fonts.bodySize * 2.4).rounded() }
+
+    /// Only emoji and whitespace, at most `maximumJumboEmoji` of them. `:name:` counts
+    /// only when it resolves (system or known custom emoji); otherwise it shows as text.
+    func isJumboEmoji(_ inlines: [MarkupInline], customEmoji: [String: String]) -> Bool {
+        var count = 0
+        for inline in inlines {
+            switch inline {
+            case .emoji(let name):
+                guard customEmoji[name.lowercased()] != nil || emojiLookup?(name)?.isEmpty == false else { return false }
+                count += 1
+            case .text(let text):
+                for character in text where !character.isWhitespace {
+                    guard character.isEmojiGlyph else { return false }
+                    count += 1
+                }
+            case .softBreak, .lineBreak:
+                continue
+            default:
+                return false
+            }
+            if count > Self.maximumJumboEmoji { return false }
+        }
+        return count > 0
     }
 
     // MARK: - Blocks
@@ -506,5 +543,14 @@ final class CustomEmojiAttachmentCell: NSTextAttachmentCell {
             NSAttributedString(string: ":", attributes: [.foregroundColor: NSColor.secondaryLabelColor])
                 .draw(in: cellFrame)
         }
+    }
+}
+
+extension Character {
+    /// Drawn as an emoji picture: emoji-presentation scalars, or text-default emoji
+    /// made pictorial by a variation selector, modifier, ZWJ sequence or keycap.
+    var isEmojiGlyph: Bool {
+        guard let first = unicodeScalars.first else { return false }
+        return first.properties.isEmojiPresentation || (first.properties.isEmoji && unicodeScalars.count > 1)
     }
 }

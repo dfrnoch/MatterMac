@@ -108,6 +108,14 @@ nonisolated enum TimelinePalette {
     /// Full label color: accent-colored text on the accent tint is illegible with some
     /// accent colors (graphite); the tint and accent border mark the selection.
     static let reactionSelectedCount = dynamic { _, _ in NSColor.labelColor }
+    /// The curve joining a reply's avatar to the message it answers.
+    static let replyConnector = dynamic { isDark, highContrast in
+        highContrast ? NSColor.secondaryLabelColor : NSColor.labelColor.withAlphaComponent(isDark ? 0.24 : 0.18)
+    }
+    /// Root author's name on a reply line (quieter than a message header).
+    static let replyName = dynamic { _, highContrast in
+        highContrast ? NSColor.labelColor : NSColor.labelColor.withAlphaComponent(0.78)
+    }
     static let placeholderFill = dynamic { isDark, highContrast in
         NSColor.labelColor.withAlphaComponent(highContrast ? 0.18 : (isDark ? 0.12 : 0.07))
     }

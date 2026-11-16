@@ -39,6 +39,13 @@ public final class LocalSettings {
         public var id: String { rawValue }
     }
 
+    /// Who answers assistant requests (Settings › Assistant). `off`: nothing is asked
+    /// and no conversation text leaves the app.
+    public enum AssistantChoice: String, CaseIterable, Identifiable, Sendable {
+        case off, onDevice, claudeAPI, claudeCode, codex
+        public var id: String { rawValue }
+    }
+
     /// Storage keys (namespaced; values are `Bool` or a known `String`).
     enum Key: String, CaseIterable {
         case sendBehavior = "MatterMac.sendBehavior"
@@ -53,6 +60,10 @@ public final class LocalSettings {
         case updateChannel = "MatterMac.updateChannel"
         /// Versioned JSON `Data` (`AppTheme`), at most `AppTheme.maximumStoredBytes`.
         case theme = "MatterMac.theme"
+        case assistant = "MatterMac.assistant"
+        case assistantClaudeModel = "MatterMac.assistantClaudeModel"
+        case assistantSuggestsReplies = "MatterMac.assistantSuggestsReplies"
+        case agentControlEnabled = "MatterMac.agentControlEnabled"
     }
 
     /// Window theme (Settings › Appearance). Applies live to every window; invalid
@@ -108,6 +119,25 @@ public final class LocalSettings {
         didSet { if let updateChannel { save(.updateChannel, updateChannel.rawValue) } }
     }
 
+    /// Off by default: choosing a provider is the user's consent to send it
+    /// conversation text (the on-device model keeps it on this Mac).
+    public var assistant: AssistantChoice = .off {
+        didSet { save(.assistant, assistant.rawValue) }
+    }
+    public var assistantClaudeModel: ClaudeAPIAssistant.Model = .opus {
+        didSet { save(.assistantClaudeModel, assistantClaudeModel.rawValue) }
+    }
+    /// Offer a reply as ghost text in an empty composer (Tab accepts). Off by default:
+    /// it is the only assistant feature that asks without being asked each time.
+    public var assistantSuggestsReplies = false {
+        didSet { save(.assistantSuggestsReplies, assistantSuggestsReplies) }
+    }
+    /// Let local command-line agents read and send through the running app
+    /// (`MatterMac agent …`). Off by default.
+    public var agentControlEnabled = false {
+        didSet { save(.agentControlEnabled, agentControlEnabled) }
+    }
+
     @ObservationIgnored private let storage: (any LocalSettingsStorage)?
     /// Set after loading so restoring values does not write them straight back.
     @ObservationIgnored private var isLoaded = false
@@ -128,6 +158,10 @@ public final class LocalSettings {
             checksForUpdates = read.bool(.checksForUpdates) ?? checksForUpdates
             updateChannel = read.value(.updateChannel)
             theme = read.data(.theme).flatMap(AppTheme.init(storageData:)) ?? theme
+            assistant = read.value(.assistant) ?? assistant
+            assistantClaudeModel = read.value(.assistantClaudeModel) ?? assistantClaudeModel
+            assistantSuggestsReplies = read.bool(.assistantSuggestsReplies) ?? assistantSuggestsReplies
+            agentControlEnabled = read.bool(.agentControlEnabled) ?? agentControlEnabled
         }
         isLoaded = true
         if appearance != .system { applyAppearance() }

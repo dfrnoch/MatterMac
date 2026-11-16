@@ -1,4 +1,5 @@
 import AppKit
+import MatterMacPlatform
 import MatterMacUI
 import SwiftUI
 
@@ -8,6 +9,12 @@ import SwiftUI
 @main
 enum MatterMacMain {
     static func main() {
+        // `MatterMac agent …` is the command-line side of agent control: it talks to
+        // the running app and exits without starting another one.
+        let arguments = CommandLine.arguments
+        if arguments.count > 1, arguments[1] == "agent" {
+            exit(AgentCLI.run(Array(arguments.dropFirst(2))))
+        }
         if #available(macOS 15.0, *) {
             MatterMacApp.main()
         } else {

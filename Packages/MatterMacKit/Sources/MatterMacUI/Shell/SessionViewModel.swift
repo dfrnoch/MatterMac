@@ -43,6 +43,8 @@ public final class SessionViewModel {
         }
     }
     public var isQuickSwitcherVisible = false
+    /// The assistant's briefing of today's activity (Go ▸ Summarize Today).
+    public var isTodaySummaryVisible = false
     /// The followed-threads view (collapsed reply threads) in the main area.
     public var isThreadsViewVisible = false
     public private(set) var threadActivity: ThreadActivity?
@@ -72,6 +74,16 @@ public final class SessionViewModel {
     @ObservationIgnored private var navigationTask: Task<Void, Never>?
     @ObservationIgnored private var directMessageTask: Task<Void, Never>?
     @ObservationIgnored private var activityTask: Task<Void, Never>?
+    /// The user's scheduled messages (selected team and DMs), soonest first.
+    public internal(set) var scheduledPosts: [ScheduledPost] = []
+    /// `false` once the server said it has no scheduled messages; `nil` until known.
+    public internal(set) var schedulingAvailable: Bool?
+    @ObservationIgnored var scheduledRefreshTask: Task<Void, Never>?
+    /// How this account's user writes, learned on request (Settings › Assistant).
+    public internal(set) var styleProfile: StyleProfile?
+    public internal(set) var isLearningStyle = false
+    public internal(set) var styleLearningError: String?
+    @ObservationIgnored var styleLearningTask: Task<Void, Never>?
     private(set) var isDetached = false
     @ObservationIgnored weak var draftProvider: (any DraftProviding)?
     @ObservationIgnored weak var threadDraftProvider: (any DraftProviding)?
@@ -79,6 +91,7 @@ public final class SessionViewModel {
     init(slot: SessionRegistry.Slot, app: AppModel) {
         self.slot = slot
         self.app = app
+        styleProfile = app.environment.styleProfiles?.profile(for: CacheAccount(endpoint: slot.endpoint, user: slot.user.id))
         subscribe()
     }
 
@@ -300,6 +313,7 @@ public final class SessionViewModel {
         commandFeedback = nil
         isThreadsViewVisible = false
         replyTarget = root
+        refreshScheduledPosts()
         navigationTask = Task {
             guard !Task.isCancelled else { return }
             await session.closeThread()

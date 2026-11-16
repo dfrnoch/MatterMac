@@ -39,6 +39,12 @@ enum AppComposition {
             cacheStorage: uiTesting ? nil : cacheStorage(development: development),
             // "On This Mac" settings (decision 0032), saved under `MatterMac.*` keys.
             settingsStorage: uiTesting ? nil : UserDefaults.standard,
+            // Agent control answers `MatterMac agent …` on a socket in the app's container.
+            agentSocketPath: uiTesting ? nil : AgentControl.socketPath,
+            // Learned writing-style profiles, per account, removed at Sign Out.
+            styleProfiles: uiTesting ? nil : KeychainStyleProfiles(
+                service: development ? "org.mattermac.MatterMac.development-style-profiles"
+                                     : "org.mattermac.MatterMac.style-profiles"),
             serviceFactory: DefaultMattermostServiceFactory(budget: budget),
             makeRealtime: { endpoint, credential, user in
                 MattermostRealtimeClient(endpoint: endpoint, credential: credential,
